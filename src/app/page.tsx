@@ -28,6 +28,8 @@ import { generateRandomTokenSignal } from '../engine/simulator';
 import { runAgentConsensus } from '../agents/consensus';
 import { evaluateExitAgent } from '../agents/exit';
 import { PRD_THRESHOLDS } from '../config/constants';
+import StrategyRadar from '../components/StrategyRadar';
+import CumulativeCurve from '../components/CumulativeCurve';
 
 export default function TerminalDashboard() {
   const [isRunning, setIsRunning] = useState<boolean>(true);
@@ -102,10 +104,8 @@ export default function TerminalDashboard() {
       let token: TokenSignal;
 
       if (dataSource === 'REAL_SOLANA' && realTokenQueueRef.current.length > 0) {
-        // Pop next real Solana token
         token = realTokenQueueRef.current.shift()!;
       } else {
-        // Fallback or Simulator token
         token = generateRandomTokenSignal();
       }
 
@@ -329,16 +329,23 @@ export default function TerminalDashboard() {
         </div>
       </header>
 
-      {/* 2. MAIN WORKSPACE GRID */}
+      {/* 2. CUMULATIVE PNL CURVE & MEV VOLUME MODULE (PRD Section 5) */}
+      <CumulativeCurve
+        currentBalanceSol={telemetry.currentBalanceSol}
+        initialBalanceSol={telemetry.initialBalanceSol}
+        totalPnlSol={telemetry.totalPnlSol}
+      />
+
+      {/* 3. MAIN WORKSPACE GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1">
         
         {/* LEFT COLUMN: DESK FEED (Real-time stream of incoming signals) */}
-        <section className="lg:col-span-5 bg-terminal-panel border border-terminal-border rounded-xl p-3.5 flex flex-col gap-3 shadow-xl">
+        <section className="lg:col-span-4 bg-terminal-panel border border-terminal-border rounded-xl p-3.5 flex flex-col gap-3 shadow-xl">
           <div className="flex items-center justify-between border-b border-terminal-border pb-2">
             <div className="flex items-center gap-2">
               <Activity className="w-4 h-4 text-terminal-green" />
               <span className="font-bold tracking-wider text-terminal-text uppercase">
-                Desk Feed ({dataSource === 'REAL_SOLANA' ? 'Live Solana Pump.fun & Raydium' : 'Simulator Stream'})
+                Desk Feed ({dataSource === 'REAL_SOLANA' ? 'Live Pump.fun & Raydium' : 'Simulator'})
               </span>
             </div>
             <span className="text-[10px] text-terminal-muted">SLOT: #{telemetry.currentSlot}</span>
@@ -393,12 +400,11 @@ export default function TerminalDashboard() {
                   </div>
 
                   <div className="flex items-center justify-between text-[11px] text-terminal-muted">
-                    <span className="truncate max-w-[180px]">{item.token.name}</span>
+                    <span className="truncate max-w-[150px]">{item.token.name}</span>
                     <span>LP: ${item.token.initialLpUsd.toLocaleString()}</span>
-                    <span>Cosine: {item.token.narrativeCosineSim}</span>
+                    <span>Cos-Sim: {item.token.narrativeCosineSim}</span>
                   </div>
 
-                  {/* Veto reason preview if vetoed */}
                   {!isApproved && item.vetoReason && (
                     <div className="mt-1.5 text-[10px] text-terminal-red/90 bg-terminal-red/10 px-2 py-1 rounded border border-terminal-red/20 flex items-start gap-1">
                       <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5 text-terminal-red" />
@@ -411,11 +417,14 @@ export default function TerminalDashboard() {
           </div>
         </section>
 
-        {/* MIDDLE COLUMN: CONSENSUS EVALUATION MATRIX & 4D MANIFOLD */}
-        <section className="lg:col-span-4 flex flex-col gap-4">
+        {/* MIDDLE COLUMN: 4D STRATEGY RADAR MANIFOLD & 5-AGENT BREAKDOWN */}
+        <section className="lg:col-span-5 flex flex-col gap-4">
           
-          {/* Active Evaluated Token Card */}
-          <div className="bg-terminal-panel border border-terminal-border rounded-xl p-3.5 space-y-3 shadow-xl">
+          {/* 4D Strategy Manifold Radar Visual (PRD Section 5) */}
+          <StrategyRadar selectedResult={selectedResult} />
+
+          {/* Active Evaluated Token Card & Agent Matrix */}
+          <div className="bg-terminal-panel border border-terminal-border rounded-xl p-3.5 space-y-3 shadow-xl flex-1">
             <div className="flex items-center justify-between border-b border-terminal-border pb-2">
               <span className="font-bold text-terminal-text flex items-center gap-1.5 uppercase">
                 <Shield className="w-4 h-4 text-terminal-green" /> 5-Agent Consensus Evaluator
@@ -522,33 +531,9 @@ export default function TerminalDashboard() {
               <div className="p-8 text-center text-terminal-muted">Menunggu sinyal pool baru...</div>
             )}
           </div>
-
-          {/* 96-CELL SCAN GRID (PRD Section 5) */}
-          <div className="bg-terminal-panel border border-terminal-border rounded-xl p-3.5 space-y-2 shadow-xl">
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-terminal-text text-[11px] uppercase">
-                Scan Grid (96 Slots Matrix)
-              </span>
-              <span className="text-[10px] text-terminal-muted">Ratio: 1 Approved : 15 Veto</span>
-            </div>
-            
-            <div className="grid grid-cols-12 gap-1 bg-terminal-bg p-2 rounded-lg border border-terminal-border">
-              {scanGridCells.map((verdict, idx) => (
-                <div
-                  key={idx}
-                  className={`h-3 rounded-xs transition-all ${
-                    verdict === 'APPROVED'
-                      ? 'bg-terminal-green glow-green'
-                      : 'bg-terminal-card border border-terminal-border hover:bg-terminal-red/40'
-                  }`}
-                  title={`Slot #${idx + 1}: ${verdict}`}
-                />
-              ))}
-            </div>
-          </div>
         </section>
 
-        {/* RIGHT COLUMN: ACTIVE POSITION & JITO MEV EXECUTION */}
+        {/* RIGHT COLUMN: ACTIVE POSITION, SCAN GRID & JITO MEV EXECUTION */}
         <section className="lg:col-span-3 flex flex-col gap-4">
           
           {/* Active Position Card (Mutex Guarded) */}
@@ -638,6 +623,30 @@ export default function TerminalDashboard() {
                 </p>
               </div>
             )}
+          </div>
+
+          {/* 96-CELL SCAN GRID (PRD Section 5) */}
+          <div className="bg-terminal-panel border border-terminal-border rounded-xl p-3.5 space-y-2 shadow-xl">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-terminal-text text-[11px] uppercase">
+                Scan Grid (96 Slots Matrix)
+              </span>
+              <span className="text-[10px] text-terminal-muted">Ratio: 1 Approved : 15 Veto</span>
+            </div>
+            
+            <div className="grid grid-cols-12 gap-1 bg-terminal-bg p-2 rounded-lg border border-terminal-border">
+              {scanGridCells.map((verdict, idx) => (
+                <div
+                  key={idx}
+                  className={`h-3 rounded-xs transition-all ${
+                    verdict === 'APPROVED'
+                      ? 'bg-terminal-green glow-green'
+                      : 'bg-terminal-card border border-terminal-border hover:bg-terminal-red/40'
+                  }`}
+                  title={`Slot #${idx + 1}: ${verdict}`}
+                />
+              ))}
+            </div>
           </div>
 
           {/* Jito MEV Private Bundle Telemetry */}
