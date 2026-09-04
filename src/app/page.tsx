@@ -536,6 +536,11 @@ export default function TerminalDashboard() {
               consensusFeed={consensusFeed}
               selectedResult={selectedResult}
               onSelectToken={setSelectedResult}
+              onInspectGemini={(token) => {
+                const found = consensusFeed.find((f) => f.token.id === token.id);
+                if (found) setSelectedResult(found);
+                setIsGeminiModalOpen(true);
+              }}
             />
           )}
           {visualMode === 'kelly' && (

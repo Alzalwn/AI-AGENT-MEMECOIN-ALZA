@@ -9,6 +9,7 @@ interface NarrativeClusterProps {
   consensusFeed: ConsensusResult[];
   selectedResult: ConsensusResult | null;
   onSelectToken?: (result: ConsensusResult) => void;
+  onInspectGemini?: (token: TokenSignal) => void;
 }
 
 interface Centroid {
@@ -63,7 +64,8 @@ const CENTROIDS: Centroid[] = [
 export default function NarrativeCluster({
   consensusFeed,
   selectedResult,
-  onSelectToken
+  onSelectToken,
+  onInspectGemini
 }: NarrativeClusterProps) {
   const [hoveredToken, setHoveredToken] = useState<ConsensusResult | null>(null);
 
@@ -360,7 +362,7 @@ export default function NarrativeCluster({
 
         {/* Selected Token Vector Metrics Overlay */}
         {selectedPoint && (
-          <div className="absolute bottom-2 right-2 bg-terminal-panel/90 backdrop-blur border border-terminal-border/80 px-2.5 py-1.5 rounded text-[10px] font-mono space-y-0.5 text-right">
+          <div className="absolute bottom-2 right-2 bg-terminal-panel/90 backdrop-blur border border-terminal-border/80 px-2.5 py-1.5 rounded text-[10px] font-mono space-y-1 text-right">
             <div className="text-terminal-muted text-[9px]">Vektor Target Terpilih:</div>
             <div className="font-bold text-terminal-text">
               {selectedPoint.token.symbol} &rarr; {selectedPoint.centroid.id}
@@ -368,6 +370,19 @@ export default function NarrativeCluster({
             <div className="text-terminal-cyan">
               &Delta;v = {(1 - selectedPoint.sim).toFixed(3)} | Cos-Sim: {selectedPoint.sim.toFixed(2)}
             </div>
+            {onInspectGemini && (
+              <div className="pt-0.5 flex justify-end">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onInspectGemini(selectedPoint.token);
+                  }}
+                  className="px-2 py-0.5 rounded bg-terminal-cyan/20 hover:bg-terminal-cyan/30 text-terminal-cyan border border-terminal-cyan/50 text-[9px] font-bold flex items-center gap-1 cursor-pointer transition-all shadow-[0_0_8px_rgba(0,240,255,0.2)]"
+                >
+                  <Sparkles className="w-2.5 h-2.5" /> AI Semantic Rationale
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
