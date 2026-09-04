@@ -1,29 +1,31 @@
-﻿import { TokenSignal, AgentVerdict } from '../types/terminal';
+import { TokenSignal, AgentVerdict, AgentThresholds } from '../types/terminal';
 import { PRD_THRESHOLDS } from '../config/constants';
 
-export function evaluateScannerAgent(token: TokenSignal): AgentVerdict {
+export function evaluateScannerAgent(token: TokenSignal, thresholds?: AgentThresholds): AgentVerdict {
   const start = performance.now();
+  const minLp = thresholds ? thresholds.minInitialLpUsd : PRD_THRESHOLDS.MIN_INITIAL_LP_USD;
+  const minBurnt = thresholds ? thresholds.minBurntLiquidityPct : PRD_THRESHOLDS.MIN_BURNT_LIQUIDITY_PCT;
 
-  if (token.initialLpUsd < PRD_THRESHOLDS.MIN_INITIAL_LP_USD) {
+  if (token.initialLpUsd < minLp) {
     return {
       agentId: 'scanner',
       agentName: 'Scanner Agent',
       status: 'VETO',
-      reason: `LP awal ($${token.initialLpUsd.toLocaleString()}) di bawah ambang batas minimum $${PRD_THRESHOLDS.MIN_INITIAL_LP_USD.toLocaleString()}`,
+      reason: `LP awal ($${token.initialLpUsd.toLocaleString()}) di bawah ambang batas minimum $${minLp.toLocaleString()}`,
       metricValue: `$${token.initialLpUsd}`,
-      threshold: `>= $${PRD_THRESHOLDS.MIN_INITIAL_LP_USD}`,
+      threshold: `>= $${minLp}`,
       latencyMs: +(performance.now() - start).toFixed(2)
     };
   }
 
-  if (token.burntLiquidityPct < PRD_THRESHOLDS.MIN_BURNT_LIQUIDITY_PCT) {
+  if (token.burntLiquidityPct < minBurnt) {
     return {
       agentId: 'scanner',
       agentName: 'Scanner Agent',
       status: 'VETO',
-      reason: `Likuiditas belum dibakar 100% (saat ini: ${token.burntLiquidityPct}%)`,
+      reason: `Likuiditas belum dibakar/dikunci (saat ini: ${token.burntLiquidityPct}%, min: ${minBurnt}%)`,
       metricValue: `${token.burntLiquidityPct}%`,
-      threshold: `${PRD_THRESHOLDS.MIN_BURNT_LIQUIDITY_PCT}% Burnt`,
+      threshold: `${minBurnt}% Burnt`,
       latencyMs: +(performance.now() - start).toFixed(2)
     };
   }

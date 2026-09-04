@@ -26,25 +26,128 @@ import {
   ShieldCheck,
   ShieldAlert,
   Sparkles,
-  Server
+  Server,
+  Volume2,
+  VolumeX,
+  Wallet,
+  Sliders,
+  History
 } from 'lucide-react';
-import { TokenSignal, ConsensusResult, ActivePosition, TerminalTelemetry } from '../types/terminal';
+import {
+  TokenSignal,
+  ConsensusResult,
+  ActivePosition,
+  TerminalTelemetry,
+  AgentThresholds,
+  ClosedTrade,
+  WalletState
+} from '../types/terminal';
 import { generateRandomTokenSignal } from '../engine/simulator';
 import { runAgentConsensus } from '../agents/consensus';
 import { evaluateExitAgent } from '../agents/exit';
-import { PRD_THRESHOLDS } from '../config/constants';
+import { PRD_THRESHOLDS, STRATEGY_PRESETS } from '../config/constants';
+import { soundFx } from '../engine/audioEngine';
 import StrategyRadar from '../components/StrategyRadar';
 import CumulativeCurve from '../components/CumulativeCurve';
 import NarrativeCluster from '../components/NarrativeCluster';
 import KellyRiskEngine from '../components/KellyRiskEngine';
 import EdgeCaseSimulator from '../components/EdgeCaseSimulator';
 import GeminiNarrativeModal from '../components/GeminiNarrativeModal';
+import StrategyPresetModal from '../components/StrategyPresetModal';
+import TradeHistoryLedger from '../components/TradeHistoryLedger';
+import WalletConnectModal from '../components/WalletConnectModal';
 
 export default function TerminalDashboard() {
   const [isRunning, setIsRunning] = useState<boolean>(true);
   const [dataSource, setDataSource] = useState<'REAL_SOLANA' | 'SIMULATOR'>('REAL_SOLANA');
-  const [visualMode, setVisualMode] = useState<'radar' | 'cluster' | 'kelly'>('radar');
+  const [visualMode, setVisualMode] = useState<'radar' | 'cluster' | 'kelly' | 'ledger'>('radar');
   const [copiedMint, setCopiedMint] = useState<string | null>(null);
+
+  // Audio Telemetry (Web Audio API Synthesizer)
+  const [isAudioMuted, setIsAudioMuted] = useState<boolean>(() => soundFx.getIsMuted());
+
+  // Dynamic Strategy Presets & Agent Thresholds
+  const [thresholds, setThresholds] = useState<AgentThresholds>(STRATEGY_PRESETS.BALANCED);
+  const [isStrategyModalOpen, setIsStrategyModalOpen] = useState<boolean>(false);
+
+  // Web3 Solana Wallet & Jito MEV Execution
+  const [isWalletModalOpen, setIsWalletModalOpen] = useState<boolean>(false);
+  const [selectedTipTier, setSelectedTipTier] = useState<'ECONOMY' | 'STANDARD' | 'FAST' | 'TURBO'>('STANDARD');
+  const [walletState, setWalletState] = useState<WalletState>({
+    isConnected: false,
+    publicKey: null,
+    balanceSol: 0,
+    walletName: null,
+    mode: 'PAPER_TRADING',
+  });
+
+  // Historical Closed Trade Ledger
+  const [closedTrades, setClosedTrades] = useState<ClosedTrade[]>([
+    {
+      id: 'POS-8812',
+      token: {
+        id: 'HIST-1',
+        mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+        symbol: '$BONK',
+        name: 'Bonk',
+        platform: 'Raydium',
+        initialLpUsd: 18000,
+        burntLiquidityPct: 100,
+        mintAuthorityRevoked: true,
+        freezeAuthorityRevoked: true,
+        top10HolderPct: 8,
+        volumeDelta15s: 34,
+        uniqueBuyersCount: 14,
+        narrativeCosineSim: 0.92,
+        narrativeTheme: 'Animals & Doge Meta',
+        priceSol: 0.0000024,
+        detectedAt: Date.now() - 360000,
+      },
+      entryPriceSol: 0.0000024,
+      exitPriceSol: 0.0000035,
+      solInvested: 0.62,
+      pnlSol: 0.284,
+      pnlPct: 45.8,
+      rMultiplier: 3.05,
+      holdDurationSec: 42,
+      exitReason: 'Target Take-Profit Reached (+3.0R)',
+      entryTimestamp: Date.now() - 360000,
+      exitTimestamp: Date.now() - 318000,
+      jitoTipSol: 0.00005,
+    },
+    {
+      id: 'POS-8804',
+      token: {
+        id: 'HIST-2',
+        mint: 'EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm',
+        symbol: '$WIF',
+        name: 'dogwifhat',
+        platform: 'Raydium',
+        initialLpUsd: 25000,
+        burntLiquidityPct: 100,
+        mintAuthorityRevoked: true,
+        freezeAuthorityRevoked: true,
+        top10HolderPct: 7,
+        volumeDelta15s: 18,
+        uniqueBuyersCount: 22,
+        narrativeCosineSim: 0.89,
+        narrativeTheme: 'Animals & Doge Meta',
+        priceSol: 0.000045,
+        detectedAt: Date.now() - 720000,
+      },
+      entryPriceSol: 0.000045,
+      exitPriceSol: 0.000042,
+      solInvested: 0.62,
+      pnlSol: -0.041,
+      pnlPct: -6.67,
+      rMultiplier: -0.44,
+      holdDurationSec: 28,
+      exitReason: 'Trailing Stop-Loss Protection (Loss > 0.33R)',
+      entryTimestamp: Date.now() - 720000,
+      exitTimestamp: Date.now() - 692000,
+      jitoTipSol: 0.00005,
+    }
+  ]);
 
   // Modals & Edge Case Simulator State (PRD 7.2)
   const [isEdgeModalOpen, setIsEdgeModalOpen] = useState<boolean>(false);
@@ -173,8 +276,13 @@ export default function TerminalDashboard() {
         token = generateRandomTokenSignal();
       }
 
-      // 1. Evaluate 5-Agent Consensus
-      const result = runAgentConsensus(token);
+      // 1. Evaluate 5-Agent Consensus with Dynamic Thresholds
+      const result = runAgentConsensus(token, thresholds);
+      if (result.verdict === 'APPROVED') {
+        soundFx.playApproval();
+      } else {
+        soundFx.playVeto();
+      }
 
       // 2. Update Scan Grid & Consensus Feed
       setScanGridCells((prev) => [...prev.slice(1), result.verdict]);
@@ -196,11 +304,12 @@ export default function TerminalDashboard() {
       // 4. Execution Logic with Single Position Mutex Lock
       setActivePosition((currentPos) => {
         if (!currentPos && result.verdict === 'APPROVED') {
-          // Open new position (Fractional Kelly size = ~0.62 SOL)
-          const solInvested = 0.62;
+          // Open new position (Fractional Kelly sizing based on active thresholds)
+          const solInvested = +(0.62 * (thresholds.kellyFraction / 0.25)).toFixed(3);
           const entryPrice = token.priceSol;
           const tokenAmount = solInvested / entryPrice;
 
+          soundFx.playPositionOpen();
           setTelemetry((t) => ({ ...t, activePositionLocked: true }));
 
           return {
@@ -214,7 +323,7 @@ export default function TerminalDashboard() {
             pnlPct: 0,
             rMultiplier: 0,
             highestPriceSol: entryPrice,
-            trailingStopPriceSol: entryPrice * (1 - PRD_THRESHOLDS.TRAILING_STOP_LOSS_R),
+            trailingStopPriceSol: entryPrice * (1 - thresholds.trailingStopLossR),
             entryTimestamp: Date.now(),
             status: 'OPEN',
           };
@@ -240,6 +349,30 @@ export default function TerminalDashboard() {
 
           const exitDecision = evaluateExitAgent(updatedPos);
           if (exitDecision.shouldExit) {
+            if (rMultiplier >= thresholds.targetTakeProfitR) {
+              soundFx.playTakeProfit();
+            } else {
+              soundFx.playEmergencyExit();
+            }
+
+            // Record into closed trades ledger
+            const closedItem: ClosedTrade = {
+              id: currentPos.id,
+              token: currentPos.token,
+              entryPriceSol: currentPos.entryPriceSol,
+              exitPriceSol: newPrice,
+              solInvested: currentPos.solInvested,
+              pnlSol,
+              pnlPct,
+              rMultiplier,
+              holdDurationSec: Math.max(1, Math.round((Date.now() - currentPos.entryTimestamp) / 1000)),
+              exitReason: exitDecision.reason || (pnlPct > 0 ? `Target TP (+${rMultiplier}R)` : 'Trailing Stop Hit'),
+              entryTimestamp: currentPos.entryTimestamp,
+              exitTimestamp: Date.now(),
+              jitoTipSol: 0.00005,
+            };
+            setClosedTrades((prev) => [closedItem, ...prev.slice(0, 99)]);
+
             setTelemetry((t) => {
               const won = pnlPct > 0;
               return {
@@ -262,10 +395,29 @@ export default function TerminalDashboard() {
     }, dataSource === 'REAL_SOLANA' ? 1800 : 1100);
 
     return () => clearInterval(interval);
-  }, [isRunning, dataSource, selectedResult]);
+  }, [isRunning, dataSource, selectedResult, thresholds]);
 
   const handleManualExit = () => {
     if (!activePosition) return;
+    soundFx.playEmergencyExit();
+
+    const closedItem: ClosedTrade = {
+      id: activePosition.id,
+      token: activePosition.token,
+      entryPriceSol: activePosition.entryPriceSol,
+      exitPriceSol: activePosition.currentPriceSol,
+      solInvested: activePosition.solInvested,
+      pnlSol: activePosition.pnlSol,
+      pnlPct: activePosition.pnlPct,
+      rMultiplier: activePosition.rMultiplier,
+      holdDurationSec: Math.max(1, Math.round((Date.now() - activePosition.entryTimestamp) / 1000)),
+      exitReason: 'Manual Emergency Exit (Jito MEV)',
+      entryTimestamp: activePosition.entryTimestamp,
+      exitTimestamp: Date.now(),
+      jitoTipSol: 0.00005,
+    };
+    setClosedTrades((prev) => [closedItem, ...prev.slice(0, 99)]);
+
     setTelemetry((t) => ({
       ...t,
       activePositionLocked: false,
@@ -336,6 +488,50 @@ export default function TerminalDashboard() {
               <SlidersHorizontal className="w-3 h-3" /> SIMULATOR
             </button>
           </div>
+
+          {/* Audio Telemetry Toggle */}
+          <button
+            onClick={() => {
+              const next = !isAudioMuted;
+              setIsAudioMuted(next);
+              soundFx.setMuted(next);
+            }}
+            className={`p-2 rounded-lg border transition-all cursor-pointer ${
+              isAudioMuted
+                ? 'bg-terminal-card border-terminal-border text-terminal-muted hover:text-terminal-text'
+                : 'bg-terminal-cyan/15 border-terminal-cyan/50 text-terminal-cyan shadow-[0_0_8px_rgba(0,240,255,0.25)]'
+            }`}
+            title={isAudioMuted ? 'Unmute Cyber SFX' : 'Mute Cyber SFX'}
+          >
+            {isAudioMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+          </button>
+
+          {/* Strategy Preset Tuner Trigger */}
+          <button
+            onClick={() => setIsStrategyModalOpen(true)}
+            className="px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 border text-[11px] bg-terminal-card hover:bg-terminal-card/80 border-terminal-border text-terminal-text transition-all cursor-pointer font-bold"
+            title="Atur Preset Strategi & Threshold Konsensus Agen"
+          >
+            <Sliders className="w-3.5 h-3.5 text-terminal-green" />
+            <span>PRESET: {thresholds.presetName}</span>
+          </button>
+
+          {/* Web3 Solana Wallet Connect Trigger */}
+          <button
+            onClick={() => setIsWalletModalOpen(true)}
+            className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 border text-[11px] font-bold transition-all cursor-pointer ${
+              walletState.isConnected
+                ? 'bg-terminal-green/15 border-terminal-green/50 text-terminal-green'
+                : 'bg-terminal-card border-terminal-border text-terminal-text hover:border-terminal-cyan'
+            }`}
+            title="Koneksi Dompet Solana & Konfigurasi Jito MEV"
+          >
+            <Wallet className="w-3.5 h-3.5 text-terminal-cyan" />
+            <span>{walletState.isConnected ? `${walletState.publicKey} (${walletState.balanceSol} SOL)` : 'CONNECT WALLET'}</span>
+            <span className="text-[9px] px-1 py-0.2 rounded bg-terminal-bg text-terminal-muted border border-terminal-border">
+              {walletState.mode === 'PAPER_TRADING' ? 'PAPER' : 'LIVE'}
+            </span>
+          </button>
 
           {/* Mutex Single Position Lock Status */}
           <div className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 border text-[11px] ${
@@ -527,6 +723,16 @@ export default function TerminalDashboard() {
             >
               <ShieldCheck className="w-3.5 h-3.5" /> Kelly Risk (PRD 6)
             </button>
+            <button
+              onClick={() => setVisualMode('ledger')}
+              className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 ${
+                visualMode === 'ledger'
+                  ? 'bg-terminal-green/20 text-terminal-green border border-terminal-green/50 shadow-[0_0_8px_rgba(13,242,137,0.2)]'
+                  : 'text-terminal-muted hover:text-terminal-text hover:bg-terminal-card border border-transparent'
+              }`}
+            >
+              <History className="w-3.5 h-3.5" /> Trades Ledger ({closedTrades.length})
+            </button>
           </div>
 
           {/* Active Visual Component Render */}
@@ -547,6 +753,12 @@ export default function TerminalDashboard() {
             <KellyRiskEngine
               telemetry={telemetry}
               selectedResult={selectedResult}
+            />
+          )}
+          {visualMode === 'ledger' && (
+            <TradeHistoryLedger
+              trades={closedTrades}
+              onClearTrades={() => setClosedTrades([])}
             />
           )}
 
@@ -834,6 +1046,24 @@ export default function TerminalDashboard() {
         isOpen={isGeminiModalOpen}
         onClose={() => setIsGeminiModalOpen(false)}
         token={selectedResult?.token || null}
+      />
+
+      {/* Strategy Preset & Thresholds Tuner Modal */}
+      <StrategyPresetModal
+        isOpen={isStrategyModalOpen}
+        onClose={() => setIsStrategyModalOpen(false)}
+        currentThresholds={thresholds}
+        onSaveThresholds={(newThresh) => setThresholds(newThresh)}
+      />
+
+      {/* Web3 Solana Wallet & Jito MEV Settings Modal */}
+      <WalletConnectModal
+        isOpen={isWalletModalOpen}
+        onClose={() => setIsWalletModalOpen(false)}
+        walletState={walletState}
+        onUpdateWallet={(newState) => setWalletState(newState)}
+        selectedTipTier={selectedTipTier}
+        onSelectTipTier={(newTier) => setSelectedTipTier(newTier)}
       />
 
     </main>

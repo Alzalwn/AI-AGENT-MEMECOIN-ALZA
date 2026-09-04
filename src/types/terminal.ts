@@ -75,3 +75,44 @@ export interface TerminalTelemetry {
   vetoCount: number;
   activePositionLocked: boolean;
 }
+
+export type StrategyPresetType = 'DEGEN' | 'BALANCED' | 'CONSERVATIVE' | 'CUSTOM';
+
+export interface AgentThresholds {
+  presetName: StrategyPresetType;
+  minInitialLpUsd: number;
+  minBurntLiquidityPct: number;
+  minCosineSimilarity: number;
+  maxTop10HoldersPct: number;
+  requireMintRevoked: boolean;
+  requireFreezeRevoked: boolean;
+  minVolumeDelta15s: number;
+  minUniqueBuyers: number;
+  kellyFraction: number;
+  targetTakeProfitR: number;
+  trailingStopLossR: number;
+}
+
+export interface ClosedTrade {
+  id: string;
+  token: TokenSignal;
+  entryPriceSol: number;
+  exitPriceSol: number;
+  solInvested: number;
+  pnlSol: number;
+  pnlPct: number;
+  rMultiplier: number;
+  holdDurationSec: number;
+  exitReason: string;
+  entryTimestamp: number;
+  exitTimestamp: number;
+  jitoTipSol: number;
+}
+
+export interface WalletState {
+  isConnected: boolean;
+  publicKey: string | null;
+  balanceSol: number;
+  walletName: 'Phantom' | 'Solflare' | 'Backpack' | null;
+  mode: 'PAPER_TRADING' | 'LIVE_ON_CHAIN';
+}

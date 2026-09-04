@@ -1,17 +1,17 @@
-﻿import { TokenSignal, ConsensusResult, AgentVerdict, AgentId } from '../types/terminal';
+import { TokenSignal, ConsensusResult, AgentVerdict, AgentId, AgentThresholds } from '../types/terminal';
 import { evaluateScannerAgent } from './scanner';
 import { evaluateNarrativeAgent } from './narrative';
 import { evaluateRiskAgent } from './risk';
 import { evaluateTimingAgent } from './timing';
 
-export function runAgentConsensus(token: TokenSignal): ConsensusResult {
+export function runAgentConsensus(token: TokenSignal, thresholds?: AgentThresholds): ConsensusResult {
   const startTime = performance.now();
 
-  // Evaluate agents concurrently
-  const scannerVerdict = evaluateScannerAgent(token);
-  const narrativeVerdict = evaluateNarrativeAgent(token);
-  const riskVerdict = evaluateRiskAgent(token);
-  const timingVerdict = evaluateTimingAgent(token);
+  // Evaluate agents concurrently with custom thresholds support
+  const scannerVerdict = evaluateScannerAgent(token, thresholds);
+  const narrativeVerdict = evaluateNarrativeAgent(token, thresholds);
+  const riskVerdict = evaluateRiskAgent(token, thresholds);
+  const timingVerdict = evaluateTimingAgent(token, thresholds);
 
   // Default exit agent state for new candidate token
   const exitVerdict: AgentVerdict = {

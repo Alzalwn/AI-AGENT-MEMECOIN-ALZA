@@ -1,10 +1,13 @@
-﻿import { TokenSignal, AgentVerdict } from '../types/terminal';
+import { TokenSignal, AgentVerdict, AgentThresholds } from '../types/terminal';
 import { PRD_THRESHOLDS } from '../config/constants';
 
-export function evaluateRiskAgent(token: TokenSignal): AgentVerdict {
+export function evaluateRiskAgent(token: TokenSignal, thresholds?: AgentThresholds): AgentVerdict {
   const start = performance.now();
+  const maxTop10 = thresholds ? thresholds.maxTop10HoldersPct : PRD_THRESHOLDS.MAX_TOP10_HOLDERS_PCT;
+  const reqMint = thresholds ? thresholds.requireMintRevoked : PRD_THRESHOLDS.REQUIRE_MINT_REVOKED;
+  const reqFreeze = thresholds ? thresholds.requireFreezeRevoked : PRD_THRESHOLDS.REQUIRE_FREEZE_REVOKED;
 
-  if (!token.mintAuthorityRevoked) {
+  if (reqMint && !token.mintAuthorityRevoked) {
     return {
       agentId: 'risk',
       agentName: 'Risk Agent',
@@ -16,7 +19,7 @@ export function evaluateRiskAgent(token: TokenSignal): AgentVerdict {
     };
   }
 
-  if (!token.freezeAuthorityRevoked) {
+  if (reqFreeze && !token.freezeAuthorityRevoked) {
     return {
       agentId: 'risk',
       agentName: 'Risk Agent',
@@ -28,14 +31,14 @@ export function evaluateRiskAgent(token: TokenSignal): AgentVerdict {
     };
   }
 
-  if (token.top10HolderPct > PRD_THRESHOLDS.MAX_TOP10_HOLDERS_PCT) {
+  if (token.top10HolderPct > maxTop10) {
     return {
       agentId: 'risk',
       agentName: 'Risk Agent',
       status: 'VETO',
-      reason: `Konsentrasi pemegang Top 10 (${token.top10HolderPct}%) melebihi batas maksimal ${PRD_THRESHOLDS.MAX_TOP10_HOLDERS_PCT}%.`,
+      reason: `Konsentrasi pemegang Top 10 (${token.top10HolderPct}%) melebihi batas maksimal ${maxTop10}%.`,
       metricValue: `${token.top10HolderPct}%`,
-      threshold: `<= ${PRD_THRESHOLDS.MAX_TOP10_HOLDERS_PCT}%`,
+      threshold: `<= ${maxTop10}%`,
       latencyMs: +(performance.now() - start).toFixed(2)
     };
   }

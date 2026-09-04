@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Grok Trencher - Solana Multi-Agent Trading System Configuration
  * Parameters grounded strictly in PRD Section 4 & 6.
  */
@@ -39,3 +39,73 @@ export const NARRATIVE_KEYWORDS = [
   'solana mev', 'terminal', 'neural', 'quantum', 'singularity',
   'cyber', 'agentic', 'pump'
 ];
+
+export const JITO_TIP_ACCOUNTS = [
+  '96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5',
+  'HFqU5x63VTqvQss8hp11i4wVV8bD44PvwucfZ2bU7gRe',
+  'Cw8CFyM9FkoMi7K7Crf6HNQqf4uEMzpKw6QNghXLvLkY',
+  'ADaUMid9yfUytqMBgopwjb2DTLSokTSzL1zt6iGPaS49',
+  'DfXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjh',
+  'ADuUkR4vqLUMWXxW9gh6D6L8pMSawimctcNZ5pGwDcEt',
+  'DttWaMuVvTiduZRnguLF7jNxTgiMBZ1hyAumKUiL2KRL',
+  '3AVi9Tg9Uo68tJfuvoKvqKNWKkC5wPdSSdeBnizKZ6jT'
+] as const;
+
+export const STRATEGY_PRESETS = {
+  BALANCED: {
+    presetName: 'BALANCED' as const,
+    minInitialLpUsd: 5000,
+    minBurntLiquidityPct: 100,
+    minCosineSimilarity: 0.85,
+    maxTop10HoldersPct: 15,
+    requireMintRevoked: true,
+    requireFreezeRevoked: true,
+    minVolumeDelta15s: 0,
+    minUniqueBuyers: 3,
+    kellyFraction: 0.25,
+    targetTakeProfitR: 3.0,
+    trailingStopLossR: 0.33,
+  },
+  DEGEN: {
+    presetName: 'DEGEN' as const,
+    minInitialLpUsd: 2500,
+    minBurntLiquidityPct: 90,
+    minCosineSimilarity: 0.80,
+    maxTop10HoldersPct: 25,
+    requireMintRevoked: true,
+    requireFreezeRevoked: false,
+    minVolumeDelta15s: -5,
+    minUniqueBuyers: 2,
+    kellyFraction: 0.40,
+    targetTakeProfitR: 4.5,
+    trailingStopLossR: 0.45,
+  },
+  CONSERVATIVE: {
+    presetName: 'CONSERVATIVE' as const,
+    minInitialLpUsd: 12000,
+    minBurntLiquidityPct: 100,
+    minCosineSimilarity: 0.90,
+    maxTop10HoldersPct: 10,
+    requireMintRevoked: true,
+    requireFreezeRevoked: true,
+    minVolumeDelta15s: 5,
+    minUniqueBuyers: 6,
+    kellyFraction: 0.15,
+    targetTakeProfitR: 2.5,
+    trailingStopLossR: 0.25,
+  },
+  CUSTOM: {
+    presetName: 'CUSTOM' as const,
+    minInitialLpUsd: 5000,
+    minBurntLiquidityPct: 100,
+    minCosineSimilarity: 0.85,
+    maxTop10HoldersPct: 15,
+    requireMintRevoked: true,
+    requireFreezeRevoked: true,
+    minVolumeDelta15s: 0,
+    minUniqueBuyers: 3,
+    kellyFraction: 0.25,
+    targetTakeProfitR: 3.0,
+    trailingStopLossR: 0.33,
+  }
+};
