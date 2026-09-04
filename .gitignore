@@ -1,0 +1,33 @@
+﻿# Environments & Keys (CRITICAL for Crypto / Solana Trading)
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+*.json-key
+id.json
+keypair.json
+phantom.json
+solana-keypair*.json
+
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+venv/
+.venv/
+env/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Build outputs & logs
+dist/
+build/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
