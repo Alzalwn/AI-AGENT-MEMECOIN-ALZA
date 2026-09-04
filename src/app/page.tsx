@@ -21,7 +21,9 @@ import {
   Copy,
   Check,
   RefreshCw,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Compass,
+  ShieldCheck
 } from 'lucide-react';
 import { TokenSignal, ConsensusResult, ActivePosition, TerminalTelemetry } from '../types/terminal';
 import { generateRandomTokenSignal } from '../engine/simulator';
@@ -30,10 +32,13 @@ import { evaluateExitAgent } from '../agents/exit';
 import { PRD_THRESHOLDS } from '../config/constants';
 import StrategyRadar from '../components/StrategyRadar';
 import CumulativeCurve from '../components/CumulativeCurve';
+import NarrativeCluster from '../components/NarrativeCluster';
+import KellyRiskEngine from '../components/KellyRiskEngine';
 
 export default function TerminalDashboard() {
   const [isRunning, setIsRunning] = useState<boolean>(true);
   const [dataSource, setDataSource] = useState<'REAL_SOLANA' | 'SIMULATOR'>('REAL_SOLANA');
+  const [visualMode, setVisualMode] = useState<'radar' | 'cluster' | 'kelly'>('radar');
   const [copiedMint, setCopiedMint] = useState<string | null>(null);
 
   const [telemetry, setTelemetry] = useState<TerminalTelemetry>({
@@ -421,7 +426,55 @@ export default function TerminalDashboard() {
         <section className="lg:col-span-5 flex flex-col gap-4">
           
           {/* 4D Strategy Manifold Radar Visual (PRD Section 5) */}
-          <StrategyRadar selectedResult={selectedResult} />
+          {/* Visual Mode Tab Switcher (PRD Section 5 & 6) */}
+          <div className="flex items-center gap-1.5 bg-terminal-panel p-1 rounded-xl border border-terminal-border">
+            <button
+              onClick={() => setVisualMode('radar')}
+              className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 ${
+                visualMode === 'radar'
+                  ? 'bg-terminal-green/20 text-terminal-green border border-terminal-green/50 shadow-[0_0_8px_rgba(13,242,137,0.2)]'
+                  : 'text-terminal-muted hover:text-terminal-text hover:bg-terminal-card border border-transparent'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5" /> 4D Manifold
+            </button>
+            <button
+              onClick={() => setVisualMode('cluster')}
+              className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 ${
+                visualMode === 'cluster'
+                  ? 'bg-terminal-cyan/20 text-terminal-cyan border border-terminal-cyan/50 shadow-[0_0_8px_rgba(0,240,255,0.2)]'
+                  : 'text-terminal-muted hover:text-terminal-text hover:bg-terminal-card border border-transparent'
+              }`}
+            >
+              <Compass className="w-3.5 h-3.5" /> Narrative Cluster 2D
+            </button>
+            <button
+              onClick={() => setVisualMode('kelly')}
+              className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 ${
+                visualMode === 'kelly'
+                  ? 'bg-terminal-amber/20 text-terminal-amber border border-terminal-amber/50 shadow-[0_0_8px_rgba(245,158,11,0.2)]'
+                  : 'text-terminal-muted hover:text-terminal-text hover:bg-terminal-card border border-transparent'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5" /> Kelly Risk (PRD 6)
+            </button>
+          </div>
+
+          {/* Active Visual Component Render */}
+          {visualMode === 'radar' && <StrategyRadar selectedResult={selectedResult} />}
+          {visualMode === 'cluster' && (
+            <NarrativeCluster
+              consensusFeed={consensusFeed}
+              selectedResult={selectedResult}
+              onSelectToken={setSelectedResult}
+            />
+          )}
+          {visualMode === 'kelly' && (
+            <KellyRiskEngine
+              telemetry={telemetry}
+              selectedResult={selectedResult}
+            />
+          )}
 
           {/* Active Evaluated Token Card & Agent Matrix */}
           <div className="bg-terminal-panel border border-terminal-border rounded-xl p-3.5 space-y-3 shadow-xl flex-1">
