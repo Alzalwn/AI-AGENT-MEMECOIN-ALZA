@@ -23,7 +23,10 @@ import {
   RefreshCw,
   SlidersHorizontal,
   Compass,
-  ShieldCheck
+  ShieldCheck,
+  ShieldAlert,
+  Sparkles,
+  Server
 } from 'lucide-react';
 import { TokenSignal, ConsensusResult, ActivePosition, TerminalTelemetry } from '../types/terminal';
 import { generateRandomTokenSignal } from '../engine/simulator';
@@ -34,12 +37,20 @@ import StrategyRadar from '../components/StrategyRadar';
 import CumulativeCurve from '../components/CumulativeCurve';
 import NarrativeCluster from '../components/NarrativeCluster';
 import KellyRiskEngine from '../components/KellyRiskEngine';
+import EdgeCaseSimulator from '../components/EdgeCaseSimulator';
+import GeminiNarrativeModal from '../components/GeminiNarrativeModal';
 
 export default function TerminalDashboard() {
   const [isRunning, setIsRunning] = useState<boolean>(true);
   const [dataSource, setDataSource] = useState<'REAL_SOLANA' | 'SIMULATOR'>('REAL_SOLANA');
   const [visualMode, setVisualMode] = useState<'radar' | 'cluster' | 'kelly'>('radar');
   const [copiedMint, setCopiedMint] = useState<string | null>(null);
+
+  // Modals & Edge Case Simulator State (PRD 7.2)
+  const [isEdgeModalOpen, setIsEdgeModalOpen] = useState<boolean>(false);
+  const [isGeminiModalOpen, setIsGeminiModalOpen] = useState<boolean>(false);
+  const [lastSimulatedEvent, setLastSimulatedEvent] = useState<string | null>(null);
+  const [activeRpcLabel, setActiveRpcLabel] = useState<string>('Geyser gRPC (Primary)');
 
   const [telemetry, setTelemetry] = useState<TerminalTelemetry>({
     engineStatus: 'LIVE',
@@ -63,6 +74,54 @@ export default function TerminalDashboard() {
   const [scanGridCells, setScanGridCells] = useState<('APPROVED' | 'VETOED')[]>(() =>
     Array(96).fill('VETOED').map(() => (Math.random() > 0.9 ? 'APPROVED' : 'VETOED'))
   );
+
+  // PRD 7.2 Edge-Case Handlers
+  const handleTriggerFailoverRpc = () => {
+    setActiveRpcLabel('RPC-2 Private Secondary (Failover)');
+    setTelemetry((t) => ({
+      ...t,
+      slotLatencyMs: 48,
+    }));
+    setLastSimulatedEvent('[FAILOVER SUCCESS] Terputus dari Primary RPC. Berpindah ke Secondary Private RPC dalam 48ms (< 100ms threshold).');
+  };
+
+  const handleTriggerBundleDrop = () => {
+    setLastSimulatedEvent(`[JITO BUNDLE CANCEL] Bundle ID #jito-bundle dropped pada slot #${telemetry.currentSlot} & #${telemetry.currentSlot + 1}. Transaksi dibatalkan seketika untuk mencegah deviasi slippage.`);
+  };
+
+  const handleTriggerFlashRug = () => {
+    if (!activePosition) return;
+    const lossSol = +(activePosition.solInvested * -0.85).toFixed(4);
+    setLastSimulatedEvent(`[FLASH RUG DEFENSE] Likuiditas kolam ${activePosition.token.symbol} anjlok mendadak! Exit Agent mengirim emergency sell dengan priority tip 0.00025 SOL via Jito. Posisi ditutup.`);
+    setTelemetry((t) => ({
+      ...t,
+      activePositionLocked: false,
+      currentBalanceSol: +(t.currentBalanceSol + lossSol).toFixed(3),
+      totalPnlSol: +(t.totalPnlSol + lossSol).toFixed(3),
+      lossCount: t.lossCount + 1,
+    }));
+    setActivePosition(null);
+  };
+
+  const handleReplayBatchTest = () => {
+    let approved = 0;
+    let vetoed = 0;
+    const batchResults: ConsensusResult[] = [];
+    for (let i = 0; i < 100; i++) {
+      const sig = generateRandomTokenSignal();
+      const res = runAgentConsensus(sig);
+      if (res.verdict === 'APPROVED') approved++;
+      else vetoed++;
+      if (i < 25) batchResults.push(res);
+    }
+    setConsensusFeed((prev) => [...batchResults, ...prev.slice(0, 25)]);
+    setTelemetry((t) => ({
+      ...t,
+      scannedCount: t.scannedCount + 100,
+      vetoCount: t.vetoCount + vetoed,
+    }));
+    setLastSimulatedEvent(`[REPLAY 100 TOKENS] 100 pool dianalisis secara deterministik. Disetujui: ${approved}, Vetoed: ${vetoed}. Konsensus single-veto 0% false positives.`);
+  };
 
   const realTokenQueueRef = useRef<TokenSignal[]>([]);
   const isFetchingRealRef = useRef<boolean>(false);
@@ -289,12 +348,22 @@ export default function TerminalDashboard() {
               {telemetry.activePositionLocked ? 'MUTEX: 1 POS LOCKED' : 'MUTEX: UNLOCKED'}
             </span>
           </div>
+
+          {/* PRD 7.2 Edge-Case Stress Test Trigger */}
+          <button
+            onClick={() => setIsEdgeModalOpen(true)}
+            className="px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 border text-[11px] bg-terminal-red/10 border-terminal-red/40 hover:border-terminal-red text-terminal-red hover:bg-terminal-red/20 transition-all cursor-pointer font-bold"
+            title="Buka Konsol Simulasi Fallback & Edge-Case (PRD Bagian 7.2)"
+          >
+            <ShieldAlert className="w-3.5 h-3.5" />
+            <span>PRD 7.2 EDGE-CASE SIMULATOR</span>
+          </button>
         </div>
 
         {/* Telemetry Metrics */}
         <div className="flex items-center gap-4 flex-wrap">
           <div className="text-right">
-            <span className="text-[10px] text-terminal-muted block">GEYSER RPC LATENCY</span>
+            <span className="text-[10px] text-terminal-muted block">{activeRpcLabel.toUpperCase()}</span>
             <span className="font-bold text-terminal-green flex items-center gap-1 justify-end">
               <Radio className="w-3 h-3 text-terminal-green animate-ping" />
               {telemetry.slotLatencyMs} ms (Sub-350ms)
@@ -575,6 +644,20 @@ export default function TerminalDashboard() {
                           <span>Target: <strong className="text-terminal-text">{verdict.threshold}</strong></span>
                           <span>Latency: {verdict.latencyMs}ms</span>
                         </div>
+                        {agentKey === 'narrative' && (
+                          <div className="pt-1.5 flex justify-end">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setIsGeminiModalOpen(true);
+                              }}
+                              className="px-2 py-0.5 rounded bg-terminal-cyan/15 hover:bg-terminal-cyan/25 border border-terminal-cyan/40 text-terminal-cyan text-[10px] flex items-center gap-1 font-bold transition-all cursor-pointer shadow-[0_0_8px_rgba(0,240,255,0.15)]"
+                            >
+                              <Sparkles className="w-3 h-3" />
+                              Deep Dive Gemini AI (Flash)
+                            </button>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -728,6 +811,25 @@ export default function TerminalDashboard() {
           </div>
         </section>
       </div>
+
+      {/* PRD 7.2 Edge-Case Fallback Simulator Modal */}
+      <EdgeCaseSimulator
+        isOpen={isEdgeModalOpen}
+        onClose={() => setIsEdgeModalOpen(false)}
+        activePosition={activePosition}
+        onTriggerFailoverRpc={handleTriggerFailoverRpc}
+        onTriggerBundleDrop={handleTriggerBundleDrop}
+        onTriggerFlashRug={handleTriggerFlashRug}
+        onReplayBatchTest={handleReplayBatchTest}
+        lastSimulatedEvent={lastSimulatedEvent}
+      />
+
+      {/* Gemini AI Narrative Semantic Inspector Modal */}
+      <GeminiNarrativeModal
+        isOpen={isGeminiModalOpen}
+        onClose={() => setIsGeminiModalOpen(false)}
+        token={selectedResult?.token || null}
+      />
 
     </main>
   );

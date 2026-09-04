@@ -70,7 +70,7 @@ export default function KellyRiskEngine({
 
   // Token Risk Analysis from selectedResult
   const token = selectedResult?.token;
-  const isTop10Safe = token ? token.top10HolderPct <= PRD_THRESHOLDS.MAX_TOP_10_HOLDERS_PCT : true;
+  const isTop10Safe = token ? token.top10HolderPct <= PRD_THRESHOLDS.MAX_TOP10_HOLDERS_PCT : true;
   const isMintRevoked = token ? token.mintAuthorityRevoked : true;
   const isFreezeRevoked = token ? token.freezeAuthorityRevoked : true;
   const isLpSafe = token ? token.initialLpUsd >= PRD_THRESHOLDS.MIN_INITIAL_LP_USD : true;
