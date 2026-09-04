@@ -1,4 +1,4 @@
-﻿export type AgentId = 'scanner' | 'narrative' | 'risk' | 'timing' | 'exit';
+export type AgentId = 'scanner' | 'narrative' | 'risk' | 'timing' | 'exit';
 
 export interface TokenSignal {
   id: string;
@@ -17,6 +17,11 @@ export interface TokenSignal {
   narrativeTheme: string;
   priceSol: number;
   detectedAt: number;
+  // Real on-chain metadata
+  iconUrl?: string;
+  dexUrl?: string;
+  description?: string;
+  isRealData?: boolean;
 }
 
 export interface AgentVerdict {
@@ -57,6 +62,7 @@ export interface ActivePosition {
 
 export interface TerminalTelemetry {
   engineStatus: 'LIVE' | 'PAUSED';
+  dataSource: 'REAL_SOLANA' | 'SIMULATOR';
   slotLatencyMs: number;
   currentSlot: number;
   initialBalanceSol: number;

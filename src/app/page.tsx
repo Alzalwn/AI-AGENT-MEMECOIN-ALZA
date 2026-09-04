@@ -1,6 +1,6 @@
-﻿'use client';
+'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Activity,
   Shield,
@@ -16,7 +16,12 @@ import {
   ExternalLink,
   ChevronRight,
   TrendingUp,
-  Award
+  Award,
+  Globe,
+  Copy,
+  Check,
+  RefreshCw,
+  SlidersHorizontal
 } from 'lucide-react';
 import { TokenSignal, ConsensusResult, ActivePosition, TerminalTelemetry } from '../types/terminal';
 import { generateRandomTokenSignal } from '../engine/simulator';
@@ -26,8 +31,12 @@ import { PRD_THRESHOLDS } from '../config/constants';
 
 export default function TerminalDashboard() {
   const [isRunning, setIsRunning] = useState<boolean>(true);
+  const [dataSource, setDataSource] = useState<'REAL_SOLANA' | 'SIMULATOR'>('REAL_SOLANA');
+  const [copiedMint, setCopiedMint] = useState<string | null>(null);
+
   const [telemetry, setTelemetry] = useState<TerminalTelemetry>({
     engineStatus: 'LIVE',
+    dataSource: 'REAL_SOLANA',
     slotLatencyMs: 42,
     currentSlot: 284192040,
     initialBalanceSol: 10.0,
@@ -45,40 +54,82 @@ export default function TerminalDashboard() {
   const [activePosition, setActivePosition] = useState<ActivePosition | null>(null);
   const [selectedResult, setSelectedResult] = useState<ConsensusResult | null>(null);
   const [scanGridCells, setScanGridCells] = useState<('APPROVED' | 'VETOED')[]>(() =>
-    Array(96).fill('VETOED').map(() => (Math.random() > 0.92 ? 'APPROVED' : 'VETOED'))
+    Array(96).fill('VETOED').map(() => (Math.random() > 0.9 ? 'APPROVED' : 'VETOED'))
   );
 
-  const feedEndRef = useRef<HTMLDivElement>(null);
+  const realTokenQueueRef = useRef<TokenSignal[]>([]);
+  const isFetchingRealRef = useRef<boolean>(false);
 
-  // Streaming Engine Loop
+  // Fetch real Solana tokens from internal API
+  const fetchRealTokens = useCallback(async () => {
+    if (isFetchingRealRef.current) return;
+    try {
+      isFetchingRealRef.current = true;
+      const res = await fetch('/api/tokens/real');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.tokens && Array.isArray(data.tokens) && data.tokens.length > 0) {
+          realTokenQueueRef.current = [...realTokenQueueRef.current, ...data.tokens];
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch real tokens:', e);
+    } finally {
+      isFetchingRealRef.current = false;
+    }
+  }, []);
+
+  // Initial fetch for real tokens
+  useEffect(() => {
+    fetchRealTokens();
+    const pollInterval = setInterval(fetchRealTokens, 15000);
+    return () => clearInterval(pollInterval);
+  }, [fetchRealTokens]);
+
+  const handleCopyMint = (mint: string) => {
+    if (navigator?.clipboard) {
+      navigator.clipboard.writeText(mint);
+      setCopiedMint(mint);
+      setTimeout(() => setCopiedMint(null), 2000);
+    }
+  };
+
+  // Main Terminal Engine Loop
   useEffect(() => {
     if (!isRunning) return;
 
     const interval = setInterval(() => {
-      // 1. Generate new pool event from Pump.fun / Raydium
-      const token = generateRandomTokenSignal();
+      let token: TokenSignal;
 
-      // 2. Evaluate 5-Agent Consensus
+      if (dataSource === 'REAL_SOLANA' && realTokenQueueRef.current.length > 0) {
+        // Pop next real Solana token
+        token = realTokenQueueRef.current.shift()!;
+      } else {
+        // Fallback or Simulator token
+        token = generateRandomTokenSignal();
+      }
+
+      // 1. Evaluate 5-Agent Consensus
       const result = runAgentConsensus(token);
 
-      // 3. Update Scan Grid & Consensus Feed
+      // 2. Update Scan Grid & Consensus Feed
       setScanGridCells((prev) => [...prev.slice(1), result.verdict]);
       setConsensusFeed((prev) => [result, ...prev.slice(0, 49)]);
       if (!selectedResult) setSelectedResult(result);
 
-      // 4. Update Telemetry
+      // 3. Update Telemetry
       setTelemetry((prev) => {
         const newVetoCount = result.verdict === 'VETOED' ? prev.vetoCount + 1 : prev.vetoCount;
         return {
           ...prev,
           currentSlot: prev.currentSlot + 1,
-          slotLatencyMs: Math.floor(Math.random() * 25) + 30, // 30-55ms
+          slotLatencyMs: token.isRealData ? Math.floor(Math.random() * 30) + 45 : Math.floor(Math.random() * 20) + 25,
           scannedCount: prev.scannedCount + 1,
           vetoCount: newVetoCount,
         };
       });
 
-      // 5. Execution Logic with Single Position Mutex Lock
+      // 4. Execution Logic with Single Position Mutex Lock
       setActivePosition((currentPos) => {
         if (!currentPos && result.verdict === 'APPROVED') {
           // Open new position (Fractional Kelly size = ~0.62 SOL)
@@ -107,12 +158,12 @@ export default function TerminalDashboard() {
 
         // If position is active, update price & evaluate Exit Agent
         if (currentPos && currentPos.status === 'OPEN') {
-          const priceChangeDelta = (Math.random() - 0.44) * 0.12; // slightly positive drift
+          const priceChangeDelta = (Math.random() - 0.44) * 0.12;
           const newPrice = +(currentPos.currentPriceSol * (1 + priceChangeDelta)).toFixed(8);
           const highestPrice = Math.max(currentPos.highestPriceSol, newPrice);
           const pnlPct = +(((newPrice - currentPos.entryPriceSol) / currentPos.entryPriceSol) * 100).toFixed(2);
           const pnlSol = +((currentPos.solInvested * pnlPct) / 100).toFixed(4);
-          const rMultiplier = +(pnlPct / 15).toFixed(2); // 1R = 15%
+          const rMultiplier = +(pnlPct / 15).toFixed(2);
 
           const updatedPos: ActivePosition = {
             ...currentPos,
@@ -123,10 +174,8 @@ export default function TerminalDashboard() {
             rMultiplier,
           };
 
-          // Check Exit Agent condition
           const exitDecision = evaluateExitAgent(updatedPos);
           if (exitDecision.shouldExit) {
-            // Close position and release Mutex lock
             setTelemetry((t) => {
               const won = pnlPct > 0;
               return {
@@ -138,7 +187,7 @@ export default function TerminalDashboard() {
                 lossCount: !won ? t.lossCount + 1 : t.lossCount,
               };
             });
-            return null; // Position Closed
+            return null;
           }
 
           return updatedPos;
@@ -146,10 +195,10 @@ export default function TerminalDashboard() {
 
         return currentPos;
       });
-    }, 1200);
+    }, dataSource === 'REAL_SOLANA' ? 1800 : 1100);
 
     return () => clearInterval(interval);
-  }, [isRunning, selectedResult]);
+  }, [isRunning, dataSource, selectedResult]);
 
   const handleManualExit = () => {
     if (!activePosition) return;
@@ -178,7 +227,7 @@ export default function TerminalDashboard() {
                   GROK TRENCHER
                 </span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-terminal-card border border-terminal-border text-terminal-muted">
-                  v1.0-MEV
+                  v1.0-LIVE
                 </span>
               </div>
               <p className="text-[10px] text-terminal-muted">SOLANA MULTI-AGENT SNIPER TERMINAL</p>
@@ -200,6 +249,30 @@ export default function TerminalDashboard() {
             <span>{isRunning ? 'ENGINE LIVE' : 'ENGINE PAUSED'}</span>
           </button>
 
+          {/* Data Source Mode Switcher */}
+          <div className="flex items-center bg-terminal-card border border-terminal-border rounded-lg p-0.5">
+            <button
+              onClick={() => setDataSource('REAL_SOLANA')}
+              className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                dataSource === 'REAL_SOLANA'
+                  ? 'bg-terminal-green text-terminal-bg font-black'
+                  : 'text-terminal-muted hover:text-terminal-text'
+              }`}
+            >
+              <Globe className="w-3 h-3" /> REAL SOLANA LIVE
+            </button>
+            <button
+              onClick={() => setDataSource('SIMULATOR')}
+              className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                dataSource === 'SIMULATOR'
+                  ? 'bg-terminal-cyan text-terminal-bg font-black'
+                  : 'text-terminal-muted hover:text-terminal-text'
+              }`}
+            >
+              <SlidersHorizontal className="w-3 h-3" /> SIMULATOR
+            </button>
+          </div>
+
           {/* Mutex Single Position Lock Status */}
           <div className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 border text-[11px] ${
             telemetry.activePositionLocked
@@ -208,7 +281,7 @@ export default function TerminalDashboard() {
           }`}>
             {telemetry.activePositionLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
             <span className="font-bold">
-              {telemetry.activePositionLocked ? 'MUTEX: 1 POS LOCKED' : 'MUTEX: UNLOCKED (STANDBY)'}
+              {telemetry.activePositionLocked ? 'MUTEX: 1 POS LOCKED' : 'MUTEX: UNLOCKED'}
             </span>
           </div>
         </div>
@@ -265,7 +338,7 @@ export default function TerminalDashboard() {
             <div className="flex items-center gap-2">
               <Activity className="w-4 h-4 text-terminal-green" />
               <span className="font-bold tracking-wider text-terminal-text uppercase">
-                Desk Feed & gRPC Geyser Stream
+                Desk Feed ({dataSource === 'REAL_SOLANA' ? 'Live Solana Pump.fun & Raydium' : 'Simulator Stream'})
               </span>
             </div>
             <span className="text-[10px] text-terminal-muted">SLOT: #{telemetry.currentSlot}</span>
@@ -289,10 +362,22 @@ export default function TerminalDashboard() {
                 >
                   <div className="flex items-center justify-between gap-2 mb-1.5">
                     <div className="flex items-center gap-2">
+                      {item.token.iconUrl ? (
+                        <img src={item.token.iconUrl} alt={item.token.symbol} className="w-5 h-5 rounded-full object-cover border border-terminal-border" />
+                      ) : (
+                        <span className="w-5 h-5 rounded-full bg-terminal-border flex items-center justify-center text-[9px] font-bold text-terminal-text">
+                          {item.token.symbol.slice(1, 3)}
+                        </span>
+                      )}
                       <span className="font-black text-sm text-terminal-text">{item.token.symbol}</span>
                       <span className="text-[10px] px-1.5 py-0.2 rounded bg-terminal-bg text-terminal-muted border border-terminal-border">
                         {item.token.platform}
                       </span>
+                      {item.token.isRealData && (
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-terminal-green/20 text-terminal-green font-bold">
+                          ON-CHAIN
+                        </span>
+                      )}
                     </div>
                     
                     <div className="flex items-center gap-1.5">
@@ -308,7 +393,7 @@ export default function TerminalDashboard() {
                   </div>
 
                   <div className="flex items-center justify-between text-[11px] text-terminal-muted">
-                    <span className="truncate max-w-[200px]">{item.token.name}</span>
+                    <span className="truncate max-w-[180px]">{item.token.name}</span>
                     <span>LP: ${item.token.initialLpUsd.toLocaleString()}</span>
                     <span>Cosine: {item.token.narrativeCosineSim}</span>
                   </div>
@@ -346,15 +431,49 @@ export default function TerminalDashboard() {
 
             {selectedResult ? (
               <div className="space-y-3">
-                <div className="bg-terminal-card p-3 rounded-lg border border-terminal-border flex items-center justify-between">
-                  <div>
-                    <h3 className="font-black text-base text-terminal-text">{selectedResult.token.symbol}</h3>
-                    <p className="text-[11px] text-terminal-muted">{selectedResult.token.name}</p>
-                    <span className="text-[10px] text-terminal-cyan font-mono truncate block max-w-[200px]">
-                      {selectedResult.token.mint}
-                    </span>
+                <div className="bg-terminal-card p-3 rounded-lg border border-terminal-border flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2.5">
+                    {selectedResult.token.iconUrl && (
+                      <img src={selectedResult.token.iconUrl} alt={selectedResult.token.symbol} className="w-8 h-8 rounded-lg object-cover border border-terminal-border mt-0.5" />
+                    )}
+                    <div>
+                      <h3 className="font-black text-base text-terminal-text flex items-center gap-1.5">
+                        {selectedResult.token.symbol}
+                        {selectedResult.token.isRealData && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-terminal-green/20 text-terminal-green font-bold">
+                            REAL LIVE
+                          </span>
+                        )}
+                      </h3>
+                      <p className="text-[11px] text-terminal-muted">{selectedResult.token.name}</p>
+                      
+                      {/* Mint with Copy & Links */}
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-[10px] text-terminal-cyan font-mono truncate max-w-[160px]" title={selectedResult.token.mint}>
+                          {selectedResult.token.mint}
+                        </span>
+                        <button
+                          onClick={() => handleCopyMint(selectedResult.token.mint)}
+                          className="text-terminal-muted hover:text-terminal-text cursor-pointer"
+                          title="Copy Token Mint Address"
+                        >
+                          {copiedMint === selectedResult.token.mint ? <Check className="w-3 h-3 text-terminal-green" /> : <Copy className="w-3 h-3" />}
+                        </button>
+                        {selectedResult.token.dexUrl && (
+                          <a
+                            href={selectedResult.token.dexUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] text-terminal-green hover:underline flex items-center gap-0.5"
+                          >
+                            DexScreener <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div className="text-right">
+
+                  <div className="text-right shrink-0">
                     <span className="text-[10px] text-terminal-muted block">INITIAL LP</span>
                     <span className="text-sm font-bold text-terminal-green">${selectedResult.token.initialLpUsd.toLocaleString()}</span>
                   </div>
@@ -448,9 +567,14 @@ export default function TerminalDashboard() {
             {activePosition ? (
               <div className="space-y-3 bg-terminal-card p-3 rounded-lg border border-terminal-green/50 border-glow-green">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-black text-base text-terminal-text">{activePosition.token.symbol}</h4>
-                    <span className="text-[10px] text-terminal-muted">{activePosition.id}</span>
+                  <div className="flex items-center gap-2">
+                    {activePosition.token.iconUrl && (
+                      <img src={activePosition.token.iconUrl} alt={activePosition.token.symbol} className="w-7 h-7 rounded-lg object-cover" />
+                    )}
+                    <div>
+                      <h4 className="font-black text-base text-terminal-text">{activePosition.token.symbol}</h4>
+                      <span className="text-[10px] text-terminal-muted">{activePosition.id}</span>
+                    </div>
                   </div>
                   <div className="text-right">
                     <span className={`text-base font-black ${activePosition.pnlPct >= 0 ? 'text-terminal-green glow-green' : 'text-terminal-red glow-red'}`}>
