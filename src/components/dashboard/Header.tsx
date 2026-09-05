@@ -18,7 +18,8 @@ import {
   Layers,
   Radio,
   ExternalLink,
-  RefreshCw
+  RefreshCw,
+  Keyboard
 } from 'lucide-react';
 import { rpcFailoverInstance } from '../../lib/rpcFailover';
 import Badge from '../ui/Badge';
@@ -32,6 +33,8 @@ interface HeaderProps {
   onOpenAnalytics: () => void;
   onOpenExecution: () => void;
   onOpenJupiter?: () => void;
+  onOpenRpc?: () => void;
+  onOpenShortcuts?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -40,7 +43,9 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAlerts,
   onOpenAnalytics,
   onOpenExecution,
-  onOpenJupiter
+  onOpenJupiter,
+  onOpenRpc,
+  onOpenShortcuts
 }) => {
   const {
     engineStatus,
@@ -106,8 +111,8 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Middle: RPC & Network Telemetry with Sub-100ms Failover (PRD Section 7.2) */}
         <div className="hidden lg:flex items-center gap-5 text-[11px] bg-zinc-900/60 border border-zinc-800/80 px-3.5 py-1.5 rounded-xl">
           <button
-            onClick={() => rpcFailoverInstance.triggerFailover('User triggered manual failover test')}
-            title="Klik untuk beralih RPC endpoint / simulasi failover <100ms (PRD §7.2)"
+            onClick={() => (onOpenRpc ? onOpenRpc() : rpcFailoverInstance.triggerFailover('Manual failover test'))}
+            title="Klik untuk membuka RPC Manager & Latency Benchmark (PRD §7.2)"
             className="flex items-center gap-1.5 text-zinc-400 hover:text-zinc-100 transition-all cursor-pointer group"
           >
             <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse group-hover:scale-110" />
@@ -143,6 +148,17 @@ export const Header: React.FC<HeaderProps> = ({
           >
             {isAudioMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
           </button>
+
+          {/* Keyboard Shortcuts Cheat Sheet */}
+          {onOpenShortcuts && (
+            <button
+              onClick={onOpenShortcuts}
+              title="Keyboard Shortcuts Cheat Sheet (?)"
+              className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
+            >
+              <Keyboard className="w-4 h-4 text-purple-400" />
+            </button>
+          )}
 
           {/* Strategy Presets */}
           <button

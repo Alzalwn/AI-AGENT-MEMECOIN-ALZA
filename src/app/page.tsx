@@ -23,6 +23,8 @@ import ExecutionSettingsModal from '../components/ExecutionSettingsModal';
 import GeminiNarrativeModal from '../components/GeminiNarrativeModal';
 import PnlShareModal from '../components/PnlShareModal';
 import JitoBundleTrackerModal from '../components/JitoBundleTrackerModal';
+import KeyboardShortcutsModal from '../components/KeyboardShortcutsModal';
+import RpcManagerModal from '../components/RpcManagerModal';
 import { TelegramConfig } from '../lib/telegram';
 import { DiscordConfig } from '../lib/discord';
 import { JitoBundleReceipt } from '../lib/jito';
@@ -45,6 +47,7 @@ function TerminalAppInner() {
     updateAutoSnipeConfig,
     engineStatus,
     toggleEngine,
+    emergencyKillSwitch,
     setVisualMode,
     toggleAudio,
     isAudioMuted
@@ -62,6 +65,56 @@ function TerminalAppInner() {
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
   const [shareTrade, setShareTrade] = useState<ActivePosition | ClosedTrade | null>(null);
   const [isJitoTrackerOpen, setIsJitoTrackerOpen] = useState<boolean>(false);
+  const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState<boolean>(false);
+  const [isRpcModalOpen, setIsRpcModalOpen] = useState<boolean>(false);
+
+  // Global Pro Trader Keyboard Shortcuts
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        toggleEngine();
+      } else if (e.key.toLowerCase() === 'k') {
+        emergencyKillSwitch();
+      } else if (e.key === '1') {
+        setVisualMode('radar');
+      } else if (e.key === '2') {
+        setVisualMode('cluster');
+      } else if (e.key === '3') {
+        setVisualMode('kelly');
+      } else if (e.key === '4') {
+        setVisualMode('ledger');
+      } else if (e.key === '5') {
+        setVisualMode('chart');
+      } else if (e.key === '6') {
+        setVisualMode('grid');
+      } else if (e.key.toLowerCase() === 'm') {
+        toggleAudio();
+      } else if (e.key.toLowerCase() === 's') {
+        setIsStrategyModalOpen((prev) => !prev);
+      } else if (e.key.toLowerCase() === 'a') {
+        setIsTelegramModalOpen((prev) => !prev);
+      } else if (e.key.toLowerCase() === 'p') {
+        setIsStatsModalOpen((prev) => !prev);
+      } else if (e.key.toLowerCase() === 'e') {
+        setIsExecutionModalOpen((prev) => !prev);
+      } else if (e.key.toLowerCase() === 'w') {
+        setIsWalletModalOpen((prev) => !prev);
+      } else if (e.key.toLowerCase() === 'j') {
+        setIsJupiterModalOpen((prev) => !prev);
+      } else if (e.key.toLowerCase() === 'r') {
+        setIsRpcModalOpen((prev) => !prev);
+      } else if (e.key === '?') {
+        setIsShortcutsModalOpen((prev) => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleEngine, emergencyKillSwitch, setVisualMode, toggleAudio]);
 
   // Webhook Alert Configs
   const [telegramConfig, setTelegramConfig] = useState<TelegramConfig>(() => {
@@ -104,6 +157,8 @@ function TerminalAppInner() {
         onOpenAnalytics={() => setIsStatsModalOpen(true)}
         onOpenExecution={() => setIsExecutionModalOpen(true)}
         onOpenJupiter={() => setIsJupiterModalOpen(true)}
+        onOpenRpc={() => setIsRpcModalOpen(true)}
+        onOpenShortcuts={() => setIsShortcutsModalOpen(true)}
       />
 
       {/* Main Workspace Body */}
@@ -271,6 +326,28 @@ function TerminalAppInner() {
         onClose={() => setIsJitoTrackerOpen(false)}
         receipt={latestJitoReceipt}
       />
+
+      <KeyboardShortcutsModal
+        isOpen={isShortcutsModalOpen}
+        onClose={() => setIsShortcutsModalOpen(false)}
+      />
+
+      <RpcManagerModal
+        isOpen={isRpcModalOpen}
+        onClose={() => setIsRpcModalOpen(false)}
+      />
+
+      {/* Floating Pro Trader Hotkeys Trigger Button */}
+      <button
+        onClick={() => setIsShortcutsModalOpen(true)}
+        className="fixed bottom-4 right-4 z-30 p-2.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-400 hover:text-zinc-100 shadow-[0_0_20px_rgba(0,0,0,0.6)] flex items-center gap-2 text-xs font-mono backdrop-blur-md transition-all cursor-pointer group"
+        title="Buka Pro Trader Keyboard Shortcuts (?)"
+      >
+        <span className="w-5 h-5 rounded-lg bg-purple-500/20 text-purple-400 border border-purple-500/40 flex items-center justify-center font-black text-[10px] group-hover:scale-110 transition-transform">
+          ?
+        </span>
+        <span className="hidden sm:inline font-bold">Hotkeys</span>
+      </button>
     </div>
   );
 }
