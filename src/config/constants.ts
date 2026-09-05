@@ -51,6 +51,13 @@ export const JITO_TIP_ACCOUNTS = [
   '3AVi9Tg9Uo68tJfuvoKvqKNWKkC5wPdSSdeBnizKZ6jT'
 ] as const;
 
+export const JITO_TIP_TIERS = {
+  ECONOMY: 0.000030,
+  STANDARD: 0.000050,
+  FAST: 0.000150,
+  TURBO: 0.000300,
+} as const;
+
 export const STRATEGY_PRESETS = {
   BALANCED: {
     presetName: 'BALANCED' as const,

@@ -34,7 +34,10 @@ import {
   History,
   Share2,
   Keyboard,
-  Terminal as TerminalIcon
+  Terminal as TerminalIcon,
+  Send,
+  Search,
+  Crosshair
 } from 'lucide-react';
 import {
   TokenSignal,
@@ -48,8 +51,10 @@ import {
 import { generateRandomTokenSignal } from '../engine/simulator';
 import { runAgentConsensus } from '../agents/consensus';
 import { evaluateExitAgent } from '../agents/exit';
-import { PRD_THRESHOLDS, STRATEGY_PRESETS } from '../config/constants';
+import { PRD_THRESHOLDS, STRATEGY_PRESETS, JITO_TIP_TIERS } from '../config/constants';
 import { soundFx } from '../engine/audioEngine';
+import { TelegramConfig, sendTelegramAlphaAlert } from '../lib/telegram';
+import { JitoBundleReceipt, createJitoBundleReceipt } from '../lib/jito';
 import StrategyRadar from '../components/StrategyRadar';
 import CumulativeCurve from '../components/CumulativeCurve';
 import NarrativeCluster from '../components/NarrativeCluster';
@@ -60,6 +65,8 @@ import StrategyPresetModal from '../components/StrategyPresetModal';
 import TradeHistoryLedger from '../components/TradeHistoryLedger';
 import WalletConnectModal from '../components/WalletConnectModal';
 import PnlShareModal from '../components/PnlShareModal';
+import TelegramSettingsModal from '../components/TelegramSettingsModal';
+import JitoBundleTrackerModal from '../components/JitoBundleTrackerModal';
 
 export default function TerminalDashboard() {
   const [isRunning, setIsRunning] = useState<boolean>(true);
@@ -186,6 +193,66 @@ export default function TerminalDashboard() {
   const [shareTrade, setShareTrade] = useState<ClosedTrade | ActivePosition | null>(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
 
+  // Manual Mint Sniper Bar State
+  const [manualMintInput, setManualMintInput] = useState<string>('');
+  const [isSearchingMint, setIsSearchingMint] = useState<boolean>(false);
+  const [sniperStatus, setSniperStatus] = useState<string | null>(null);
+
+  // Telegram Alpha Webhook Configuration State
+  const [isTelegramModalOpen, setIsTelegramModalOpen] = useState<boolean>(false);
+  const [telegramConfig, setTelegramConfig] = useState<TelegramConfig>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('GT_TELEGRAM_CONFIG');
+        if (saved) return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return { botToken: '', chatId: '', isEnabled: false };
+  });
+
+  // Jito MEV Live Bundle Receipt Tracker State
+  const [latestJitoReceipt, setLatestJitoReceipt] = useState<JitoBundleReceipt | null>(null);
+  const [isJitoTrackerOpen, setIsJitoTrackerOpen] = useState<boolean>(false);
+
+  // Manual Mint Sniper Action
+  const handleSnipeManualMint = async () => {
+    const clean = manualMintInput.trim();
+    if (!clean) return;
+    try {
+      setIsSearchingMint(true);
+      setSniperStatus('Scanning on-chain pool...');
+      const res = await fetch(`/api/tokens/lookup?mint=${encodeURIComponent(clean)}`);
+      if (!res.ok) {
+        setSniperStatus('Token mint tidak ditemukan di Solana DEX');
+        setTimeout(() => setSniperStatus(null), 3500);
+        return;
+      }
+      const data = await res.json();
+      if (data.token) {
+        const result = runAgentConsensus(data.token, thresholds);
+        setSelectedResult(result);
+        setConsensusFeed((prev) => [result, ...prev.slice(0, 49)]);
+        setSniperStatus(`Sniper complete: ${result.token.symbol} [${result.verdict}]`);
+        setTimeout(() => setSniperStatus(null), 4000);
+
+        if (result.verdict === 'APPROVED') {
+          soundFx.playApproval();
+          // Send Telegram Alpha alert if configured
+          if (telegramConfig.isEnabled) {
+            sendTelegramAlphaAlert(data.token, telegramConfig, 92, 'BULLISH', JITO_TIP_TIERS[selectedTipTier]);
+          }
+        } else {
+          soundFx.playVeto();
+        }
+      }
+    } catch (e: any) {
+      setSniperStatus(`Error sniper: ${e.message}`);
+      setTimeout(() => setSniperStatus(null), 3500);
+    } finally {
+      setIsSearchingMint(false);
+    }
+  };
+
   // Global Hacker Keyboard Hotkeys (Space: Pause, 1-4: Views, M: Mute, Esc: Close)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -215,6 +282,8 @@ export default function TerminalDashboard() {
         setIsWalletModalOpen(false);
         setIsEdgeModalOpen(false);
         setIsShareModalOpen(false);
+        setIsTelegramModalOpen(false);
+        setIsJitoTrackerOpen(false);
       }
     };
 
@@ -352,6 +421,16 @@ export default function TerminalDashboard() {
           const solInvested = +(0.62 * (thresholds.kellyFraction / 0.25)).toFixed(3);
           const entryPrice = token.priceSol;
           const tokenAmount = solInvested / entryPrice;
+
+          // Jito MEV Bundle generation
+          const tipSol = JITO_TIP_TIERS[selectedTipTier] || 0.000050;
+          const bundleReceipt = createJitoBundleReceipt(token, tipSol, telemetry.currentSlot);
+          setLatestJitoReceipt(bundleReceipt);
+
+          // Telegram Alpha notification
+          if (telegramConfig.isEnabled) {
+            sendTelegramAlphaAlert(token, telegramConfig, 89, 'BULLISH', tipSol);
+          }
 
           soundFx.playPositionOpen();
           setTelemetry((t) => ({ ...t, activePositionLocked: true }));
@@ -589,6 +668,34 @@ export default function TerminalDashboard() {
             </span>
           </div>
 
+          {/* Telegram Alpha Bot Alert Trigger */}
+          <button
+            onClick={() => setIsTelegramModalOpen(true)}
+            className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 border text-[11px] font-bold transition-all cursor-pointer ${
+              telegramConfig.isEnabled
+                ? 'bg-terminal-cyan/10 border-terminal-cyan text-terminal-cyan hover:bg-terminal-cyan/20'
+                : 'bg-terminal-card border-terminal-border text-terminal-muted hover:text-terminal-text hover:border-terminal-border-active'
+            }`}
+            title="Konfigurasi Telegram Alpha Bot Alert"
+          >
+            <Send className="w-3.5 h-3.5" />
+            <span>{telegramConfig.isEnabled ? 'TG BOT: ACTIVE' : 'TG BOT: OFF'}</span>
+          </button>
+
+          {/* Jito MEV Bundle Tracker Trigger */}
+          <button
+            onClick={() => setIsJitoTrackerOpen(true)}
+            className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 border text-[11px] font-bold transition-all cursor-pointer ${
+              latestJitoReceipt
+                ? 'bg-terminal-green/10 border-terminal-green text-terminal-green hover:bg-terminal-green/20'
+                : 'bg-terminal-card border-terminal-border text-terminal-muted hover:text-terminal-text hover:border-terminal-border-active'
+            }`}
+            title="Lihat Jito MEV Live Bundle Explorer Tracker"
+          >
+            <Zap className="w-3.5 h-3.5" />
+            <span>{latestJitoReceipt ? 'JITO: BUNDLED' : 'JITO TRACKER'}</span>
+          </button>
+
           {/* PRD 7.2 Edge-Case Stress Test Trigger */}
           <button
             onClick={() => setIsEdgeModalOpen(true)}
@@ -642,6 +749,67 @@ export default function TerminalDashboard() {
           </div>
         </div>
       </header>
+
+      {/* MANUAL MINT SNIPER & ON-CHAIN LOOKUP BAR */}
+      <div className="bg-terminal-panel/90 backdrop-blur border border-terminal-border rounded-xl p-2.5 px-4 flex flex-col md:flex-row items-center justify-between gap-3 shadow-lg">
+        <div className="flex items-center gap-2 w-full md:w-auto flex-1">
+          <div className="p-1.5 rounded-lg bg-terminal-green/10 border border-terminal-green/30 text-terminal-green">
+            <Crosshair className="w-4 h-4" />
+          </div>
+          <span className="text-[11px] font-bold tracking-wider text-terminal-muted uppercase whitespace-nowrap hidden sm:inline">
+            SNIPE MINT CA:
+          </span>
+          <div className="relative flex-1">
+            <input
+              type="text"
+              value={manualMintInput}
+              onChange={(e) => setManualMintInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSnipeManualMint()}
+              placeholder="Paste Solana CA mint (e.g. Pump.fun, Raydium, DEX pair address)..."
+              className="w-full bg-terminal-card border border-terminal-border focus:border-terminal-green text-terminal-text px-3 py-1.5 rounded-lg text-xs font-mono placeholder:text-terminal-muted/60 focus:outline-none focus:ring-1 focus:ring-terminal-green/40 transition-all pr-8"
+              disabled={isSearchingMint}
+            />
+            {manualMintInput && (
+              <button
+                onClick={() => setManualMintInput('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-terminal-muted hover:text-terminal-text text-xs"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          <button
+            onClick={handleSnipeManualMint}
+            disabled={isSearchingMint || !manualMintInput.trim()}
+            className="px-4 py-1.5 rounded-lg bg-terminal-green text-terminal-bg hover:bg-terminal-hover font-bold text-xs flex items-center gap-1.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md cursor-pointer whitespace-nowrap"
+          >
+            {isSearchingMint ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Search className="w-3.5 h-3.5" />
+            )}
+            <span>{isSearchingMint ? 'SNIPING...' : 'SNIPE & AUDIT'}</span>
+          </button>
+        </div>
+
+        {/* Status indicator / quick info */}
+        <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end text-[11px] font-mono">
+          {sniperStatus && (
+            <span className="text-terminal-amber animate-pulse font-semibold px-2 py-0.5 rounded bg-terminal-amber/10 border border-terminal-amber/30">
+              {sniperStatus}
+            </span>
+          )}
+          {latestJitoReceipt && (
+            <button
+              onClick={() => setIsJitoTrackerOpen(true)}
+              className="text-[10px] text-terminal-cyan hover:underline flex items-center gap-1 px-2 py-0.5 rounded bg-terminal-cyan/10 border border-terminal-cyan/30 cursor-pointer"
+            >
+              <Zap className="w-3 h-3" />
+              <span>Bundle #{latestJitoReceipt.bundleId.slice(0, 10)}...</span>
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* 2. CUMULATIVE PNL CURVE & MEV VOLUME MODULE (PRD Section 5) */}
       <CumulativeCurve
@@ -1191,6 +1359,21 @@ export default function TerminalDashboard() {
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
         trade={shareTrade}
+      />
+
+      {/* Telegram Alpha Bot Alert Configuration Modal */}
+      <TelegramSettingsModal
+        isOpen={isTelegramModalOpen}
+        onClose={() => setIsTelegramModalOpen(false)}
+        config={telegramConfig}
+        onSaveConfig={(newCfg) => setTelegramConfig(newCfg)}
+      />
+
+      {/* Jito MEV Live Bundle Explorer Tracker Modal */}
+      <JitoBundleTrackerModal
+        isOpen={isJitoTrackerOpen}
+        onClose={() => setIsJitoTrackerOpen(false)}
+        receipt={latestJitoReceipt}
       />
 
     </main>
