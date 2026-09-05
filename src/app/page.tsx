@@ -76,7 +76,7 @@ import { AutoSnipeModal } from '../components/AutoSnipeModal';
 export default function TerminalDashboard() {
   const [isRunning, setIsRunning] = useState<boolean>(true);
   const [dataSource, setDataSource] = useState<'REAL_SOLANA' | 'SIMULATOR'>('REAL_SOLANA');
-  const [visualMode, setVisualMode] = useState<'radar' | 'cluster' | 'kelly' | 'ledger'>('radar');
+  const [visualMode, setVisualMode] = useState<'radar' | 'cluster' | 'kelly' | 'ledger' | 'chart'>('radar');
   const [copiedMint, setCopiedMint] = useState<string | null>(null);
 
   // Audio Telemetry (Web Audio API Synthesizer)
@@ -310,6 +310,8 @@ export default function TerminalDashboard() {
         setVisualMode('kelly');
       } else if (e.key === '4') {
         setVisualMode('ledger');
+      } else if (e.key === '5') {
+        setVisualMode('chart');
       } else if (e.key.toLowerCase() === 'm') {
         const next = !soundFx.getIsMuted();
         soundFx.setMuted(next);
@@ -1098,7 +1100,17 @@ export default function TerminalDashboard() {
                   : 'text-terminal-muted hover:text-terminal-text hover:bg-terminal-card border border-transparent'
               }`}
             >
-              <History className="w-3.5 h-3.5" /> Trades Ledger ({closedTrades.length})
+              <History className="w-3.5 h-3.5" /> Ledger ({closedTrades.length})
+            </button>
+            <button
+              onClick={() => setVisualMode('chart')}
+              className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 ${
+                visualMode === 'chart'
+                  ? 'bg-terminal-cyan/20 text-terminal-cyan border border-terminal-cyan/50 shadow-[0_0_8px_rgba(0,240,255,0.2)]'
+                  : 'text-terminal-muted hover:text-terminal-text hover:bg-terminal-card border border-transparent'
+              }`}
+            >
+              <TrendingUp className="w-3.5 h-3.5" /> DEX Chart
             </button>
           </div>
 
@@ -1131,6 +1143,50 @@ export default function TerminalDashboard() {
                 setIsShareModalOpen(true);
               }}
             />
+          )}
+          {visualMode === 'chart' && (
+            <div className="bg-terminal-panel border border-terminal-border rounded-xl p-3 flex flex-col gap-2 shadow-xl min-h-[380px]">
+              <div className="flex items-center justify-between border-b border-terminal-border pb-2">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-terminal-cyan" />
+                  <span className="font-bold text-xs text-terminal-text uppercase tracking-wider">
+                    {selectedResult?.token?.symbol ? `${selectedResult.token.symbol} Interactive DEX Candlesticks` : 'Live DEX Candlestick Chart'}
+                  </span>
+                </div>
+                {selectedResult?.token?.mint && (
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[10px] text-terminal-cyan truncate max-w-[140px]" title={selectedResult.token.mint}>
+                      {selectedResult.token.mint}
+                    </span>
+                    {selectedResult.token.dexUrl && (
+                      <a
+                        href={selectedResult.token.dexUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[10px] text-terminal-green hover:underline flex items-center gap-0.5"
+                      >
+                        DexScreener <ExternalLink className="w-2.5 h-2.5" />
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+              {selectedResult?.token?.mint ? (
+                <div className="w-full h-[360px] rounded-lg overflow-hidden border border-terminal-border/80 bg-terminal-bg relative">
+                  <iframe
+                    src={`https://dexscreener.com/solana/${selectedResult.token.mint}?embed=1&theme=dark&trades=0&info=0`}
+                    className="w-full h-full border-0"
+                    title="DexScreener Live Chart"
+                    loading="lazy"
+                  />
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-[320px] text-terminal-muted text-xs gap-2">
+                  <TrendingUp className="w-8 h-8 text-terminal-muted/40 animate-pulse" />
+                  <span>Pilih token di feed atau jalankan Manual Sniper untuk memuat live candlestick chart.</span>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Active Evaluated Token Card & Agent Matrix */}
