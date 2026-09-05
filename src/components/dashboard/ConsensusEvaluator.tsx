@@ -16,13 +16,15 @@ import {
   Sparkles,
   Layers,
   Copy,
-  Check
+  Check,
+  Grid
 } from 'lucide-react';
 import { ClosedTrade } from '../../types/terminal';
 import StrategyRadar from '../StrategyRadar';
 import NarrativeCluster from '../NarrativeCluster';
 import KellyRiskEngine from '../KellyRiskEngine';
 import TradeHistoryLedger from '../TradeHistoryLedger';
+import ScanGrid from './ScanGrid';
 
 interface ConsensusEvaluatorProps {
   onOpenGemini: () => void;
@@ -115,6 +117,17 @@ export const ConsensusEvaluator: React.FC<ConsensusEvaluatorProps> = ({
         >
           <TrendingUp className="w-3.5 h-3.5" /> DEX Chart
         </button>
+
+        <button
+          onClick={() => setVisualMode('grid')}
+          className={`flex-1 py-1.5 px-2 rounded-xl text-[10px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+            visualMode === 'grid'
+              ? 'bg-purple-500/20 text-purple-400 border border-purple-500/50 shadow-[0_0_8px_rgba(168,85,247,0.2)]'
+              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 border border-transparent'
+          }`}
+        >
+          <Grid className="w-3.5 h-3.5" /> Scan Grid (96)
+        </button>
       </div>
 
       {/* Visual Component Render */}
@@ -139,6 +152,9 @@ export const ConsensusEvaluator: React.FC<ConsensusEvaluatorProps> = ({
           onSelectTradeForShare={(trade) => onShareTrade && onShareTrade(trade)}
           onOpenAnalytics={onOpenAnalytics}
         />
+      )}
+      {visualMode === 'grid' && (
+        <ScanGrid onInspectToken={(res) => selectResult(res)} />
       )}
       {visualMode === 'chart' && (
         <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800/80 rounded-2xl p-4 shadow-xl space-y-3">

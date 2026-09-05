@@ -35,6 +35,7 @@ export interface AgentConfig {
   mode: 'AUTONOMOUS' | 'SEMI_AUTONOMOUS' | 'MANUAL';
   slippagePct: number;
   maxBuyAmountSol: number;
+  useKellySizing?: boolean;
   priorityFeeMicroLamports: number;
   jitoTipTier: 'ECONOMY' | 'STANDARD' | 'FAST' | 'TURBO';
   takeProfitMultiplier: number;
@@ -51,7 +52,7 @@ export interface AgentConfig {
 export interface TradingState {
   engineStatus: 'AUTONOMOUS' | 'IDLE' | 'PAUSED';
   dataSource: 'REAL_SOLANA' | 'SIMULATOR';
-  visualMode: 'radar' | 'cluster' | 'kelly' | 'ledger' | 'chart';
+  visualMode: 'radar' | 'cluster' | 'kelly' | 'ledger' | 'chart' | 'grid';
   activePosition: ActivePosition | null;
   closedTrades: ClosedTrade[];
   consensusFeed: ConsensusResult[];
@@ -76,7 +77,7 @@ export interface TradingActions {
   manualExitPosition: () => void;
   snipeManualMint: (mint: string) => Promise<void>;
   selectResult: (result: ConsensusResult | null) => void;
-  setVisualMode: (mode: 'radar' | 'cluster' | 'kelly' | 'ledger' | 'chart') => void;
+  setVisualMode: (mode: 'radar' | 'cluster' | 'kelly' | 'ledger' | 'chart' | 'grid') => void;
   updateAgentConfig: (updates: Partial<AgentConfig>) => void;
   updateExecutionConfig: (updates: Partial<ExecutionConfig>) => void;
   updateAutoSnipeConfig: (updates: Partial<AutoSnipeConfig>) => void;

@@ -17,8 +17,10 @@ import {
   Pause,
   Layers,
   Radio,
-  ExternalLink
+  ExternalLink,
+  RefreshCw
 } from 'lucide-react';
+import { rpcFailoverInstance } from '../../lib/rpcFailover';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import ConfirmModal from '../ui/ConfirmModal';
@@ -101,14 +103,19 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Middle: RPC & Network Telemetry */}
+        {/* Middle: RPC & Network Telemetry with Sub-100ms Failover (PRD Section 7.2) */}
         <div className="hidden lg:flex items-center gap-5 text-[11px] bg-zinc-900/60 border border-zinc-800/80 px-3.5 py-1.5 rounded-xl">
-          <div className="flex items-center gap-1.5 text-zinc-400">
-            <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+          <button
+            onClick={() => rpcFailoverInstance.triggerFailover('User triggered manual failover test')}
+            title="Klik untuk beralih RPC endpoint / simulasi failover <100ms (PRD §7.2)"
+            className="flex items-center gap-1.5 text-zinc-400 hover:text-zinc-100 transition-all cursor-pointer group"
+          >
+            <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse group-hover:scale-110" />
             <span>RPC:</span>
-            <span className="text-zinc-200 font-bold">{networkMetrics.rpcLabel}</span>
+            <span className="text-zinc-200 font-bold group-hover:underline">{networkMetrics.rpcLabel}</span>
             <span className="text-[10px] text-emerald-400">({networkMetrics.latencyMs}ms)</span>
-          </div>
+            <RefreshCw className="w-2.5 h-2.5 opacity-40 group-hover:opacity-100 transition-opacity ml-0.5" />
+          </button>
 
           <div className="h-3 w-px bg-zinc-800" />
 

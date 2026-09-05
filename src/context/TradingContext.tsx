@@ -29,11 +29,13 @@ import { STRATEGY_PRESETS, JITO_TIP_TIERS } from '../config/constants';
 import { sendTelegramAlphaAlert } from '../lib/telegram';
 import { sendDiscordAlphaAlert } from '../lib/discord';
 import { createJitoBundleReceipt } from '../lib/jito';
+import { rpcFailoverInstance } from '../lib/rpcFailover';
 
 const DEFAULT_AGENT_CONFIG: AgentConfig = {
   mode: 'AUTONOMOUS',
   slippagePct: 1.5,
   maxBuyAmountSol: 0.62,
+  useKellySizing: true,
   priorityFeeMicroLamports: 150000,
   jitoTipTier: 'STANDARD',
   takeProfitMultiplier: 3.0,
@@ -48,8 +50,8 @@ const DEFAULT_AGENT_CONFIG: AgentConfig = {
 };
 
 const DEFAULT_NETWORK_METRICS: NetworkMetrics = {
-  rpcLabel: 'Geyser gRPC (Primary)',
-  latencyMs: 38,
+  rpcLabel: rpcFailoverInstance.getActiveEndpoint().name,
+  latencyMs: rpcFailoverInstance.getActiveEndpoint().latencyMs,
   currentSlot: 284193420,
   gasPriceGwei: 0.000005,
   jitoTipSol: 0.00005,
@@ -62,7 +64,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Core Engine & Visual States
   const [engineStatus, setEngineStatus] = useState<'AUTONOMOUS' | 'IDLE' | 'PAUSED'>('AUTONOMOUS');
   const [dataSource, setDataSource] = useState<'REAL_SOLANA' | 'SIMULATOR'>('REAL_SOLANA');
-  const [visualMode, setVisualMode] = useState<'radar' | 'cluster' | 'kelly' | 'ledger' | 'chart'>('radar');
+  const [visualMode, setVisualMode] = useState<'radar' | 'cluster' | 'kelly' | 'ledger' | 'chart' | 'grid'>('radar');
 
   // Audio Telemetry
   const [isAudioMuted, setIsAudioMuted] = useState<boolean>(() => soundFx.getIsMuted());
@@ -104,8 +106,15 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   ]);
 
-  // Feed & Selection
-  const [consensusFeed, setConsensusFeed] = useState<ConsensusResult[]>([]);
+  // Feed & Selection (Pre-populate with 24 initial signals for Scan Grid throughput)
+  const [consensusFeed, setConsensusFeed] = useState<ConsensusResult[]>(() => {
+    const initial: ConsensusResult[] = [];
+    for (let i = 0; i < 24; i++) {
+      const sig = generateRandomTokenSignal();
+      initial.push(runAgentConsensus(sig, STRATEGY_PRESETS.BALANCED));
+    }
+    return initial;
+  });
   const [selectedResult, setSelectedResult] = useState<ConsensusResult | null>(null);
 
   // Live Terminal Activity Logs
@@ -390,6 +399,23 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [activePosition, appendLog]);
 
+  // RPC Failover Listener (PRD Section 7.2 Sub-100ms failover)
+  useEffect(() => {
+    const unsubscribe = rpcFailoverInstance.onFailover((oldRpc, newRpc, reason, durationMs) => {
+      appendLog(
+        'SYSTEM',
+        'WARN',
+        `[PRD §7.2] RPC FAILOVER (${durationMs}ms): Beralih dari ${oldRpc.name} ke ${newRpc.name} (${newRpc.latencyMs}ms) - Alasan: ${reason}`
+      );
+      setNetworkMetrics((m) => ({
+        ...m,
+        rpcLabel: newRpc.name,
+        latencyMs: newRpc.latencyMs
+      }));
+    });
+    return () => unsubscribe();
+  }, [appendLog]);
+
   // Autonomous Ingestion Loop
   useEffect(() => {
     if (engineStatus !== 'AUTONOMOUS') return;
@@ -406,7 +432,8 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const rawToken = generateRandomTokenSignal();
       const consensus = runAgentConsensus(rawToken, STRATEGY_PRESETS.BALANCED);
 
-      setConsensusFeed((prev) => [consensus, ...prev.slice(0, 39)]);
+      // Keep rolling feed of 96 items for the PRD 96-cell Scan Grid Matrix
+      setConsensusFeed((prev) => [consensus, ...prev.slice(0, 95)]);
 
       setTelemetry((prev) => ({
         ...prev,
@@ -418,12 +445,32 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         soundFx.playApproval();
         appendLog('SCAN', 'SUCCESS', `Signal APPROVED: ${consensus.token.symbol} (Score: ${consensus.token.narrativeCosineSim})`);
 
-        // Auto Snipe Execution if no active position
+        // Auto Snipe Execution if no active position (Single Position Mutex Guard)
         setActivePosition((currPos) => {
           if (currPos !== null) return currPos; // Single position mutex
 
           const entryPrice = consensus.token.priceSol;
-          const solInvest = 0.62;
+          
+          // PRD Section 6: Dynamic Fractional Kelly Sizing
+          // f_used = 0.25 * ((p * (b + 1) - 1) / b), capped at 6.2% of balance
+          let solInvest = autoSnipeConfig.buyAmountSol || agentConfig.maxBuyAmountSol || 0.5;
+          const isKellyActive = agentConfig.useKellySizing || autoSnipeConfig.useKellySizing;
+
+          if (isKellyActive) {
+            const currentBal = telemetry.currentBalanceSol || walletState.balanceSol || 10;
+            const totalPastTrades = telemetry.winCount + telemetry.lossCount;
+            const liveWinRate = totalPastTrades > 0 ? telemetry.winCount / totalPastTrades : 0.60;
+            const p = Math.max(0.45, Math.min(0.85, liveWinRate));
+            const b = 3.0; // 3.0R target payoff ratio
+            const fullKelly = Math.max(0, (p * (b + 1) - 1) / b);
+            const fracKelly = 0.25 * fullKelly; // Quarter-Kelly
+            
+            // PRD Section 6 Hard Cap: max 6.2% of balance, min 0.02 SOL
+            const kellyAmountSol = currentBal * fracKelly;
+            const maxCapSol = currentBal * 0.062;
+            solInvest = +(Math.min(maxCapSol, Math.max(0.02, kellyAmountSol))).toFixed(3);
+          }
+
           const newPos: ActivePosition = {
             id: `POS-${Math.floor(1000 + Math.random() * 9000)}`,
             token: consensus.token,
@@ -446,14 +493,20 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
             currentBalanceSol: +(t.currentBalanceSol - solInvest).toFixed(3)
           }));
 
-          appendLog('EXECUTION', 'SUCCESS', `AUTO-SNIPE: Opened position on ${consensus.token.symbol} via Jito MEV`);
+          appendLog(
+            'EXECUTION',
+            'SUCCESS',
+            `AUTO-SNIPE: Opened position on ${consensus.token.symbol} (${solInvest} SOL${
+              isKellyActive ? ' via Fractional Kelly 6.2% Cap' : ''
+            }) via Jito MEV`
+          );
           return newPos;
         });
       }
     }, 2800);
 
     return () => clearInterval(interval);
-  }, [engineStatus, appendLog]);
+  }, [engineStatus, appendLog, agentConfig, autoSnipeConfig, telemetry, walletState]);
 
   // Real-Time On-Chain Price Stream & Exit Agent Evaluator
   useEffect(() => {

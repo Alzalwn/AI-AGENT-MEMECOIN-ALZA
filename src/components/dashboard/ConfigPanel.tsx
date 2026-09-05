@@ -151,6 +151,37 @@ export const ConfigPanel: React.FC = () => {
             </button>
           ))}
         </div>
+
+        {/* PRD Section 6: Dynamic Fractional Kelly Sizing Toggle */}
+        <div
+          onClick={() => {
+            const nextVal = !agentConfig.useKellySizing;
+            updateAgentConfig({ useKellySizing: nextVal });
+            appendLog(
+              'RISK',
+              'INFO',
+              `Dynamic Fractional Kelly Sizing: ${nextVal ? 'ENABLED (Capped at 6.2% balance)' : 'DISABLED (Using static sizing)'}`
+            );
+          }}
+          className="flex items-center justify-between p-2 rounded-xl bg-zinc-950/60 border border-zinc-800 hover:border-zinc-700 transition-all cursor-pointer text-[11px] mt-2"
+        >
+          <div className="flex items-center gap-2 text-zinc-300">
+            <Coins className="w-3.5 h-3.5 text-emerald-400" />
+            <div>
+              <span className="block font-bold">Dynamic Fractional Kelly</span>
+              <span className="text-[9px] text-zinc-500 block">PRD §6: Auto-size ≤6.2% saldo</span>
+            </div>
+          </div>
+          <span
+            className={`text-[9px] px-2 py-0.5 rounded font-bold ${
+              agentConfig.useKellySizing
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                : 'bg-zinc-800 text-zinc-500'
+            }`}
+          >
+            {agentConfig.useKellySizing ? 'KELLY (6.2%)' : 'STATIC'}
+          </span>
+        </div>
       </div>
 
       {/* 4. Anti-Rugpull On-Chain Security Toggles */}

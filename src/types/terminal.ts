@@ -138,5 +138,6 @@ export interface AutoSnipeConfig {
   stopLossMultiplierR: number;
   maxDailyTrades: number;
   dailyTradesExecuted: number;
+  useKellySizing?: boolean;
   lastSnipeTimestamp?: number;
 }
