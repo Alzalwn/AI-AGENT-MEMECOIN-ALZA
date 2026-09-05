@@ -57,6 +57,7 @@ import { evaluateExitAgent } from '../agents/exit';
 import { PRD_THRESHOLDS, STRATEGY_PRESETS, JITO_TIP_TIERS } from '../config/constants';
 import { soundFx } from '../engine/audioEngine';
 import { TelegramConfig, sendTelegramAlphaAlert } from '../lib/telegram';
+import { DiscordConfig, sendDiscordAlphaAlert } from '../lib/discord';
 import { JitoBundleReceipt, createJitoBundleReceipt } from '../lib/jito';
 import StrategyRadar from '../components/StrategyRadar';
 import CumulativeCurve from '../components/CumulativeCurve';
@@ -215,6 +216,17 @@ export default function TerminalDashboard() {
     return { botToken: '', chatId: '', isEnabled: false };
   });
 
+  // Discord Alpha Webhook Configuration State
+  const [discordConfig, setDiscordConfig] = useState<DiscordConfig>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('GT_DISCORD_CONFIG');
+        if (saved) return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return { webhookUrl: '', isEnabled: false };
+  });
+
   // Jito MEV Live Bundle Receipt Tracker State
   const [latestJitoReceipt, setLatestJitoReceipt] = useState<JitoBundleReceipt | null>(null);
   const [isJitoTrackerOpen, setIsJitoTrackerOpen] = useState<boolean>(false);
@@ -278,6 +290,9 @@ export default function TerminalDashboard() {
           // Send Telegram Alpha alert if configured
           if (telegramConfig.isEnabled) {
             sendTelegramAlphaAlert(data.token, telegramConfig, 92, 'BULLISH', JITO_TIP_TIERS[selectedTipTier]);
+          }
+          if (discordConfig.isEnabled) {
+            sendDiscordAlphaAlert(data.token, discordConfig, 92, 'BULLISH', JITO_TIP_TIERS[selectedTipTier]);
           }
         } else {
           soundFx.playVeto();
@@ -496,6 +511,17 @@ export default function TerminalDashboard() {
             );
           }
 
+          // Discord Alpha notification
+          if (discordConfig.isEnabled) {
+            sendDiscordAlphaAlert(
+              token,
+              discordConfig,
+              Math.round(token.narrativeCosineSim * 100),
+              isAutoBotActive ? 'AUTONOMOUS AUTO-SNIPE' : 'BULLISH',
+              tipSol
+            );
+          }
+
           if (isAutoBotActive) {
             setAutoSnipeNotification(`🤖 AUTO-SNIPER FIRED: ${token.symbol} (${solInvested} SOL) | Jito Slot #${telemetry.currentSlot}`);
             setTimeout(() => setAutoSnipeNotification(null), 5000);
@@ -530,8 +556,11 @@ export default function TerminalDashboard() {
 
         // If position is active, update price & evaluate Exit Agent
         if (currentPos && currentPos.status === 'OPEN') {
-          const priceChangeDelta = (Math.random() - 0.44) * 0.12;
-          const newPrice = +(currentPos.currentPriceSol * (1 + priceChangeDelta)).toFixed(8);
+          let newPrice = currentPos.currentPriceSol;
+          if (!currentPos.token.isRealData) {
+            const priceChangeDelta = (Math.random() - 0.44) * 0.12;
+            newPrice = +(currentPos.currentPriceSol * (1 + priceChangeDelta)).toFixed(8);
+          }
           const highestPrice = Math.max(currentPos.highestPriceSol, newPrice);
           const pnlPct = +(((newPrice - currentPos.entryPriceSol) / currentPos.entryPriceSol) * 100).toFixed(2);
           const pnlSol = +((currentPos.solInvested * pnlPct) / 100).toFixed(4);
@@ -595,6 +624,54 @@ export default function TerminalDashboard() {
 
     return () => clearInterval(interval);
   }, [isRunning, dataSource, selectedResult, thresholds]);
+
+  // Real-time On-Chain Price Poller for Active Real Token Position
+  useEffect(() => {
+    if (!activePosition || activePosition.status !== 'OPEN' || !activePosition.token.mint || !activePosition.token.isRealData) {
+      return;
+    }
+
+    const mint = activePosition.token.mint;
+    let isCancelled = false;
+
+    const pollRealPrice = async () => {
+      try {
+        const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const pair = data.pairs?.[0];
+        if (pair && pair.priceNative && !isCancelled) {
+          const livePriceSol = parseFloat(pair.priceNative);
+          if (livePriceSol > 0 && !isNaN(livePriceSol)) {
+            setActivePosition((pos) => {
+              if (!pos || pos.token.mint !== mint || pos.status !== 'OPEN') return pos;
+              const highestPrice = Math.max(pos.highestPriceSol, livePriceSol);
+              const pnlPct = +(((livePriceSol - pos.entryPriceSol) / pos.entryPriceSol) * 100).toFixed(2);
+              const pnlSol = +((pos.solInvested * pnlPct) / 100).toFixed(4);
+              const rMultiplier = +(pnlPct / 15).toFixed(2);
+              return {
+                ...pos,
+                currentPriceSol: livePriceSol,
+                highestPriceSol: highestPrice,
+                pnlPct,
+                pnlSol,
+                rMultiplier,
+              };
+            });
+          }
+        }
+      } catch (err) {
+        // Fallback silently
+      }
+    };
+
+    pollRealPrice();
+    const pollInterval = setInterval(pollRealPrice, 3500);
+    return () => {
+      isCancelled = true;
+      clearInterval(pollInterval);
+    };
+  }, [activePosition?.token?.mint, activePosition?.status, activePosition?.token?.isRealData]);
 
   const handleManualExit = () => {
     if (!activePosition) return;
@@ -744,18 +821,22 @@ export default function TerminalDashboard() {
             </span>
           </div>
 
-          {/* Telegram Alpha Bot Alert Trigger */}
+          {/* Omnichannel Alpha Bot Alert (Telegram & Discord) Trigger */}
           <button
             onClick={() => setIsTelegramModalOpen(true)}
             className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 border text-[11px] font-bold transition-all cursor-pointer ${
-              telegramConfig.isEnabled
-                ? 'bg-terminal-cyan/10 border-terminal-cyan text-terminal-cyan hover:bg-terminal-cyan/20'
+              telegramConfig.isEnabled || discordConfig.isEnabled
+                ? 'bg-terminal-cyan/15 border-terminal-cyan text-terminal-cyan hover:bg-terminal-cyan/25 shadow-[0_0_8px_rgba(0,240,255,0.2)]'
                 : 'bg-terminal-card border-terminal-border text-terminal-muted hover:text-terminal-text hover:border-terminal-border-active'
             }`}
-            title="Konfigurasi Telegram Alpha Bot Alert"
+            title="Konfigurasi Webhook Alerts (Telegram & Discord)"
           >
             <Send className="w-3.5 h-3.5" />
-            <span>{telegramConfig.isEnabled ? 'TG BOT: ACTIVE' : 'TG BOT: OFF'}</span>
+            <span>
+              {telegramConfig.isEnabled || discordConfig.isEnabled
+                ? `ALERTS: ${(telegramConfig.isEnabled ? 1 : 0) + (discordConfig.isEnabled ? 1 : 0)} ON`
+                : 'ALERTS: OFF'}
+            </span>
           </button>
 
           {/* Jito MEV Bundle Tracker Trigger */}
@@ -1687,12 +1768,14 @@ export default function TerminalDashboard() {
         trade={shareTrade}
       />
 
-      {/* Telegram Alpha Bot Alert Configuration Modal */}
+      {/* Omnichannel Alpha Bot Alert (Telegram & Discord) Configuration Modal */}
       <TelegramSettingsModal
         isOpen={isTelegramModalOpen}
         onClose={() => setIsTelegramModalOpen(false)}
         config={telegramConfig}
         onSaveConfig={(newCfg) => setTelegramConfig(newCfg)}
+        discordConfig={discordConfig}
+        onSaveDiscordConfig={(newCfg) => setDiscordConfig(newCfg)}
       />
 
       {/* Jito MEV Live Bundle Explorer Tracker Modal */}
