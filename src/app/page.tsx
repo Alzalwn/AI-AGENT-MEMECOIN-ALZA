@@ -27,6 +27,7 @@ import { TelegramConfig } from '../lib/telegram';
 import { DiscordConfig } from '../lib/discord';
 import { JitoBundleReceipt } from '../lib/jito';
 import { STRATEGY_PRESETS } from '../config/constants';
+import { ActivePosition, ClosedTrade } from '../types/terminal';
 import { Terminal as TerminalIcon } from 'lucide-react';
 
 function TerminalAppInner() {
@@ -59,6 +60,7 @@ function TerminalAppInner() {
   const [isAutoSnipeModalOpen, setIsAutoSnipeModalOpen] = useState<boolean>(false);
   const [isGeminiModalOpen, setIsGeminiModalOpen] = useState<boolean>(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
+  const [shareTrade, setShareTrade] = useState<ActivePosition | ClosedTrade | null>(null);
   const [isJitoTrackerOpen, setIsJitoTrackerOpen] = useState<boolean>(false);
 
   // Webhook Alert Configs
@@ -131,12 +133,22 @@ function TerminalAppInner() {
             <ConsensusEvaluator
               onOpenGemini={() => setIsGeminiModalOpen(true)}
               onOpenJupiterSwap={() => setIsJupiterModalOpen(true)}
+              onShareTrade={(trade) => {
+                setShareTrade(trade);
+                setIsShareModalOpen(true);
+              }}
+              onOpenAnalytics={() => setIsStatsModalOpen(true)}
             />
           </div>
 
           {/* Right Column: Positions, Logs, and Configuration Controls */}
           <div className="lg:col-span-3 flex flex-col gap-4">
-            <PositionsTable onSharePnl={() => setIsShareModalOpen(true)} />
+            <PositionsTable
+              onSharePnl={() => {
+                setShareTrade(activePosition);
+                setIsShareModalOpen(true);
+              }}
+            />
             <TerminalLogs />
             <ConfigPanel />
           </div>
@@ -251,7 +263,7 @@ function TerminalAppInner() {
       <PnlShareModal
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
-        trade={activePosition}
+        trade={shareTrade || activePosition}
       />
 
       <JitoBundleTrackerModal

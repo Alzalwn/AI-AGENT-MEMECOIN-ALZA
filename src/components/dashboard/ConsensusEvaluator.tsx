@@ -14,8 +14,11 @@ import {
   ExternalLink,
   AlertTriangle,
   Sparkles,
-  Layers
+  Layers,
+  Copy,
+  Check
 } from 'lucide-react';
+import { ClosedTrade } from '../../types/terminal';
 import StrategyRadar from '../StrategyRadar';
 import NarrativeCluster from '../NarrativeCluster';
 import KellyRiskEngine from '../KellyRiskEngine';
@@ -24,12 +27,23 @@ import TradeHistoryLedger from '../TradeHistoryLedger';
 interface ConsensusEvaluatorProps {
   onOpenGemini: () => void;
   onOpenJupiterSwap: () => void;
+  onShareTrade?: (trade: ClosedTrade) => void;
+  onOpenAnalytics?: () => void;
 }
 
 export const ConsensusEvaluator: React.FC<ConsensusEvaluatorProps> = ({
   onOpenGemini,
-  onOpenJupiterSwap
+  onOpenJupiterSwap,
+  onShareTrade,
+  onOpenAnalytics
 }) => {
+  const [copiedMint, setCopiedMint] = React.useState<boolean>(false);
+
+  const handleCopyMint = (mint: string) => {
+    navigator.clipboard.writeText(mint);
+    setCopiedMint(true);
+    setTimeout(() => setCopiedMint(false), 2000);
+  };
   const {
     visualMode,
     setVisualMode,
@@ -122,7 +136,8 @@ export const ConsensusEvaluator: React.FC<ConsensusEvaluatorProps> = ({
       {visualMode === 'ledger' && (
         <TradeHistoryLedger
           trades={closedTrades}
-          onSelectTradeForShare={() => {}}
+          onSelectTradeForShare={(trade) => onShareTrade && onShareTrade(trade)}
+          onOpenAnalytics={onOpenAnalytics}
         />
       )}
       {visualMode === 'chart' && (
@@ -182,9 +197,36 @@ export const ConsensusEvaluator: React.FC<ConsensusEvaluatorProps> = ({
                     {targetResult.token.name}
                   </span>
                 </div>
-                <span className="text-[10px] text-zinc-500 font-mono">
-                  {targetResult.token.mint.slice(0, 6)}...{targetResult.token.mint.slice(-4)}
-                </span>
+                <div className="flex items-center gap-2 mt-0.5 text-[10px] text-zinc-500 font-mono">
+                  <span>
+                    {targetResult.token.mint.slice(0, 6)}...{targetResult.token.mint.slice(-4)}
+                  </span>
+                  <button
+                    onClick={() => handleCopyMint(targetResult.token.mint)}
+                    className="hover:text-emerald-400 transition-colors cursor-pointer"
+                    title="Salin Mint CA"
+                  >
+                    {copiedMint ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                  <a
+                    href={`https://rugcheck.xyz/tokens/${targetResult.token.mint}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-cyan-400 hover:underline flex items-center gap-0.5 font-bold"
+                  >
+                    <span>Rugcheck</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                  <a
+                    href={`https://dexscreener.com/solana/${targetResult.token.mint}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-emerald-400 hover:underline flex items-center gap-0.5 font-bold"
+                  >
+                    <span>DEX</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </div>
               </div>
             </div>
 
@@ -314,6 +356,38 @@ export const ConsensusEvaluator: React.FC<ConsensusEvaluatorProps> = ({
             <div className="bg-rose-500/20 border border-rose-500/50 text-rose-400 px-3 py-1.5 rounded-xl text-[10px] font-bold flex items-center gap-2 animate-pulse">
               <AlertTriangle className="w-4 h-4 shrink-0" />
               <span>CRITICAL: Honeypot Terdeteksi! Token tidak dapat dijual kembali.</span>
+            </div>
+          )}
+
+          {/* Rugcheck Detected Risks Chips (if any) */}
+          {targetResult.token.rugcheckRisks && targetResult.token.rugcheckRisks.length > 0 && (
+            <div className="flex flex-wrap gap-1 pt-1.5 border-t border-zinc-800/60">
+              <span className="text-[9px] text-zinc-500 font-bold self-center mr-1">Risks:</span>
+              {targetResult.token.rugcheckRisks.slice(0, 5).map((risk, idx) => {
+                const isRiskDanger =
+                  risk.toLowerCase().includes('danger') ||
+                  risk.toLowerCase().includes('honeypot') ||
+                  risk.toLowerCase().includes('freeze');
+                const isRiskWarn =
+                  risk.toLowerCase().includes('warn') ||
+                  risk.toLowerCase().includes('top') ||
+                  risk.toLowerCase().includes('holder');
+                return (
+                  <span
+                    key={idx}
+                    title={risk}
+                    className={`text-[9px] px-1.5 py-0.5 rounded font-mono truncate max-w-[150px] ${
+                      isRiskDanger
+                        ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                        : isRiskWarn
+                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                    }`}
+                  >
+                    {risk}
+                  </span>
+                );
+              })}
             </div>
           )}
 
