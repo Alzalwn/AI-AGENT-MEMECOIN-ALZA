@@ -39,7 +39,8 @@ import {
   Search,
   Crosshair,
   Layers,
-  Bot
+  Bot,
+  BarChart3
 } from 'lucide-react';
 import {
   TokenSignal,
@@ -73,6 +74,8 @@ import TelegramSettingsModal from '../components/TelegramSettingsModal';
 import JitoBundleTrackerModal from '../components/JitoBundleTrackerModal';
 import { JupiterSwapModal } from '../components/JupiterSwapModal';
 import { AutoSnipeModal } from '../components/AutoSnipeModal';
+import PerformanceStatsModal from '../components/PerformanceStatsModal';
+import ExecutionSettingsModal, { ExecutionConfig, DEFAULT_EXECUTION_CONFIG } from '../components/ExecutionSettingsModal';
 
 export default function TerminalDashboard() {
   const [isRunning, setIsRunning] = useState<boolean>(true);
@@ -264,6 +267,19 @@ export default function TerminalDashboard() {
     };
   });
 
+  // Phase 4: Quantitative Analytics & Global Execution Engine State
+  const [isStatsModalOpen, setIsStatsModalOpen] = useState<boolean>(false);
+  const [isExecutionModalOpen, setIsExecutionModalOpen] = useState<boolean>(false);
+  const [executionConfig, setExecutionConfig] = useState<ExecutionConfig>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('GT_EXECUTION_CONFIG');
+        if (saved) return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return DEFAULT_EXECUTION_CONFIG;
+  });
+
   // Manual Mint Sniper Action
   const handleSnipeManualMint = async () => {
     const clean = manualMintInput.trim();
@@ -341,6 +357,8 @@ export default function TerminalDashboard() {
         setIsJitoTrackerOpen(false);
         setIsJupiterModalOpen(false);
         setIsAutoSnipeModalOpen(false);
+        setIsStatsModalOpen(false);
+        setIsExecutionModalOpen(false);
       }
     };
 
@@ -885,6 +903,26 @@ export default function TerminalDashboard() {
             <span>{autoSnipeConfig.isEnabled ? `AUTO-BOT: ${autoSnipeConfig.buyAmountSol} SOL` : 'AUTO-BOT: OFF'}</span>
           </button>
 
+          {/* Quantitative Performance Analytics Trigger */}
+          <button
+            onClick={() => setIsStatsModalOpen(true)}
+            className="px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 border text-[11px] font-bold transition-all cursor-pointer bg-terminal-green/10 border-terminal-green/40 hover:border-terminal-green text-terminal-green hover:bg-terminal-green/20"
+            title="Buka Quantitative Performance Analytics & Tax Exporter (PRD §6)"
+          >
+            <BarChart3 className="w-3.5 h-3.5" />
+            <span>ANALYTICS ({telemetry.rollingExpectancyR}R)</span>
+          </button>
+
+          {/* Global Execution Engine Settings Trigger */}
+          <button
+            onClick={() => setIsExecutionModalOpen(true)}
+            className="px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 border text-[11px] font-bold transition-all cursor-pointer bg-terminal-card border-terminal-border hover:border-terminal-cyan text-terminal-cyan hover:bg-terminal-cyan/15"
+            title="Konfigurasi Global Slippage & Priority Compute Units"
+          >
+            <Sliders className="w-3.5 h-3.5" />
+            <span>EXECUTION: {executionConfig.slippagePct}%</span>
+          </button>
+
           {/* PRD 7.2 Edge-Case Stress Test Trigger */}
           <button
             onClick={() => setIsEdgeModalOpen(true)}
@@ -1223,6 +1261,7 @@ export default function TerminalDashboard() {
                 setShareTrade(trade);
                 setIsShareModalOpen(true);
               }}
+              onOpenAnalytics={() => setIsStatsModalOpen(true)}
             />
           )}
           {visualMode === 'chart' && (
@@ -1809,6 +1848,22 @@ export default function TerminalDashboard() {
         config={autoSnipeConfig}
         onSaveConfig={(newCfg) => setAutoSnipeConfig(newCfg)}
         currentBalanceSol={telemetry.currentBalanceSol}
+      />
+
+      {/* Quantitative Performance Analytics Modal */}
+      <PerformanceStatsModal
+        isOpen={isStatsModalOpen}
+        onClose={() => setIsStatsModalOpen(false)}
+        trades={closedTrades}
+        telemetry={telemetry}
+      />
+
+      {/* Global Execution Engine Settings Modal */}
+      <ExecutionSettingsModal
+        isOpen={isExecutionModalOpen}
+        onClose={() => setIsExecutionModalOpen(false)}
+        config={executionConfig}
+        onSaveConfig={(newCfg) => setExecutionConfig(newCfg)}
       />
 
     </main>

@@ -1,19 +1,21 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Download, History, TrendingUp, TrendingDown, Clock, ShieldCheck, FileSpreadsheet, FileCode, Check, Share2 } from 'lucide-react';
+import { Download, History, TrendingUp, TrendingDown, Clock, ShieldCheck, FileSpreadsheet, FileCode, Check, Share2, BarChart3 } from 'lucide-react';
 import { ClosedTrade } from '../types/terminal';
 
 interface TradeHistoryLedgerProps {
   trades: ClosedTrade[];
   onClearTrades?: () => void;
   onSelectTradeForShare?: (trade: ClosedTrade) => void;
+  onOpenAnalytics?: () => void;
 }
 
 export default function TradeHistoryLedger({
   trades,
   onClearTrades,
   onSelectTradeForShare,
+  onOpenAnalytics,
 }: TradeHistoryLedgerProps) {
   const [downloadSuccess, setDownloadSuccess] = useState<string | null>(null);
 
@@ -118,6 +120,15 @@ export default function TradeHistoryLedger({
           >
             <FileCode className="w-3.5 h-3.5 text-terminal-cyan" /> JSON
           </button>
+          {onOpenAnalytics && (
+            <button
+              onClick={onOpenAnalytics}
+              className="px-2.5 py-1 rounded bg-terminal-green/15 hover:bg-terminal-green/25 border border-terminal-green/40 text-terminal-green text-[10px] font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Buka Quantitative Performance Analytics (PRD §6)"
+            >
+              <BarChart3 className="w-3.5 h-3.5" /> Analytics
+            </button>
+          )}
         </div>
       </div>
 
