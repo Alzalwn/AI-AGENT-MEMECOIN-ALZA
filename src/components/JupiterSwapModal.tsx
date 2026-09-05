@@ -24,6 +24,7 @@ interface JupiterSwapModalProps {
   token: TokenSignal | null;
   currentBalanceSol: number;
   currentSlot: number;
+  defaultSlippageBps?: number;
   onSwapSuccess?: (result: SwapExecutionResult) => void;
 }
 
@@ -33,10 +34,11 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
   token,
   currentBalanceSol,
   currentSlot,
+  defaultSlippageBps = 150,
   onSwapSuccess
 }) => {
   const [amountSol, setAmountSol] = useState<number>(0.1);
-  const [slippageBps, setSlippageBps] = useState<number>(100); // 1.0% default
+  const [slippageBps, setSlippageBps] = useState<number>(defaultSlippageBps);
   const [quote, setQuote] = useState<JupiterQuoteResponse | null>(null);
   const [isLoadingQuote, setIsLoadingQuote] = useState<boolean>(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
@@ -64,9 +66,12 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
   useEffect(() => {
     if (isOpen && token) {
       setSwapResult(null);
+      if (defaultSlippageBps) {
+        setSlippageBps(defaultSlippageBps);
+      }
       loadQuote();
     }
-  }, [isOpen, token, amountSol, slippageBps, loadQuote]);
+  }, [isOpen, token, defaultSlippageBps, loadQuote]);
 
   if (!isOpen || !token) return null;
 

@@ -58,6 +58,8 @@ export async function GET(req: NextRequest) {
     let freezeAuthorityRevoked = true;
     let calculatedTop10Pct: number | undefined = undefined;
     let isHoneypot = false;
+    let creatorAddress: string | undefined = undefined;
+    let creatorBalancePct: number | undefined = undefined;
 
     if (rugcheckResResult.status === 'fulfilled' && rugcheckResResult.value.ok) {
       try {
@@ -78,6 +80,15 @@ export async function GET(req: NextRequest) {
             freezeAuthorityRevoked = rugData.token.freezeAuthority === null || rugData.token.freezeAuthority === undefined;
           }
 
+          // Deployer / Creator Address & Balance (PRD Section 6 Wallet Linkage Defense)
+          if (rugData.creator && typeof rugData.creator === 'string') {
+            creatorAddress = rugData.creator;
+          } else if (rugData.token?.creator && typeof rugData.token.creator === 'string') {
+            creatorAddress = rugData.token.creator;
+          } else if (rugData.tokenMeta?.updateAuthority) {
+            creatorAddress = rugData.tokenMeta.updateAuthority;
+          }
+
           // Extract risks list
           if (Array.isArray(rugData.risks)) {
             rugcheckRisks = rugData.risks.map((r: any) => r.name || r.description || String(r));
@@ -96,6 +107,14 @@ export async function GET(req: NextRequest) {
             const totalPct = top10.reduce((acc: number, h: any) => acc + (h.pct || 0), 0);
             if (totalPct > 0) {
               calculatedTop10Pct = +totalPct.toFixed(1);
+            }
+
+            // Check if creator address holds a percentage of supply
+            if (creatorAddress) {
+              const creatorHolder = rugData.topHolders.find((h: any) => h.address === creatorAddress);
+              if (creatorHolder && typeof creatorHolder.pct === 'number') {
+                creatorBalancePct = +creatorHolder.pct.toFixed(2);
+              }
             }
           }
         }
@@ -131,7 +150,9 @@ export async function GET(req: NextRequest) {
         rugcheckNumericScore,
         rugcheckRisks,
         isHoneypotDetected: isHoneypot,
-        rugcheckReportUrl: `https://rugcheck.xyz/tokens/${cleanMint}`
+        rugcheckReportUrl: `https://rugcheck.xyz/tokens/${cleanMint}`,
+        creatorAddress,
+        creatorBalancePct
       };
 
       return NextResponse.json({ token: fallbackSignal, isSynthetic: true }, { status: 200 });
@@ -192,7 +213,9 @@ export async function GET(req: NextRequest) {
       rugcheckNumericScore,
       rugcheckRisks: rugcheckRisks.length > 0 ? rugcheckRisks : ['No malicious code detected'],
       isHoneypotDetected: isHoneypot,
-      rugcheckReportUrl: `https://rugcheck.xyz/tokens/${cleanMint}`
+      rugcheckReportUrl: `https://rugcheck.xyz/tokens/${cleanMint}`,
+      creatorAddress,
+      creatorBalancePct
     };
 
     return NextResponse.json({ token: tokenSignal, isSynthetic: false }, { status: 200 });

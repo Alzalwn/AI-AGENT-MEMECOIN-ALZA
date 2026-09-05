@@ -67,11 +67,25 @@ export function evaluateRiskAgent(token: TokenSignal, thresholds?: AgentThreshol
     };
   }
 
+  if (token.creatorBalancePct !== undefined && token.creatorBalancePct > 15) {
+    return {
+      agentId: 'risk',
+      agentName: 'Risk Agent',
+      status: 'VETO',
+      reason: `Deployer/Creator wallet memegang ${token.creatorBalancePct}% suplai (batas aman <= 15%). Terindikasi risiko insider dump!`,
+      metricValue: `${token.creatorBalancePct}% Creator`,
+      threshold: '<= 15%',
+      latencyMs: +(performance.now() - start).toFixed(2)
+    };
+  }
+
+  const creatorNote = token.creatorAddress ? ` [Creator: ${token.creatorAddress.slice(0, 4)}..${token.creatorAddress.slice(-4)}]` : '';
+
   return {
     agentId: 'risk',
     agentName: 'Risk Agent',
     status: 'APPROVE',
-    reason: `Keamanan on-chain bersih: Mint/Freeze dicabut${token.rugcheckNumericScore !== undefined ? ` (Rugcheck: ${token.rugcheckNumericScore})` : ''} & Top 10 (${token.top10HolderPct}%) terdistribusi wajar.`,
+    reason: `Keamanan on-chain bersih: Mint/Freeze dicabut${token.rugcheckNumericScore !== undefined ? ` (Rugcheck: ${token.rugcheckNumericScore})` : ''} & Top 10 (${token.top10HolderPct}%) terdistribusi wajar.${creatorNote}`,
     metricValue: `${token.top10HolderPct}% Top10`,
     threshold: 'PASS',
     latencyMs: +(performance.now() - start).toFixed(2)

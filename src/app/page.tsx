@@ -76,6 +76,7 @@ import { JupiterSwapModal } from '../components/JupiterSwapModal';
 import { AutoSnipeModal } from '../components/AutoSnipeModal';
 import PerformanceStatsModal from '../components/PerformanceStatsModal';
 import ExecutionSettingsModal, { ExecutionConfig, DEFAULT_EXECUTION_CONFIG } from '../components/ExecutionSettingsModal';
+import TrailingStopVisualizer from '../components/TrailingStopVisualizer';
 
 export default function TerminalDashboard() {
   const [isRunning, setIsRunning] = useState<boolean>(true);
@@ -1474,6 +1475,34 @@ export default function TerminalDashboard() {
                     </div>
                   </div>
 
+                  {/* Creator / Deployer Wallet Linkage (PRD Section 6) */}
+                  {selectedResult.token.creatorAddress && (
+                    <div className="flex items-center justify-between text-[10px] bg-terminal-panel/80 px-2.5 py-1.5 rounded-lg border border-terminal-border">
+                      <div className="flex items-center gap-1.5 text-terminal-muted">
+                        <Wallet className="w-3.5 h-3.5 text-terminal-cyan" />
+                        <span>Deployer / Creator:</span>
+                        <a
+                          href={`https://solscan.io/account/${selectedResult.token.creatorAddress}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-mono text-terminal-cyan hover:underline font-bold flex items-center gap-0.5"
+                        >
+                          <span>{selectedResult.token.creatorAddress.slice(0, 4)}...{selectedResult.token.creatorAddress.slice(-4)}</span>
+                          <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                      </div>
+                      {selectedResult.token.creatorBalancePct !== undefined && (
+                        <span className={`px-1.5 py-0.2 rounded font-bold font-mono text-[9px] ${
+                          selectedResult.token.creatorBalancePct > 15
+                            ? 'bg-terminal-red/20 text-terminal-red border border-terminal-red/40'
+                            : 'bg-terminal-green/20 text-terminal-green'
+                        }`}>
+                          Hold: {selectedResult.token.creatorBalancePct}%
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                   {/* Honeypot Alert if detected */}
                   {selectedResult.token.isHoneypotDetected && (
                     <div className="bg-terminal-red/20 border border-terminal-red/50 text-terminal-red px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1.5 animate-pulse">
@@ -1631,21 +1660,8 @@ export default function TerminalDashboard() {
                   </div>
                 </div>
 
-                {/* Trailing stop status */}
-                <div className="p-2 bg-terminal-bg rounded border border-terminal-border text-[10px] space-y-1">
-                  <div className="flex justify-between text-terminal-muted">
-                    <span>Trailing Stop Trigger:</span>
-                    <span className="text-terminal-amber font-mono">
-                      &lt; {activePosition.trailingStopPriceSol.toFixed(7)} SOL
-                    </span>
-                  </div>
-                  <div className="w-full bg-terminal-card h-1.5 rounded-full overflow-hidden">
-                    <div
-                      className="bg-terminal-green h-full transition-all"
-                      style={{ width: `${Math.min(Math.max((activePosition.rMultiplier / 3.0) * 100, 5), 100)}%` }}
-                    />
-                  </div>
-                </div>
+                {/* Dynamic Trailing Stop Loss & Take Profit Corridor Visualizer */}
+                <TrailingStopVisualizer position={activePosition} />
 
                 <div className="grid grid-cols-2 gap-2">
                   <button
@@ -1831,6 +1847,7 @@ export default function TerminalDashboard() {
         token={jupiterTargetToken || selectedResult?.token || (consensusFeed[0] ? consensusFeed[0].token : null)}
         currentBalanceSol={telemetry.currentBalanceSol}
         currentSlot={telemetry.currentSlot}
+        defaultSlippageBps={Math.round(executionConfig.slippagePct * 100)}
         onSwapSuccess={(swapResult) => {
           soundFx.playPositionOpen();
           // Deduct invested SOL from balance

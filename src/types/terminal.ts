@@ -30,6 +30,8 @@ export interface TokenSignal {
   rugcheckRisks?: string[];
   isHoneypotDetected?: boolean;
   rugcheckReportUrl?: string;
+  creatorAddress?: string;
+  creatorBalancePct?: number;
 }
 
 export interface AgentVerdict {
