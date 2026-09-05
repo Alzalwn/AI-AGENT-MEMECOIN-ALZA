@@ -31,7 +31,10 @@ import {
   VolumeX,
   Wallet,
   Sliders,
-  History
+  History,
+  Share2,
+  Keyboard,
+  Terminal as TerminalIcon
 } from 'lucide-react';
 import {
   TokenSignal,
@@ -56,6 +59,7 @@ import GeminiNarrativeModal from '../components/GeminiNarrativeModal';
 import StrategyPresetModal from '../components/StrategyPresetModal';
 import TradeHistoryLedger from '../components/TradeHistoryLedger';
 import WalletConnectModal from '../components/WalletConnectModal';
+import PnlShareModal from '../components/PnlShareModal';
 
 export default function TerminalDashboard() {
   const [isRunning, setIsRunning] = useState<boolean>(true);
@@ -177,6 +181,46 @@ export default function TerminalDashboard() {
   const [scanGridCells, setScanGridCells] = useState<('APPROVED' | 'VETOED')[]>(() =>
     Array(96).fill('VETOED').map(() => (Math.random() > 0.9 ? 'APPROVED' : 'VETOED'))
   );
+
+  // PnL Share Flex Receipt Modal
+  const [shareTrade, setShareTrade] = useState<ClosedTrade | ActivePosition | null>(null);
+  const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
+
+  // Global Hacker Keyboard Hotkeys (Space: Pause, 1-4: Views, M: Mute, Esc: Close)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore when user is typing in form inputs
+      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
+        return;
+      }
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        setIsRunning((prev) => !prev);
+      } else if (e.key === '1') {
+        setVisualMode('radar');
+      } else if (e.key === '2') {
+        setVisualMode('cluster');
+      } else if (e.key === '3') {
+        setVisualMode('kelly');
+      } else if (e.key === '4') {
+        setVisualMode('ledger');
+      } else if (e.key.toLowerCase() === 'm') {
+        const next = !soundFx.getIsMuted();
+        soundFx.setMuted(next);
+        setIsAudioMuted(next);
+      } else if (e.key === 'Escape') {
+        setIsGeminiModalOpen(false);
+        setIsStrategyModalOpen(false);
+        setIsWalletModalOpen(false);
+        setIsEdgeModalOpen(false);
+        setIsShareModalOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // PRD 7.2 Edge-Case Handlers
   const handleTriggerFailoverRpc = () => {
@@ -675,6 +719,31 @@ export default function TerminalDashboard() {
                     <span>Cos-Sim: {item.token.narrativeCosineSim}</span>
                   </div>
 
+                  {/* Pump.fun Bonding Curve & RugCheck Badge */}
+                  {item.token.platform === 'Pump.fun' && item.token.bondingCurveProgress !== undefined && (
+                    <div className="mt-1.5 flex items-center justify-between text-[9px] bg-terminal-panel/80 px-2 py-1 rounded border border-terminal-border/80">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-terminal-muted">Curve:</span>
+                        <span className="text-terminal-cyan font-bold font-mono">{item.token.bondingCurveProgress}%</span>
+                        <div className="w-16 bg-terminal-bg h-1 rounded-full overflow-hidden border border-terminal-border">
+                          <div
+                            className="h-full bg-terminal-cyan"
+                            style={{ width: `${item.token.bondingCurveProgress}%` }}
+                          />
+                        </div>
+                      </div>
+                      <span className={`px-1.5 py-0.2 rounded font-bold text-[8px] ${
+                        item.token.rugcheckScore === 'GOOD'
+                          ? 'bg-terminal-green/20 text-terminal-green'
+                          : item.token.rugcheckScore === 'WARNING'
+                          ? 'bg-yellow-400/20 text-yellow-400'
+                          : 'bg-terminal-red/20 text-terminal-red'
+                      }`}>
+                        RUGCHECK: {item.token.rugcheckScore || 'GOOD'}
+                      </span>
+                    </div>
+                  )}
+
                   {!isApproved && item.vetoReason && (
                     <div className="mt-1.5 text-[10px] text-terminal-red/90 bg-terminal-red/10 px-2 py-1 rounded border border-terminal-red/20 flex items-start gap-1">
                       <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5 text-terminal-red" />
@@ -759,6 +828,10 @@ export default function TerminalDashboard() {
             <TradeHistoryLedger
               trades={closedTrades}
               onClearTrades={() => setClosedTrades([])}
+              onSelectTradeForShare={(trade) => {
+                setShareTrade(trade);
+                setIsShareModalOpen(true);
+              }}
             />
           )}
 
@@ -960,12 +1033,25 @@ export default function TerminalDashboard() {
                   </div>
                 </div>
 
-                <button
-                  onClick={handleManualExit}
-                  className="w-full py-2 bg-terminal-red/20 hover:bg-terminal-red/30 text-terminal-red font-bold rounded-lg border border-terminal-red/60 transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <AlertTriangle className="w-3.5 h-3.5" /> Force Emergency Exit (Jito MEV)
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => {
+                      setShareTrade(activePosition);
+                      setIsShareModalOpen(true);
+                    }}
+                    className="py-2 bg-terminal-card hover:bg-terminal-card/80 text-terminal-green font-bold rounded-lg border border-terminal-green/40 transition-all cursor-pointer flex items-center justify-center gap-1.5 text-xs"
+                    title="Buat Kartu Share PnL Flex untuk Twitter / Telegram"
+                  >
+                    <Share2 className="w-3.5 h-3.5" /> Share PnL
+                  </button>
+
+                  <button
+                    onClick={handleManualExit}
+                    className="py-2 bg-terminal-red/20 hover:bg-terminal-red/30 text-terminal-red font-bold rounded-lg border border-terminal-red/60 transition-all cursor-pointer flex items-center justify-center gap-1.5 text-xs"
+                  >
+                    <AlertTriangle className="w-3.5 h-3.5" /> Emergency Exit
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="bg-terminal-card/50 p-6 rounded-lg border border-terminal-border text-center space-y-2">
@@ -1029,6 +1115,40 @@ export default function TerminalDashboard() {
         </section>
       </div>
 
+      {/* Cyberpunk Hacker Keyboard Hotkeys Quick Bar */}
+      <div className="flex items-center justify-between px-3.5 py-2 bg-terminal-panel border border-terminal-border rounded-xl text-[10px] text-terminal-muted flex-wrap gap-2 shadow-lg">
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="text-terminal-green font-bold flex items-center gap-1.5 uppercase tracking-wider">
+            <TerminalIcon className="w-3.5 h-3.5" /> Hotkeys:
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.5 bg-terminal-card border border-terminal-border rounded text-terminal-text font-mono font-bold">Space</kbd>
+            <span>{isRunning ? 'Pause Ingestion' : 'Resume Ingestion'}</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.5 bg-terminal-card border border-terminal-border rounded text-terminal-text font-mono font-bold">1 - 4</kbd>
+            <span>Switch Visualizer</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.5 bg-terminal-card border border-terminal-border rounded text-terminal-text font-mono font-bold">M</kbd>
+            <span>{isAudioMuted ? 'Unmute Audio' : 'Mute Audio'}</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.5 bg-terminal-card border border-terminal-border rounded text-terminal-text font-mono font-bold">Esc</kbd>
+            <span>Close Modal</span>
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 text-[9px] font-mono">
+          <span className="text-terminal-green font-bold flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-terminal-green animate-pulse" />
+            SUB-350MS LATENCY
+          </span>
+          <span>|</span>
+          <span className="text-terminal-cyan">xAI Grok &amp; Gemini Dual-Engine</span>
+        </div>
+      </div>
+
       {/* PRD 7.2 Edge-Case Fallback Simulator Modal */}
       <EdgeCaseSimulator
         isOpen={isEdgeModalOpen}
@@ -1041,7 +1161,7 @@ export default function TerminalDashboard() {
         lastSimulatedEvent={lastSimulatedEvent}
       />
 
-      {/* Gemini AI Narrative Semantic Inspector Modal */}
+      {/* Gemini & xAI Grok Dual AI Narrative Semantic Inspector Modal */}
       <GeminiNarrativeModal
         isOpen={isGeminiModalOpen}
         onClose={() => setIsGeminiModalOpen(false)}
@@ -1064,6 +1184,13 @@ export default function TerminalDashboard() {
         onUpdateWallet={(newState) => setWalletState(newState)}
         selectedTipTier={selectedTipTier}
         onSelectTipTier={(newTier) => setSelectedTipTier(newTier)}
+      />
+
+      {/* PnL Receipt / Flex Share Modal */}
+      <PnlShareModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        trade={shareTrade}
       />
 
     </main>

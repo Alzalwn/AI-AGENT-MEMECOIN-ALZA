@@ -1,17 +1,19 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Download, History, TrendingUp, TrendingDown, Clock, ShieldCheck, FileSpreadsheet, FileCode, Check } from 'lucide-react';
+import { Download, History, TrendingUp, TrendingDown, Clock, ShieldCheck, FileSpreadsheet, FileCode, Check, Share2 } from 'lucide-react';
 import { ClosedTrade } from '../types/terminal';
 
 interface TradeHistoryLedgerProps {
   trades: ClosedTrade[];
   onClearTrades?: () => void;
+  onSelectTradeForShare?: (trade: ClosedTrade) => void;
 }
 
 export default function TradeHistoryLedger({
   trades,
   onClearTrades,
+  onSelectTradeForShare,
 }: TradeHistoryLedgerProps) {
   const [downloadSuccess, setDownloadSuccess] = useState<string | null>(null);
 
@@ -166,6 +168,7 @@ export default function TradeHistoryLedger({
                 <th className="p-2">PnL (SOL)</th>
                 <th className="p-2">R-Mult</th>
                 <th className="p-2">Alasan Penutupan</th>
+                <th className="p-2 text-center">Receipt</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-terminal-border/50">
@@ -198,8 +201,17 @@ export default function TradeHistoryLedger({
                     <td className="p-2 font-bold text-terminal-cyan">
                       +{trade.rMultiplier}R
                     </td>
-                    <td className="p-2 text-[10px] text-terminal-muted truncate max-w-[160px]">
+                    <td className="p-2 text-[10px] text-terminal-muted truncate max-w-[150px]">
                       {trade.exitReason}
+                    </td>
+                    <td className="p-2 text-center">
+                      <button
+                        onClick={() => onSelectTradeForShare?.(trade)}
+                        className="p-1 rounded bg-terminal-card border border-terminal-border hover:border-terminal-green text-terminal-muted hover:text-terminal-green transition-colors cursor-pointer"
+                        title="Generate PnL Share Card"
+                      >
+                        <Share2 className="w-3 h-3" />
+                      </button>
                     </td>
                   </tr>
                 );

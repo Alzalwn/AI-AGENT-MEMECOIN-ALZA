@@ -1,4 +1,4 @@
-﻿# Environments & Keys (CRITICAL for Crypto / Solana Trading)
+# Environments & Keys (CRITICAL for Crypto / Solana Trading)
 .env
 .env.local
 .env.*.local
@@ -34,3 +34,4 @@ yarn-error.log*
 
 .next/
 next-env.d.ts
+*.tsbuildinfo

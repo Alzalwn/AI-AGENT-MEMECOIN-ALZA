@@ -22,6 +22,10 @@ export interface TokenSignal {
   dexUrl?: string;
   description?: string;
   isRealData?: boolean;
+  // Bonding Curve & Security Verifier
+  bondingCurveProgress?: number;
+  isBondingCurveGraduated?: boolean;
+  rugcheckScore?: 'GOOD' | 'WARNING' | 'DANGER';
 }
 
 export interface AgentVerdict {
