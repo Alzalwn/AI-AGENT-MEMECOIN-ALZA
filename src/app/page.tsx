@@ -1009,30 +1009,38 @@ export default function TerminalDashboard() {
                     <span>Cos-Sim: {item.token.narrativeCosineSim}</span>
                   </div>
 
-                  {/* Pump.fun Bonding Curve & RugCheck Badge */}
-                  {item.token.platform === 'Pump.fun' && item.token.bondingCurveProgress !== undefined && (
-                    <div className="mt-1.5 flex items-center justify-between text-[9px] bg-terminal-panel/80 px-2 py-1 rounded border border-terminal-border/80">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-terminal-muted">Curve:</span>
-                        <span className="text-terminal-cyan font-bold font-mono">{item.token.bondingCurveProgress}%</span>
-                        <div className="w-16 bg-terminal-bg h-1 rounded-full overflow-hidden border border-terminal-border">
-                          <div
-                            className="h-full bg-terminal-cyan"
-                            style={{ width: `${item.token.bondingCurveProgress}%` }}
-                          />
+                  {/* Bonding Curve or Security Pill */}
+                  <div className="mt-1.5 flex items-center justify-between text-[9px] bg-terminal-panel/80 px-2 py-1 rounded border border-terminal-border/80">
+                    <div className="flex items-center gap-1.5">
+                      {item.token.platform === 'Pump.fun' && item.token.bondingCurveProgress !== undefined ? (
+                        <>
+                          <span className="text-terminal-muted">Curve:</span>
+                          <span className="text-terminal-cyan font-bold font-mono">{item.token.bondingCurveProgress}%</span>
+                          <div className="w-14 bg-terminal-bg h-1 rounded-full overflow-hidden border border-terminal-border">
+                            <div
+                              className="h-full bg-terminal-cyan"
+                              style={{ width: `${item.token.bondingCurveProgress}%` }}
+                            />
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex items-center gap-1 text-[9px] text-terminal-muted">
+                          <span>Top10:</span>
+                          <span className="text-terminal-text font-bold font-mono">{item.token.top10HolderPct}%</span>
                         </div>
-                      </div>
-                      <span className={`px-1.5 py-0.2 rounded font-bold text-[8px] ${
-                        item.token.rugcheckScore === 'GOOD'
-                          ? 'bg-terminal-green/20 text-terminal-green'
-                          : item.token.rugcheckScore === 'WARNING'
-                          ? 'bg-yellow-400/20 text-yellow-400'
-                          : 'bg-terminal-red/20 text-terminal-red'
-                      }`}>
-                        RUGCHECK: {item.token.rugcheckScore || 'GOOD'}
-                      </span>
+                      )}
                     </div>
-                  )}
+                    <span className={`px-1.5 py-0.2 rounded font-bold text-[8px] ${
+                      item.token.rugcheckScore === 'GOOD'
+                        ? 'bg-terminal-green/20 text-terminal-green'
+                        : item.token.rugcheckScore === 'WARNING'
+                        ? 'bg-yellow-400/20 text-yellow-400'
+                        : 'bg-terminal-red/20 text-terminal-red'
+                    }`}>
+                      RUGCHECK: {item.token.rugcheckScore || 'GOOD'}
+                      {item.token.rugcheckNumericScore !== undefined ? ` (${item.token.rugcheckNumericScore})` : ''}
+                    </span>
+                  </div>
 
                   {!isApproved && item.vetoReason && (
                     <div className="mt-1.5 text-[10px] text-terminal-red/90 bg-terminal-red/10 px-2 py-1 rounded border border-terminal-red/20 flex items-start gap-1">
@@ -1196,6 +1204,138 @@ export default function TerminalDashboard() {
                       <span>SWAP (JUP)</span>
                     </button>
                   </div>
+                </div>
+
+                {/* Dedicated Rugcheck Security Audit Card */}
+                <div className="bg-terminal-panel/90 p-3 rounded-lg border border-terminal-border/80 flex flex-col gap-2 shadow-md">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-terminal-cyan" />
+                      <span className="text-xs font-bold text-terminal-text tracking-wider uppercase">
+                        Rugcheck.xyz Security Audit
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {selectedResult.token.rugcheckScore ? (
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border ${
+                          selectedResult.token.rugcheckScore === 'GOOD'
+                            ? 'bg-terminal-green/20 text-terminal-green border-terminal-green/40 shadow-[0_0_8px_rgba(13,242,137,0.2)]'
+                            : selectedResult.token.rugcheckScore === 'WARNING'
+                            ? 'bg-yellow-400/20 text-yellow-400 border-yellow-400/40 shadow-[0_0_8px_rgba(250,204,21,0.2)]'
+                            : 'bg-terminal-red/20 text-terminal-red border-terminal-red/40 shadow-[0_0_8px_rgba(255,59,48,0.2)]'
+                        }`}>
+                          {selectedResult.token.rugcheckScore}
+                          {selectedResult.token.rugcheckNumericScore !== undefined && ` (${selectedResult.token.rugcheckNumericScore})`}
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-terminal-card text-terminal-muted border border-terminal-border">
+                          PENDING AUDIT
+                        </span>
+                      )}
+                      {selectedResult.token.rugcheckReportUrl && (
+                        <a
+                          href={selectedResult.token.rugcheckReportUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] text-terminal-cyan hover:underline flex items-center gap-0.5 bg-terminal-cyan/10 px-1.5 py-0.5 rounded border border-terminal-cyan/30"
+                          title="Open full report on Rugcheck.xyz"
+                        >
+                          Report <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Key Security Flags Grid */}
+                  <div className="grid grid-cols-4 gap-1.5 text-[10px]">
+                    <div className={`p-1.5 rounded border flex flex-col items-center justify-center text-center ${
+                      selectedResult.token.mintAuthorityRevoked
+                        ? 'bg-terminal-green/10 border-terminal-green/30 text-terminal-green'
+                        : 'bg-terminal-red/10 border-terminal-red/30 text-terminal-red'
+                    }`}>
+                      <span className="text-[9px] text-terminal-muted">Mint Auth</span>
+                      <span className="font-bold flex items-center gap-0.5">
+                        {selectedResult.token.mintAuthorityRevoked ? <Lock className="w-2.5 h-2.5" /> : <Unlock className="w-2.5 h-2.5" />}
+                        {selectedResult.token.mintAuthorityRevoked ? 'REVOKED' : 'ACTIVE'}
+                      </span>
+                    </div>
+
+                    <div className={`p-1.5 rounded border flex flex-col items-center justify-center text-center ${
+                      selectedResult.token.freezeAuthorityRevoked
+                        ? 'bg-terminal-green/10 border-terminal-green/30 text-terminal-green'
+                        : 'bg-terminal-red/10 border-terminal-red/30 text-terminal-red'
+                    }`}>
+                      <span className="text-[9px] text-terminal-muted">Freeze Auth</span>
+                      <span className="font-bold flex items-center gap-0.5">
+                        {selectedResult.token.freezeAuthorityRevoked ? <Lock className="w-2.5 h-2.5" /> : <Unlock className="w-2.5 h-2.5" />}
+                        {selectedResult.token.freezeAuthorityRevoked ? 'REVOKED' : 'ACTIVE'}
+                      </span>
+                    </div>
+
+                    <div className={`p-1.5 rounded border flex flex-col items-center justify-center text-center ${
+                      selectedResult.token.burntLiquidityPct >= 90
+                        ? 'bg-terminal-green/10 border-terminal-green/30 text-terminal-green'
+                        : 'bg-yellow-400/10 border-yellow-400/30 text-yellow-400'
+                    }`}>
+                      <span className="text-[9px] text-terminal-muted">LP Burn/Lock</span>
+                      <span className="font-bold flex items-center gap-0.5">
+                        {selectedResult.token.burntLiquidityPct >= 90 ? <Lock className="w-2.5 h-2.5" /> : <Unlock className="w-2.5 h-2.5" />}
+                        {selectedResult.token.burntLiquidityPct >= 90 ? `${selectedResult.token.burntLiquidityPct}% BURNED` : `${selectedResult.token.burntLiquidityPct}% LP`}
+                      </span>
+                    </div>
+
+                    <div className={`p-1.5 rounded border flex flex-col items-center justify-center text-center ${
+                      selectedResult.token.top10HolderPct <= 20
+                        ? 'bg-terminal-green/10 border-terminal-green/30 text-terminal-green'
+                        : selectedResult.token.top10HolderPct <= 35
+                        ? 'bg-yellow-400/10 border-yellow-400/30 text-yellow-400'
+                        : 'bg-terminal-red/10 border-terminal-red/30 text-terminal-red'
+                    }`}>
+                      <span className="text-[9px] text-terminal-muted">Top 10 Holders</span>
+                      <span className="font-bold">
+                        {selectedResult.token.top10HolderPct}%
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Honeypot Alert if detected */}
+                  {selectedResult.token.isHoneypotDetected && (
+                    <div className="bg-terminal-red/20 border border-terminal-red/50 text-terminal-red px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1.5 animate-pulse">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      <span>CRITICAL: Honeypot Pattern Terdeteksi! Token tidak dapat dijual kembali.</span>
+                    </div>
+                  )}
+
+                  {/* Rugcheck Detected Risks Chips (if any) */}
+                  {selectedResult.token.rugcheckRisks && selectedResult.token.rugcheckRisks.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-1 border-t border-terminal-border/40">
+                      <span className="text-[9px] text-terminal-muted font-bold self-center mr-1">Risks:</span>
+                      {selectedResult.token.rugcheckRisks.slice(0, 4).map((risk, idx) => {
+                        const isRiskDanger = risk.toLowerCase().includes('danger') || risk.toLowerCase().includes('honeypot') || risk.toLowerCase().includes('freeze');
+                        const isRiskWarn = risk.toLowerCase().includes('warn') || risk.toLowerCase().includes('top') || risk.toLowerCase().includes('holder');
+                        return (
+                          <span
+                            key={idx}
+                            title={risk}
+                            className={`text-[9px] px-1.5 py-0.5 rounded font-mono truncate max-w-[140px] ${
+                              isRiskDanger
+                                ? 'bg-terminal-red/20 text-terminal-red border border-terminal-red/30'
+                                : isRiskWarn
+                                ? 'bg-yellow-400/20 text-yellow-400 border border-yellow-400/30'
+                                : 'bg-terminal-card text-terminal-muted border border-terminal-border'
+                            }`}
+                          >
+                            {risk}
+                          </span>
+                        );
+                      })}
+                      {selectedResult.token.rugcheckRisks.length > 4 && (
+                        <span className="text-[9px] text-terminal-muted self-center font-mono">
+                          +{selectedResult.token.rugcheckRisks.length - 4} more
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* 5-Agent Status Breakdown */}

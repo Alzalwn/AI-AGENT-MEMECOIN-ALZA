@@ -26,6 +26,10 @@ export interface TokenSignal {
   bondingCurveProgress?: number;
   isBondingCurveGraduated?: boolean;
   rugcheckScore?: 'GOOD' | 'WARNING' | 'DANGER';
+  rugcheckNumericScore?: number;
+  rugcheckRisks?: string[];
+  isHoneypotDetected?: boolean;
+  rugcheckReportUrl?: string;
 }
 
 export interface AgentVerdict {

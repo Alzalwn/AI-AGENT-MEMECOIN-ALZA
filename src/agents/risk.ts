@@ -43,11 +43,35 @@ export function evaluateRiskAgent(token: TokenSignal, thresholds?: AgentThreshol
     };
   }
 
+  if (token.isHoneypotDetected) {
+    return {
+      agentId: 'risk',
+      agentName: 'Risk Agent',
+      status: 'VETO',
+      reason: 'Honeypot terdeteksi oleh Rugcheck security audit! Pembelian tidak dapat dijual kembali.',
+      metricValue: 'Honeypot',
+      threshold: 'Safe',
+      latencyMs: +(performance.now() - start).toFixed(2)
+    };
+  }
+
+  if (token.rugcheckScore === 'DANGER') {
+    return {
+      agentId: 'risk',
+      agentName: 'Risk Agent',
+      status: 'VETO',
+      reason: `Audit Rugcheck berstatus DANGER (Skor: ${token.rugcheckNumericScore ?? 'High'}). Terindikasi risiko penipuan/rugpull!`,
+      metricValue: `Rugcheck ${token.rugcheckNumericScore ?? 'Danger'}`,
+      threshold: 'Safe/Warning',
+      latencyMs: +(performance.now() - start).toFixed(2)
+    };
+  }
+
   return {
     agentId: 'risk',
     agentName: 'Risk Agent',
     status: 'APPROVE',
-    reason: `Keamanan on-chain bersih: Mint/Freeze dicabut & Top 10 (${token.top10HolderPct}%) terdistribusi wajar.`,
+    reason: `Keamanan on-chain bersih: Mint/Freeze dicabut${token.rugcheckNumericScore !== undefined ? ` (Rugcheck: ${token.rugcheckNumericScore})` : ''} & Top 10 (${token.top10HolderPct}%) terdistribusi wajar.`,
     metricValue: `${token.top10HolderPct}% Top10`,
     threshold: 'PASS',
     latencyMs: +(performance.now() - start).toFixed(2)
