@@ -38,7 +38,8 @@ import {
   Send,
   Search,
   Crosshair,
-  Layers
+  Layers,
+  Bot
 } from 'lucide-react';
 import {
   TokenSignal,
@@ -47,7 +48,8 @@ import {
   TerminalTelemetry,
   AgentThresholds,
   ClosedTrade,
-  WalletState
+  WalletState,
+  AutoSnipeConfig
 } from '../types/terminal';
 import { generateRandomTokenSignal } from '../engine/simulator';
 import { runAgentConsensus } from '../agents/consensus';
@@ -69,6 +71,7 @@ import PnlShareModal from '../components/PnlShareModal';
 import TelegramSettingsModal from '../components/TelegramSettingsModal';
 import JitoBundleTrackerModal from '../components/JitoBundleTrackerModal';
 import { JupiterSwapModal } from '../components/JupiterSwapModal';
+import { AutoSnipeModal } from '../components/AutoSnipeModal';
 
 export default function TerminalDashboard() {
   const [isRunning, setIsRunning] = useState<boolean>(true);
@@ -225,6 +228,30 @@ export default function TerminalDashboard() {
     setIsJupiterModalOpen(true);
   };
 
+  // Autonomous AI Sniper Bot State
+  const [isAutoSnipeModalOpen, setIsAutoSnipeModalOpen] = useState<boolean>(false);
+  const [autoSnipeNotification, setAutoSnipeNotification] = useState<string | null>(null);
+  const [autoSnipeConfig, setAutoSnipeConfig] = useState<AutoSnipeConfig>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('GT_AUTOSNIPE_CONFIG');
+        if (saved) return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {
+      isEnabled: false,
+      buyAmountSol: 0.1,
+      minGrokViralityScore: 85,
+      minLiquidityUsd: 5000,
+      maxTop10HoldersPct: 15,
+      jitoTipTier: 'STANDARD',
+      takeProfitMultiplierR: 3.0,
+      stopLossMultiplierR: 0.33,
+      maxDailyTrades: 15,
+      dailyTradesExecuted: 0
+    };
+  });
+
   // Manual Mint Sniper Action
   const handleSnipeManualMint = async () => {
     const clean = manualMintInput.trim();
@@ -296,6 +323,7 @@ export default function TerminalDashboard() {
         setIsTelegramModalOpen(false);
         setIsJitoTrackerOpen(false);
         setIsJupiterModalOpen(false);
+        setIsAutoSnipeModalOpen(false);
       }
     };
 
@@ -429,23 +457,57 @@ export default function TerminalDashboard() {
       // 4. Execution Logic with Single Position Mutex Lock
       setActivePosition((currentPos) => {
         if (!currentPos && result.verdict === 'APPROVED') {
-          // Open new position (Fractional Kelly sizing based on active thresholds)
-          const solInvested = +(0.62 * (thresholds.kellyFraction / 0.25)).toFixed(3);
+          // Check Autonomous AI Sniper Bot Eligibility
+          const isAutoBotActive = autoSnipeConfig.isEnabled;
+          const meetsGrok = (token.narrativeCosineSim * 100) >= autoSnipeConfig.minGrokViralityScore;
+          const meetsLp = token.initialLpUsd >= autoSnipeConfig.minLiquidityUsd;
+          const meetsHolders = token.top10HolderPct <= autoSnipeConfig.maxTop10HoldersPct;
+          const meetsDailyLimit = autoSnipeConfig.dailyTradesExecuted < autoSnipeConfig.maxDailyTrades;
+
+          // If auto-sniper is active, only execute if all user safety filters pass
+          if (isAutoBotActive && (!meetsGrok || !meetsLp || !meetsHolders || !meetsDailyLimit)) {
+            return null;
+          }
+
+          // Capital Sizing: Auto-Snipe configured buyAmountSol or Fractional Kelly
+          const solInvested = isAutoBotActive
+            ? autoSnipeConfig.buyAmountSol
+            : +(0.62 * (thresholds.kellyFraction / 0.25)).toFixed(3);
+
           const entryPrice = token.priceSol;
           const tokenAmount = solInvested / entryPrice;
 
           // Jito MEV Bundle generation
-          const tipSol = JITO_TIP_TIERS[selectedTipTier] || 0.000050;
+          const tipTier = isAutoBotActive ? autoSnipeConfig.jitoTipTier : selectedTipTier;
+          const tipSol = JITO_TIP_TIERS[tipTier] || 0.000050;
           const bundleReceipt = createJitoBundleReceipt(token, tipSol, telemetry.currentSlot);
           setLatestJitoReceipt(bundleReceipt);
 
           // Telegram Alpha notification
           if (telegramConfig.isEnabled) {
-            sendTelegramAlphaAlert(token, telegramConfig, 89, 'BULLISH', tipSol);
+            sendTelegramAlphaAlert(
+              token, 
+              telegramConfig, 
+              Math.round(token.narrativeCosineSim * 100), 
+              isAutoBotActive ? 'AUTONOMOUS AUTO-SNIPE' : 'BULLISH', 
+              tipSol
+            );
+          }
+
+          if (isAutoBotActive) {
+            setAutoSnipeNotification(`🤖 AUTO-SNIPER FIRED: ${token.symbol} (${solInvested} SOL) | Jito Slot #${telemetry.currentSlot}`);
+            setTimeout(() => setAutoSnipeNotification(null), 5000);
+            setAutoSnipeConfig(prev => ({
+              ...prev,
+              dailyTradesExecuted: prev.dailyTradesExecuted + 1,
+              lastSnipeTimestamp: Date.now()
+            }));
           }
 
           soundFx.playPositionOpen();
           setTelemetry((t) => ({ ...t, activePositionLocked: true }));
+
+          const slMult = isAutoBotActive ? autoSnipeConfig.stopLossMultiplierR : thresholds.trailingStopLossR;
 
           return {
             id: `POS-${Date.now().toString().slice(-4)}`,
@@ -458,7 +520,7 @@ export default function TerminalDashboard() {
             pnlPct: 0,
             rMultiplier: 0,
             highestPriceSol: entryPrice,
-            trailingStopPriceSol: entryPrice * (1 - thresholds.trailingStopLossR),
+            trailingStopPriceSol: entryPrice * (1 - slMult),
             entryTimestamp: Date.now(),
             status: 'OPEN',
           };
@@ -726,6 +788,20 @@ export default function TerminalDashboard() {
             <span>JUPITER SWAP</span>
           </button>
 
+          {/* Autonomous AI Sniper Bot Trigger */}
+          <button
+            onClick={() => setIsAutoSnipeModalOpen(true)}
+            className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 border text-[11px] font-bold transition-all cursor-pointer ${
+              autoSnipeConfig.isEnabled
+                ? 'bg-terminal-green/15 border-terminal-green text-terminal-green hover:bg-terminal-green/25 glow-green'
+                : 'bg-terminal-card border-terminal-border text-terminal-muted hover:text-terminal-text hover:border-terminal-border-active'
+            }`}
+            title="Konfigurasi Autonomous AI Sniper Bot"
+          >
+            <Bot className={`w-3.5 h-3.5 ${autoSnipeConfig.isEnabled ? 'text-terminal-green animate-bounce' : ''}`} />
+            <span>{autoSnipeConfig.isEnabled ? `AUTO-BOT: ${autoSnipeConfig.buyAmountSol} SOL` : 'AUTO-BOT: OFF'}</span>
+          </button>
+
           {/* PRD 7.2 Edge-Case Stress Test Trigger */}
           <button
             onClick={() => setIsEdgeModalOpen(true)}
@@ -840,6 +916,22 @@ export default function TerminalDashboard() {
           )}
         </div>
       </div>
+
+      {/* Floating Auto-Snipe Notification Toast Banner */}
+      {autoSnipeNotification && (
+        <div className="bg-terminal-green/15 border border-terminal-green/60 rounded-xl p-3 px-4 flex items-center justify-between text-terminal-green animate-in slide-in-from-top duration-300 shadow-[0_0_20px_rgba(13,242,137,0.25)]">
+          <div className="flex items-center gap-2.5 font-bold">
+            <Bot className="w-5 h-5 animate-pulse" />
+            <span className="text-xs">{autoSnipeNotification}</span>
+          </div>
+          <button
+            onClick={() => setAutoSnipeNotification(null)}
+            className="text-terminal-green/70 hover:text-terminal-green text-xs cursor-pointer font-mono"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* 2. CUMULATIVE PNL CURVE & MEV VOLUME MODULE (PRD Section 5) */}
       <CumulativeCurve
@@ -1429,6 +1521,15 @@ export default function TerminalDashboard() {
             currentBalanceSol: Math.max(0.1, +(t.currentBalanceSol - swapResult.inAmountSol - swapResult.jitoTipSol).toFixed(4))
           }));
         }}
+      />
+
+      {/* Autonomous AI Sniper Bot Modal */}
+      <AutoSnipeModal
+        isOpen={isAutoSnipeModalOpen}
+        onClose={() => setIsAutoSnipeModalOpen(false)}
+        config={autoSnipeConfig}
+        onSaveConfig={(newCfg) => setAutoSnipeConfig(newCfg)}
+        currentBalanceSol={telemetry.currentBalanceSol}
       />
 
     </main>

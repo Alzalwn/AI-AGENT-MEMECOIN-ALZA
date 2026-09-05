@@ -120,3 +120,17 @@ export interface WalletState {
   walletName: 'Phantom' | 'Solflare' | 'Backpack' | null;
   mode: 'PAPER_TRADING' | 'LIVE_ON_CHAIN';
 }
+
+export interface AutoSnipeConfig {
+  isEnabled: boolean;
+  buyAmountSol: number;
+  minGrokViralityScore: number;
+  minLiquidityUsd: number;
+  maxTop10HoldersPct: number;
+  jitoTipTier: 'ECONOMY' | 'STANDARD' | 'FAST' | 'TURBO';
+  takeProfitMultiplierR: number;
+  stopLossMultiplierR: number;
+  maxDailyTrades: number;
+  dailyTradesExecuted: number;
+  lastSnipeTimestamp?: number;
+}
