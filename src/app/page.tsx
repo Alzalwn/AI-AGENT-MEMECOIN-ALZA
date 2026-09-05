@@ -37,7 +37,8 @@ import {
   Terminal as TerminalIcon,
   Send,
   Search,
-  Crosshair
+  Crosshair,
+  Layers
 } from 'lucide-react';
 import {
   TokenSignal,
@@ -67,6 +68,7 @@ import WalletConnectModal from '../components/WalletConnectModal';
 import PnlShareModal from '../components/PnlShareModal';
 import TelegramSettingsModal from '../components/TelegramSettingsModal';
 import JitoBundleTrackerModal from '../components/JitoBundleTrackerModal';
+import { JupiterSwapModal } from '../components/JupiterSwapModal';
 
 export default function TerminalDashboard() {
   const [isRunning, setIsRunning] = useState<boolean>(true);
@@ -214,6 +216,15 @@ export default function TerminalDashboard() {
   const [latestJitoReceipt, setLatestJitoReceipt] = useState<JitoBundleReceipt | null>(null);
   const [isJitoTrackerOpen, setIsJitoTrackerOpen] = useState<boolean>(false);
 
+  // Jupiter DEX Aggregator Swap Modal State
+  const [isJupiterModalOpen, setIsJupiterModalOpen] = useState<boolean>(false);
+  const [jupiterTargetToken, setJupiterTargetToken] = useState<TokenSignal | null>(null);
+
+  const handleOpenJupiterSwap = (token: TokenSignal) => {
+    setJupiterTargetToken(token);
+    setIsJupiterModalOpen(true);
+  };
+
   // Manual Mint Sniper Action
   const handleSnipeManualMint = async () => {
     const clean = manualMintInput.trim();
@@ -284,6 +295,7 @@ export default function TerminalDashboard() {
         setIsShareModalOpen(false);
         setIsTelegramModalOpen(false);
         setIsJitoTrackerOpen(false);
+        setIsJupiterModalOpen(false);
       }
     };
 
@@ -696,6 +708,24 @@ export default function TerminalDashboard() {
             <span>{latestJitoReceipt ? 'JITO: BUNDLED' : 'JITO TRACKER'}</span>
           </button>
 
+          {/* Jupiter DEX Aggregator Quick Swap Trigger */}
+          <button
+            onClick={() => {
+              if (selectedResult?.token) {
+                handleOpenJupiterSwap(selectedResult.token);
+              } else if (consensusFeed.length > 0) {
+                handleOpenJupiterSwap(consensusFeed[0].token);
+              } else {
+                setIsJupiterModalOpen(true);
+              }
+            }}
+            className="px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 border text-[11px] font-bold transition-all cursor-pointer bg-terminal-cyan/10 border-terminal-cyan/50 hover:border-terminal-cyan text-terminal-cyan hover:bg-terminal-cyan/20 glow-cyan"
+            title="Buka Jupiter DEX Aggregator Swap Terminal"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>JUPITER SWAP</span>
+          </button>
+
           {/* PRD 7.2 Edge-Case Stress Test Trigger */}
           <button
             onClick={() => setIsEdgeModalOpen(true)}
@@ -1065,6 +1095,14 @@ export default function TerminalDashboard() {
                   <div className="text-right shrink-0">
                     <span className="text-[10px] text-terminal-muted block">INITIAL LP</span>
                     <span className="text-sm font-bold text-terminal-green">${selectedResult.token.initialLpUsd.toLocaleString()}</span>
+                    <button
+                      onClick={() => handleOpenJupiterSwap(selectedResult.token)}
+                      className="mt-1 px-2.5 py-1 rounded bg-terminal-cyan/15 hover:bg-terminal-cyan/25 border border-terminal-cyan/40 text-terminal-cyan text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer ml-auto"
+                      title="Swap token via Jupiter v6 Aggregator"
+                    >
+                      <Layers className="w-3 h-3" />
+                      <span>SWAP (JUP)</span>
+                    </button>
                   </div>
                 </div>
 
@@ -1374,6 +1412,23 @@ export default function TerminalDashboard() {
         isOpen={isJitoTrackerOpen}
         onClose={() => setIsJitoTrackerOpen(false)}
         receipt={latestJitoReceipt}
+      />
+
+      {/* Jupiter DEX Aggregator Swap Execution Modal */}
+      <JupiterSwapModal
+        isOpen={isJupiterModalOpen}
+        onClose={() => setIsJupiterModalOpen(false)}
+        token={jupiterTargetToken || selectedResult?.token || (consensusFeed[0] ? consensusFeed[0].token : null)}
+        currentBalanceSol={telemetry.currentBalanceSol}
+        currentSlot={telemetry.currentSlot}
+        onSwapSuccess={(swapResult) => {
+          soundFx.playPositionOpen();
+          // Deduct invested SOL from balance
+          setTelemetry((t) => ({
+            ...t,
+            currentBalanceSol: Math.max(0.1, +(t.currentBalanceSol - swapResult.inAmountSol - swapResult.jitoTipSol).toFixed(4))
+          }));
+        }}
       />
 
     </main>
