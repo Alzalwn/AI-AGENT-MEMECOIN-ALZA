@@ -19,7 +19,8 @@ import {
   Radio,
   ExternalLink,
   RefreshCw,
-  Keyboard
+  Keyboard,
+  LogOut
 } from 'lucide-react';
 import { rpcFailoverInstance } from '../../lib/rpcFailover';
 import Badge from '../ui/Badge';
@@ -224,6 +225,20 @@ export const Header: React.FC<HeaderProps> = ({
           >
             KILL-SWITCH
           </Button>
+
+          {/* LOCK / LOGOUT SESSION */}
+          <button
+            onClick={async () => {
+              if (confirm('Kunci terminal dan akhiri sesi admin sekarang?')) {
+                await fetch('/api/auth/logout', { method: 'POST' });
+                window.location.href = '/login';
+              }
+            }}
+            title="Kunci Akses Terminal (Logout)"
+            className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-500 hover:text-rose-400 hover:border-rose-500/40 transition-all cursor-pointer"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
       </header>
 
