@@ -15,8 +15,19 @@ import {
   Copy, 
   Check, 
   Sliders, 
-  Layers
+  Layers,
+  Edit3,
+  Search
 } from 'lucide-react';
+
+const POPULAR_TOKENS = [
+  { symbol: '$BONK', name: 'Bonk', mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263' },
+  { symbol: '$WIF', name: 'dogwifhat', mint: 'EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm' },
+  { symbol: '$FARTCOIN', name: 'Fartcoin', mint: '9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump' },
+  { symbol: '$TRUMP', name: 'Official Trump', mint: '6p6xgHyF7AeQHyviSDaiMFFAbUx5unusPxQwg2qypump' },
+  { symbol: '$PENGU', name: 'Pudgy Penguins', mint: '2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv' },
+  { symbol: '$POPCAT', name: 'Popcat', mint: '7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr' }
+];
 
 interface JupiterSwapModalProps {
   isOpen: boolean;
@@ -39,8 +50,23 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
   walletState,
   onSwapSuccess
 }) => {
+  // Token state (allow user to switch token or paste custom CA directly)
+  const isTokenMintValid = Boolean(token?.mint && token.mint.length >= 32 && !token.mint.includes('...'));
+  const fallbackMint = isTokenMintValid ? token!.mint : 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263';
+  const fallbackSymbol = isTokenMintValid ? token!.symbol : '$BONK';
+  const fallbackName = isTokenMintValid ? token!.name : 'Bonk Memecoin';
+
+  const [activeMint, setActiveMint] = useState<string>(fallbackMint);
+  const [activeSymbol, setActiveSymbol] = useState<string>(fallbackSymbol);
+  const [activeName, setActiveName] = useState<string>(fallbackName);
+  const [customCaInput, setCustomCaInput] = useState<string>('');
+  const [isEditingCa, setIsEditingCa] = useState<boolean>(!isTokenMintValid);
+
+  // Amount state (handles both comma and dot decimals cleanly)
+  const [amountInput, setAmountInput] = useState<string>('0.1');
   const [amountSol, setAmountSol] = useState<number>(0.1);
   const [slippageBps, setSlippageBps] = useState<number>(defaultSlippageBps);
+
   const [quote, setQuote] = useState<JupiterQuoteResponse | null>(null);
   const [isLoadingQuote, setIsLoadingQuote] = useState<boolean>(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
@@ -50,37 +76,94 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
   const [swapResult, setSwapResult] = useState<SwapExecutionResult | null>(null);
   const [copiedCa, setCopiedCa] = useState<boolean>(false);
 
-  // Load quote whenever token, amount, or slippage changes
+  // Sync token prop when modal opens or selected token changes
+  useEffect(() => {
+    if (isOpen && token) {
+      setSwapResult(null);
+      const isValid = Boolean(token.mint && token.mint.length >= 32 && !token.mint.includes('...'));
+      if (isValid) {
+        setActiveMint(token.mint);
+        setActiveSymbol(token.symbol);
+        setActiveName(token.name);
+        setIsEditingCa(false);
+      } else {
+        // If token from simulator has invalid dummy string, default to BONK and show selector
+        setActiveMint('DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263');
+        setActiveSymbol('$BONK');
+        setActiveName('Bonk Memecoin');
+        setIsEditingCa(true);
+      }
+      if (defaultSlippageBps) {
+        setSlippageBps(defaultSlippageBps);
+      }
+    }
+  }, [isOpen, token, defaultSlippageBps]);
+
+  // Load quote whenever activeMint, amountSol, or slippage changes
   const loadQuote = useCallback(async () => {
-    if (!token || !token.mint) return;
+    if (!activeMint || activeMint.length < 32 || activeMint.includes('...')) {
+      setQuoteError('Contract Address Solana tidak valid. Silakan tempel CA token asli (32-44 karakter) atau pilih salah satu token di bawah:');
+      setQuote(null);
+      return;
+    }
     setIsLoadingQuote(true);
     setQuoteError(null);
     try {
-      const q = await fetchJupiterQuote(token.mint, amountSol, slippageBps);
+      const q = await fetchJupiterQuote(activeMint, amountSol, slippageBps);
       setQuote(q);
     } catch (err: any) {
       setQuoteError(err.message || 'Gagal mengambil quote dari Jupiter');
     } finally {
       setIsLoadingQuote(false);
     }
-  }, [token, amountSol, slippageBps]);
+  }, [activeMint, amountSol, slippageBps]);
 
   useEffect(() => {
-    if (isOpen && token) {
-      setSwapResult(null);
-      if (defaultSlippageBps) {
-        setSlippageBps(defaultSlippageBps);
-      }
+    if (isOpen && activeMint) {
       loadQuote();
     }
-  }, [isOpen, token, defaultSlippageBps, loadQuote]);
+  }, [isOpen, activeMint, amountSol, slippageBps, loadQuote]);
 
-  if (!isOpen || !token) return null;
+  if (!isOpen) return null;
 
   const handleCopyCa = () => {
-    navigator.clipboard.writeText(token.mint);
+    navigator.clipboard.writeText(activeMint);
     setCopiedCa(true);
     setTimeout(() => setCopiedCa(false), 2000);
+  };
+
+  const handleAmountChange = (val: string) => {
+    setAmountInput(val);
+    const cleaned = val.replace(',', '.');
+    const parsed = parseFloat(cleaned);
+    if (!isNaN(parsed) && parsed > 0) {
+      setAmountSol(parsed);
+    }
+  };
+
+  const handleSelectPreset = (p: number) => {
+    setAmountInput(p.toString());
+    setAmountSol(p);
+  };
+
+  const handleSelectPopularToken = (t: typeof POPULAR_TOKENS[0]) => {
+    setActiveMint(t.mint);
+    setActiveSymbol(t.symbol);
+    setActiveName(t.name);
+    setCustomCaInput('');
+    setIsEditingCa(false);
+  };
+
+  const handleApplyCustomCa = () => {
+    const trimmed = customCaInput.trim();
+    if (trimmed.length >= 32) {
+      setActiveMint(trimmed);
+      setActiveSymbol(trimmed.slice(0, 5).toUpperCase());
+      setActiveName(trimmed.slice(0, 8));
+      setIsEditingCa(false);
+    } else {
+      setQuoteError('Alamat CA minimal 32 karakter Base58.');
+    }
   };
 
   const handleExecuteSwap = async () => {
@@ -110,7 +193,7 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
 
       const result = await executeJupiterSwap(
         quote,
-        token.symbol,
+        activeSymbol,
         0.00005,
         currentSlot,
         fullKey,
@@ -141,8 +224,8 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
   const amountPresets = [0.05, 0.1, 0.25, 0.5, 1.0];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-terminal-panel border border-terminal-border rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col font-mono text-xs max-h-[92vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200 font-mono text-xs">
+      <div className="bg-terminal-panel border border-terminal-border rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[94vh]">
         {/* Header */}
         <div className="p-4 border-b border-terminal-border flex items-center justify-between bg-terminal-card/80">
           <div className="flex items-center gap-2.5">
@@ -172,29 +255,35 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
         </div>
 
         {/* Content Body */}
-        <div className="p-4 overflow-y-auto space-y-4 flex-1">
+        <div className="p-4 overflow-y-auto space-y-3.5 flex-1">
           {/* Token Target Info Card */}
           <div className="bg-terminal-card p-3 rounded-xl border border-terminal-border flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-terminal-green/10 border border-terminal-green/30 flex items-center justify-center font-black text-terminal-green text-sm">
-                {token.symbol.slice(1, 3).toUpperCase() || '$'}
+                {activeSymbol.replace('$', '').slice(0, 2).toUpperCase() || 'TK'}
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-terminal-text text-sm">{token.symbol}</span>
-                  <span className="text-[10px] text-terminal-muted truncate max-w-[120px]">{token.name}</span>
+                  <span className="font-bold text-terminal-text text-sm">{activeSymbol}</span>
+                  <span className="text-[10px] text-terminal-muted truncate max-w-[140px]">{activeName}</span>
                 </div>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-terminal-panel border border-terminal-border text-terminal-muted">
-                    {token.platform}
+                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-terminal-panel border border-terminal-border text-terminal-muted">
+                    Solana
                   </span>
                   <button
                     onClick={handleCopyCa}
                     className="text-[10px] text-terminal-muted hover:text-terminal-cyan flex items-center gap-1 cursor-pointer"
                     title="Salin Contract Address"
                   >
-                    <span>{token.mint.slice(0, 6)}...{token.mint.slice(-4)}</span>
+                    <span>{activeMint.slice(0, 6)}...{activeMint.slice(-4)}</span>
                     {copiedCa ? <Check className="w-3 h-3 text-terminal-green" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                  <button
+                    onClick={() => setIsEditingCa(!isEditingCa)}
+                    className="text-[9px] text-purple-400 hover:text-purple-300 underline cursor-pointer ml-1"
+                  >
+                    {isEditingCa ? 'Tutup' : 'Ganti Token / Paste CA'}
                   </button>
                 </div>
               </div>
@@ -202,10 +291,55 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
             <div className="text-right">
               <span className="text-[10px] text-terminal-muted block">Estimated Price</span>
               <span className="font-bold text-terminal-green text-xs">
-                {token.priceSol ? `${token.priceSol.toFixed(8)} SOL` : '~ $0.00002'}
+                {quote ? `${(1 / (parseFloat(quote.outAmountRaw) / 1e6 || 1)).toFixed(8)} SOL` : '~ $0.00002'}
               </span>
             </div>
           </div>
+
+          {/* Token Selector & Custom CA Input */}
+          {isEditingCa && (
+            <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/30 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-purple-300 uppercase">
+                  Pilih Koin Populer atau Tempel Contract Address (CA):
+                </span>
+              </div>
+
+              {/* Popular Tokens Chips */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {POPULAR_TOKENS.map((pop) => (
+                  <button
+                    key={pop.symbol}
+                    onClick={() => handleSelectPopularToken(pop)}
+                    className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                      activeMint === pop.mint
+                        ? 'bg-purple-600 text-white border-purple-400 shadow-sm'
+                        : 'bg-terminal-card border-terminal-border text-zinc-300 hover:border-purple-400'
+                    }`}
+                  >
+                    {pop.symbol}
+                  </button>
+                ))}
+              </div>
+
+              {/* Custom CA Paste Input */}
+              <div className="flex items-center gap-2 pt-1 border-t border-purple-500/20">
+                <input
+                  type="text"
+                  value={customCaInput}
+                  onChange={(e) => setCustomCaInput(e.target.value)}
+                  placeholder="Paste CA Token (Raydium / Pump.fun)..."
+                  className="flex-1 bg-black/60 border border-zinc-700 focus:border-purple-400 rounded-lg px-2.5 py-1.5 text-[11px] text-white focus:outline-none"
+                />
+                <button
+                  onClick={handleApplyCustomCa}
+                  className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-[10px] transition-all cursor-pointer"
+                >
+                  Pilih CA
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Swap Box */}
           <div className="space-y-3 bg-terminal-bg p-3.5 rounded-xl border border-terminal-border">
@@ -219,12 +353,12 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
               </div>
               <div className="relative">
                 <input
-                  type="number"
-                  min="0.001"
-                  step="0.01"
-                  value={amountSol}
-                  onChange={(e) => setAmountSol(Math.max(0.001, parseFloat(e.target.value) || 0.001))}
+                  type="text"
+                  inputMode="decimal"
+                  value={amountInput}
+                  onChange={(e) => handleAmountChange(e.target.value)}
                   disabled={isExecuting}
+                  placeholder="0.1"
                   className="w-full bg-terminal-card border border-terminal-border focus:border-terminal-cyan rounded-lg px-3 py-2 text-sm font-bold text-terminal-text focus:outline-none transition-all pr-16"
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-terminal-cyan">
@@ -242,7 +376,7 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
                 {amountPresets.map((p) => (
                   <button
                     key={p}
-                    onClick={() => setAmountSol(p)}
+                    onClick={() => handleSelectPreset(p)}
                     className={`flex-1 py-1 rounded text-[10px] font-bold border transition-all cursor-pointer ${
                       amountSol === p
                         ? 'bg-terminal-cyan/15 border-terminal-cyan text-terminal-cyan'
@@ -275,165 +409,118 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
                   <span>Refresh Route</span>
                 </button>
               </div>
-              <div className="bg-terminal-card border border-terminal-border rounded-lg p-2.5 flex items-center justify-between">
-                <div>
-                  <span className="text-sm font-black text-terminal-green">
-                    {isLoadingQuote ? (
-                      <span className="text-terminal-muted animate-pulse">Menghitung rute...</span>
-                    ) : quote ? (
-                      quote.outAmountFormatted
-                    ) : (
-                      '0'
-                    )}
-                  </span>
-                  {quote && (
-                    <span className="text-[10px] text-terminal-muted block mt-0.5">
-                      Min. Received: {quote.minimumReceivedFormatted}
-                    </span>
-                  )}
-                </div>
-                <span className="text-xs font-bold text-terminal-text px-2 py-1 rounded bg-terminal-panel border border-terminal-border">
-                  {token.symbol}
+              <div className="relative bg-terminal-card border border-terminal-border rounded-lg px-3 py-2 flex items-center justify-between">
+                <span className={`text-sm font-bold truncate pr-2 ${isLoadingQuote ? 'opacity-40' : 'text-terminal-text'}`}>
+                  {isLoadingQuote ? 'Menghitung rute terbaik...' : (quote?.outAmountFormatted || '0')}
+                </span>
+                <span className="text-xs font-bold text-terminal-green shrink-0">
+                  {activeSymbol}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Slippage Settings */}
-          <div className="bg-terminal-card p-3 rounded-xl border border-terminal-border space-y-2">
+          {/* Slippage & Route Details */}
+          <div className="space-y-2 pt-1">
             <div className="flex items-center justify-between text-[11px]">
               <span className="text-terminal-muted flex items-center gap-1">
-                <Sliders className="w-3.5 h-3.5 text-terminal-cyan" />
+                <Sliders className="w-3 h-3 text-terminal-cyan" />
                 <span>Slippage Tolerance</span>
               </span>
-              <span className="font-bold text-terminal-text">{(slippageBps / 100).toFixed(1)}%</span>
+              <span className="font-bold text-terminal-cyan">{(slippageBps / 100).toFixed(1)}%</span>
             </div>
-            <div className="grid grid-cols-4 gap-2">
-              {slippagePresets.map((preset) => (
+            <div className="grid grid-cols-4 gap-1.5">
+              {slippagePresets.map((s) => (
                 <button
-                  key={preset.value}
-                  onClick={() => setSlippageBps(preset.value)}
-                  className={`py-1.5 rounded-lg font-bold text-center border transition-all cursor-pointer ${
-                    slippageBps === preset.value
+                  key={s.value}
+                  onClick={() => setSlippageBps(s.value)}
+                  className={`py-1 rounded text-[10px] font-bold border transition-all cursor-pointer ${
+                    slippageBps === s.value
                       ? 'bg-terminal-cyan/15 border-terminal-cyan text-terminal-cyan'
-                      : 'bg-terminal-panel border-terminal-border text-terminal-muted hover:text-terminal-text'
+                      : 'bg-terminal-card border-terminal-border text-terminal-muted hover:text-terminal-text'
                   }`}
                 >
-                  {preset.label}
+                  {s.label}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Jupiter Best Route Display */}
-          {quote && (
-            <div className="bg-terminal-card p-3 rounded-xl border border-terminal-border space-y-2">
-              <span className="text-[10px] font-bold text-terminal-muted uppercase tracking-wider block">
-                Jupiter Routing Path
-              </span>
-              <div className="space-y-1.5">
-                {quote.routes.map((route, idx) => (
-                  <div key={idx} className="flex items-center justify-between text-[11px]">
-                    <div className="flex items-center gap-1.5 text-terminal-text">
-                      <span className="w-1.5 h-1.5 rounded-full bg-terminal-green"></span>
-                      <span>{route.label}</span>
-                    </div>
-                    <span className="font-bold text-terminal-cyan">{route.percent}%</span>
-                  </div>
-                ))}
-              </div>
-              <div className="pt-2 border-t border-terminal-border/60 flex items-center justify-between text-[10px]">
-                <span className="text-terminal-muted">Price Impact:</span>
-                <span className={`font-bold ${quote.priceImpactPct > 1.5 ? 'text-terminal-amber' : 'text-terminal-green'}`}>
-                  {quote.priceImpactPct}%
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Jito MEV Bundle Protection Bar */}
-          <div className="bg-terminal-green/5 border border-terminal-green/20 rounded-xl p-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-terminal-green" />
+          {/* Jito MEV Anti-Frontrun Badge */}
+          <div className="p-2.5 rounded-xl bg-terminal-green/5 border border-terminal-green/20 flex items-center justify-between text-[10px]">
+            <div className="flex items-center gap-1.5 text-terminal-green">
+              <ShieldCheck className="w-4 h-4 shrink-0" />
               <div>
-                <span className="font-bold text-terminal-green block text-[11px]">
-                  Jito MEV Anti-Frontrun Active
-                </span>
-                <span className="text-[10px] text-terminal-muted">
-                  Tip: 0.000050 SOL • Private Mempool Routing
-                </span>
+                <span className="font-bold block">Jito MEV Anti-Frontrun Active</span>
+                <span className="text-[9px] text-terminal-muted">Tip: 0.000050 SOL • Private Mempool Routing</span>
               </div>
             </div>
-            <span className="text-[10px] px-2 py-0.5 rounded bg-terminal-green/15 text-terminal-green font-mono font-bold">
+            <span className="px-2 py-0.5 rounded bg-terminal-green/10 text-terminal-green border border-terminal-green/30 font-bold">
               0% LEAK
             </span>
           </div>
 
-          {/* Error display */}
+          {/* Error Message */}
           {quoteError && (
-            <div className="bg-terminal-red/10 border border-terminal-red/30 p-2.5 rounded-xl text-terminal-red text-[11px] flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0" />
-              <span>{quoteError}</span>
+            <div className="p-2.5 rounded-xl bg-terminal-red/10 border border-terminal-red/30 flex items-start gap-2 text-terminal-red text-[11px]">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span className="leading-relaxed">{quoteError}</span>
             </div>
           )}
 
-          {/* Success Receipt */}
+          {/* Execution Progress */}
+          {isExecuting && (
+            <div className="p-3 rounded-xl bg-terminal-cyan/10 border border-terminal-cyan/30 flex items-center gap-2.5 text-terminal-cyan text-[11px]">
+              <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
+              <span>{executionStep || 'Memproses transaksi di Solana...'}</span>
+            </div>
+          )}
+
+          {/* Swap Success Modal Result */}
           {swapResult && (
-            <div className="bg-terminal-green/10 border border-terminal-green/30 rounded-xl p-3.5 space-y-2 animate-in zoom-in-95">
-              <div className="flex items-center gap-2 text-terminal-green">
+            <div className="p-3 rounded-xl bg-terminal-green/10 border border-terminal-green/30 space-y-2 animate-in zoom-in-95 duration-150">
+              <div className="flex items-center gap-2 text-terminal-green font-bold text-xs">
                 <CheckCircle2 className="w-4 h-4" />
-                <span className="font-bold text-xs">SWAP EXECUTED & CONFIRMED!</span>
+                <span>Swap Berhasil Terkonfirmasi On-Chain!</span>
               </div>
-              <p className="text-[11px] text-terminal-text">
-                Membeli <strong>{swapResult.outAmountFormatted} {swapResult.symbol}</strong> seharga {swapResult.inAmountSol} SOL via {swapResult.routeSummary}.
-              </p>
-              <div className="pt-2 flex items-center justify-between border-t border-terminal-green/20">
-                <span className="text-[10px] text-terminal-muted">Slot #{swapResult.slot}</span>
-                <a
-                  href={`https://solscan.io/tx/${swapResult.signature}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-terminal-cyan hover:underline flex items-center gap-1 text-[10px] font-bold"
-                >
-                  <span>Lihat di Solscan</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
+              <div className="text-[10px] text-zinc-400 space-y-1">
+                <div>Koin Diterima: <strong className="text-white">{swapResult.outAmountFormatted} {activeSymbol}</strong></div>
+                <div>SOL Ditukar: <strong className="text-white">{swapResult.inAmountSol} SOL</strong></div>
               </div>
+              <a
+                href={`https://solscan.io/tx/${swapResult.signature}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-[10px] text-terminal-cyan hover:underline font-bold"
+              >
+                <span>Lihat di Solscan</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
             </div>
           )}
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 border-t border-terminal-border bg-terminal-card/80 flex items-center gap-3">
+        <div className="p-3 border-t border-terminal-border bg-terminal-card/80 flex items-center gap-2">
           <button
             onClick={onClose}
-            aria-label="Tutup modal Jupiter swap"
-            className="px-4 py-2 rounded-xl bg-terminal-panel border border-terminal-border text-terminal-muted hover:text-terminal-text font-bold transition-all cursor-pointer"
+            disabled={isExecuting}
+            className="px-4 py-2 rounded-xl bg-terminal-card hover:bg-zinc-800 text-terminal-muted hover:text-terminal-text border border-terminal-border font-bold transition-all cursor-pointer"
           >
             Tutup
           </button>
           <button
             onClick={handleExecuteSwap}
-            disabled={!quote || isExecuting || isLoadingQuote || amountSol > currentBalanceSol}
-            aria-label="Eksekusi swap Jupiter dengan Jito MEV bundle"
-            className="flex-1 py-2 rounded-xl bg-terminal-cyan text-terminal-bg hover:bg-terminal-cyan/90 font-black text-xs flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg cursor-pointer glow-cyan"
+            disabled={!quote || isExecuting || amountSol > currentBalanceSol || isLoadingQuote}
+            className="flex-1 py-2 rounded-xl bg-gradient-to-r from-terminal-cyan to-terminal-green hover:from-terminal-cyan/90 hover:to-terminal-green/90 text-terminal-bg font-black text-xs tracking-wider flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(0,240,255,0.25)] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {isExecuting ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>{executionStep || 'EXECUTING SWAP...'}</span>
-              </>
-            ) : amountSol > currentBalanceSol ? (
-              <span>SALDO SOL TIDAK CUKUP</span>
-            ) : (
-              <>
-                <Zap className="w-4 h-4" />
-                <span>SWAP VIA JUPITER + JITO MEV</span>
-              </>
-            )}
+            <Zap className="w-4 h-4 fill-current" />
+            <span>{isExecuting ? 'MENGEKSEKUSI...' : 'SWAP VIA JUPITER + JITO MEV'}</span>
           </button>
         </div>
       </div>
     </div>
   );
 };
+
+export default JupiterSwapModal;
