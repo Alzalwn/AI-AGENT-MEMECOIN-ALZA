@@ -465,7 +465,18 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       activePositionLocked: true,
       currentBalanceSol: +(prev.currentBalanceSol - solInvest).toFixed(3)
     }));
-    appendLog('EXECUTION', 'SUCCESS', `[CONFIRMED] Opened active position on ${token.symbol} @ ${entryPrice.toFixed(8)} SOL`);
+    // Jito Tokyo MEV Bundle Execution
+    const tipTier = agentConfig.jitoTipTier || 'TURBO';
+    const tipSol = JITO_TIP_TIERS[tipTier] || 0.002000;
+    const bundleReceipt = createJitoBundleReceipt(
+      token,
+      tipSol,
+      networkMetrics.currentSlot,
+      'TOKYO'
+    );
+
+    appendLog('JITO', 'SUCCESS', `⚡ JITO TOKYO BUNDLE LANDED: ${bundleReceipt.bundleId} (${bundleReceipt.latencyMs}ms) • Tip: ${tipSol} SOL`);
+    appendLog('EXECUTION', 'SUCCESS', `[CONFIRMED] Opened active position on ${token.symbol} @ ${entryPrice.toFixed(8)} SOL via Jito MEV`);
     soundFx.playApproval();
     setPendingSnipeConfirmation(null);
     setSniperStatus(null);
@@ -621,12 +632,62 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
             currentBalanceSol: +(t.currentBalanceSol - solInvest).toFixed(3)
           }));
 
+          // 🚀 DYNAMIC TIP BOOSTER FOR LIVE SNIPER (Maksimal Cuan & Sub-Slot Jito Inclusion)
+          const baseTier = autoSnipeConfig.jitoTipTier || agentConfig.jitoTipTier || 'STANDARD';
+          let tipSol = JITO_TIP_TIERS[baseTier] || 0.000100;
+
+          // Hype Booster: When virality score >= 88% or sudden buyer rush detected
+          const isHighVirality = consensus.token.narrativeCosineSim >= 0.88;
+          const isHighRush = consensus.token.uniqueBuyersCount >= 8 || consensus.token.volumeDelta15s >= 4.0;
+          const isBoosted = isHighVirality || isHighRush;
+
+          if (isBoosted) {
+            if (baseTier === 'ECONOMY' || baseTier === 'STANDARD') {
+              tipSol = JITO_TIP_TIERS.TURBO; // 0.002 SOL
+            } else if (baseTier === 'FAST' || baseTier === 'TURBO') {
+              tipSol = JITO_TIP_TIERS.ULTRA_DEGEN; // 0.005 SOL
+            }
+          }
+
+          const bundleReceipt = createJitoBundleReceipt(
+            consensus.token,
+            tipSol,
+            networkMetrics.currentSlot,
+            'TOKYO'
+          );
+
+          appendLog(
+            'JITO',
+            'SUCCESS',
+            `⚡ JITO TOKYO BUNDLE LANDED: ${bundleReceipt.bundleId} (${bundleReceipt.latencyMs}ms) • Tip: ${tipSol} SOL [Slot #${bundleReceipt.targetSlot}]${isBoosted ? ' 🚀 [BOOSTED]' : ''}`
+          );
+
+          // Webhook Alpha Alerts (Telegram & Discord)
+          if (telegramConfig.isEnabled) {
+            sendTelegramAlphaAlert(
+              consensus.token,
+              telegramConfig,
+              Math.round(consensus.token.narrativeCosineSim * 100),
+              'BULLISH',
+              tipSol
+            );
+          }
+          if (discordConfig.isEnabled) {
+            sendDiscordAlphaAlert(
+              consensus.token,
+              discordConfig,
+              Math.round(consensus.token.narrativeCosineSim * 100),
+              'BULLISH',
+              tipSol
+            );
+          }
+
           appendLog(
             'EXECUTION',
             'SUCCESS',
             `AUTO-SNIPE: Opened position on ${consensus.token.symbol} (${solInvest} SOL${
               isKellyActive ? ' via Fractional Kelly 6.2% Cap' : ''
-            }) via Jito MEV`
+            }) via Jito MEV Private Bundle`
           );
           return newPos;
         });

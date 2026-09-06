@@ -133,7 +133,7 @@ export interface AutoSnipeConfig {
   minGrokViralityScore: number;
   minLiquidityUsd: number;
   maxTop10HoldersPct: number;
-  jitoTipTier: 'ECONOMY' | 'STANDARD' | 'FAST' | 'TURBO';
+  jitoTipTier: 'ECONOMY' | 'STANDARD' | 'FAST' | 'TURBO' | 'ULTRA_DEGEN';
   takeProfitMultiplierR: number;
   stopLossMultiplierR: number;
   maxDailyTrades: number;

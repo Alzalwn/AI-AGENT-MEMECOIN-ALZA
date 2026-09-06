@@ -52,10 +52,11 @@ export const JITO_TIP_ACCOUNTS = [
 ] as const;
 
 export const JITO_TIP_TIERS = {
-  ECONOMY: 0.000030,
-  STANDARD: 0.000050,
-  FAST: 0.000150,
-  TURBO: 0.000300,
+  ECONOMY: 0.000050,
+  STANDARD: 0.000100,
+  FAST: 0.000500,
+  TURBO: 0.002000,
+  ULTRA_DEGEN: 0.005000,
 } as const;
 
 export const STRATEGY_PRESETS = {

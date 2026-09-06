@@ -38,7 +38,7 @@ export interface AgentConfig {
   maxBuyAmountSol: number;
   useKellySizing?: boolean;
   priorityFeeMicroLamports: number;
-  jitoTipTier: 'ECONOMY' | 'STANDARD' | 'FAST' | 'TURBO';
+  jitoTipTier: 'ECONOMY' | 'STANDARD' | 'FAST' | 'TURBO' | 'ULTRA_DEGEN';
   takeProfitMultiplier: number;
   trailingStopLossPct: number;
   antiRugpull: {

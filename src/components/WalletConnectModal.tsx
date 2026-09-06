@@ -112,10 +112,11 @@ export default function WalletConnectModal({
   };
 
   const tipTiers = [
-    { id: 'ECONOMY', name: 'Economy', tip: '0.00003 SOL', speed: '~65ms' },
-    { id: 'STANDARD', name: 'Standard (PRD)', tip: '0.00005 SOL', speed: '~25ms' },
-    { id: 'FAST', name: 'Fast MEV', tip: '0.00015 SOL', speed: '~14ms' },
-    { id: 'TURBO', name: 'Turbo Priority', tip: '0.00030 SOL', speed: '&lt; 8ms' },
+    { id: 'ECONOMY', name: 'Economy', tip: '0.00005 SOL', speed: '~65ms', badge: 'Normal' },
+    { id: 'STANDARD', name: 'Standard', tip: '0.00010 SOL', speed: '~25ms', badge: 'PRD' },
+    { id: 'FAST', name: 'Fast MEV', tip: '0.00050 SOL', speed: '~15ms', badge: 'Priority' },
+    { id: 'TURBO', name: 'TURBO', tip: '0.00200 SOL', speed: '< 8ms', badge: '🔥 Live Sniper' },
+    { id: 'ULTRA_DEGEN', name: 'Ultra Degen', tip: '0.00500 SOL', speed: '< 5ms', badge: '⚡ Sub-Slot' },
   ];
 
   return (
@@ -227,7 +228,7 @@ export default function WalletConnectModal({
             <span className="text-[9px] text-terminal-cyan font-mono">0% Sandwich Slippage</span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
             {tipTiers.map((tier) => {
               const isSelected = selectedTipTier === tier.id;
               return (
@@ -240,31 +241,41 @@ export default function WalletConnectModal({
                       : 'bg-terminal-card/50 border-terminal-border hover:border-terminal-border-active text-terminal-muted'
                   }`}
                 >
-                  <span className="font-bold text-[10px] block">{tier.name}</span>
+                  <span className="font-bold text-[10px] block truncate">{tier.name}</span>
                   <span className="text-[9px] font-mono block text-terminal-text">{tier.tip}</span>
+                  <span className={`text-[8px] font-bold block ${isSelected ? 'text-terminal-cyan' : 'text-zinc-500'}`}>
+                    {tier.badge}
+                  </span>
                 </div>
               );
             })}
           </div>
         </div>
 
-        {/* Jito Relayer Account Info */}
-        <div className="p-2.5 bg-terminal-card rounded-lg border border-terminal-border text-[10px] space-y-1">
-          <div className="flex justify-between text-terminal-muted">
-            <span>Jito Tip Relayer Account:</span>
+        {/* Jito Block Engine Regional Router */}
+        <div className="p-2.5 bg-terminal-card rounded-lg border border-terminal-border text-[10px] space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-terminal-muted font-bold">Jito Block Engine (Low Latency):</span>
+            <span className="text-terminal-green font-bold text-[9px] flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-terminal-green animate-pulse" />
+              🇯🇵 Tokyo (Asia Sub-60ms)
+            </span>
+          </div>
+          <div className="flex justify-between text-terminal-muted text-[9px]">
+            <span>Tip Relayer Account:</span>
             <span className="text-terminal-cyan font-mono truncate max-w-[170px]">{selectedTipAccount}</span>
           </div>
           <p className="text-[9px] text-terminal-muted leading-relaxed">
-            Transaksi dibundel privat langsung ke validator Solana terverifikasi tanpa disiarkan ke mempool publik.
+            Private bundle rute langsung ke validator Solana Tokyo &amp; Frankfurt tanpa mempool publik (0% frontrun leak).
           </p>
         </div>
 
         {/* Footer */}
         <div className="pt-2 border-t border-terminal-border flex items-center justify-between text-[11px]">
-          <span className="text-terminal-muted text-[10px]">Relayer: mainnet.block-engine.jito.wtf</span>
+          <span className="text-terminal-muted text-[10px]">Relayer: tokyo.mainnet.block-engine.jito.wtf</span>
           <button
             onClick={onClose}
-            className="px-4 py-1.5 bg-terminal-card hover:bg-terminal-card/80 border border-terminal-border rounded-lg text-terminal-text transition-colors cursor-pointer"
+            className="px-4 py-1.5 bg-terminal-card hover:bg-terminal-card/80 border border-terminal-border rounded-lg text-terminal-text transition-colors cursor-pointer font-bold"
           >
             Selesai
           </button>
