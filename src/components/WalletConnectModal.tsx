@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Wallet, ShieldCheck, Zap, Check, X, ExternalLink, AlertTriangle, Radio, RefreshCw } from 'lucide-react';
+import { Wallet, ShieldCheck, Zap, Check, X, ExternalLink, AlertTriangle, Radio, RefreshCw, Smartphone } from 'lucide-react';
 import { WalletState } from '../types/terminal';
 import { JITO_TIP_ACCOUNTS } from '../config/constants';
 import { rpcFailoverInstance } from '../lib/rpcFailover';
@@ -155,6 +155,22 @@ export default function WalletConnectModal({
         }
       }
 
+      // Check if mobile device and redirect to official app deep link
+      if (typeof window !== 'undefined') {
+        const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+        const currentUrl = window.location.href;
+
+        if (isMobile) {
+          if (walletName === 'Phantom') {
+            window.location.href = `https://phantom.app/ul/browse/${encodeURIComponent(currentUrl)}`;
+            return;
+          } else if (walletName === 'Solflare') {
+            window.location.href = `https://solflare.com/ul/v1/browse/${encodeURIComponent(currentUrl)}`;
+            return;
+          }
+        }
+      }
+
       // Wallet extension not installed
       console.warn(`${walletName} extension not detected. Please install it from the official website.`);
     } finally {
@@ -301,6 +317,24 @@ export default function WalletConnectModal({
                   <span>{name}</span>
                 </button>
               ))}
+            </div>
+
+            {/* Mobile Wallet Helper Banner */}
+            <div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/30 text-[11px] space-y-1.5">
+              <div className="flex items-center gap-1.5 text-purple-300 font-bold text-[11px]">
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>Pengguna HP / Smartphone:</span>
+              </div>
+              <p className="text-[10px] text-zinc-400 leading-relaxed">
+                Jika membuka lewat Chrome/Safari di HP, klik tombol di bawah untuk membuka langsung di <strong>Aplikasi Phantom HP</strong> agar wallet otomatis terhubung:
+              </p>
+              <a
+                href={`https://phantom.app/ul/browse/${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : 'https://alzasniped.my.id')}`}
+                className="flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-[11px] transition-all text-center cursor-pointer shadow-sm"
+              >
+                <span>Buka di Aplikasi Phantom HP</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
             </div>
           </div>
         )}
