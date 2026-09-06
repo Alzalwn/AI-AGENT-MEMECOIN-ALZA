@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useTradingAgent } from '../../hooks/useTradingAgent';
 import {
   Activity,
@@ -17,7 +17,10 @@ import {
   Layers,
   Copy,
   Check,
-  Grid
+  Grid,
+  ChevronDown,
+  ChevronsUpDown,
+  Maximize2
 } from 'lucide-react';
 import { ClosedTrade } from '../../types/terminal';
 import StrategyRadar from '../StrategyRadar';
@@ -26,6 +29,7 @@ import KellyRiskEngine from '../KellyRiskEngine';
 import TradeHistoryLedger from '../TradeHistoryLedger';
 import ScanGrid from './ScanGrid';
 import { TerminalCandlestickChart } from './TerminalCandlestickChart';
+import CollapsibleCard from '../ui/CollapsibleCard';
 
 interface ConsensusEvaluatorProps {
   onOpenGemini: () => void;
@@ -40,13 +44,38 @@ export const ConsensusEvaluator: React.FC<ConsensusEvaluatorProps> = ({
   onShareTrade,
   onOpenAnalytics
 }) => {
-  const [copiedMint, setCopiedMint] = React.useState<boolean>(false);
+  const [copiedMint, setCopiedMint] = useState<boolean>(false);
+  const [expandedAgents, setExpandedAgents] = useState<Set<string>>(
+    new Set(['scanner', 'narrative', 'risk', 'timing', 'exit'])
+  );
 
   const handleCopyMint = (mint: string) => {
     navigator.clipboard.writeText(mint);
     setCopiedMint(true);
     setTimeout(() => setCopiedMint(false), 2000);
   };
+
+  const toggleAgent = (agentKey: string) => {
+    setExpandedAgents((prev) => {
+      const next = new Set(prev);
+      if (next.has(agentKey)) {
+        next.delete(agentKey);
+      } else {
+        next.add(agentKey);
+      }
+      return next;
+    });
+  };
+
+  const toggleAllAgents = () => {
+    const allKeys = ['scanner', 'narrative', 'risk', 'timing', 'exit'];
+    if (expandedAgents.size === allKeys.length) {
+      setExpandedAgents(new Set());
+    } else {
+      setExpandedAgents(new Set(allKeys));
+    }
+  };
+
   const {
     visualMode,
     setVisualMode,
@@ -54,146 +83,178 @@ export const ConsensusEvaluator: React.FC<ConsensusEvaluatorProps> = ({
     consensusFeed,
     selectResult,
     closedTrades,
-    telemetry,
-    activePosition
+    telemetry
   } = useTradingAgent();
 
   const targetResult = selectedResult || consensusFeed[0] || null;
 
   return (
     <section className="flex flex-col gap-4 font-mono">
-      {/* Visual Mode Tab Switcher */}
-      <div className="flex items-center gap-1.5 bg-zinc-900/60 backdrop-blur-md p-1.5 rounded-2xl border border-zinc-800/80">
-        <button
-          onClick={() => setVisualMode('radar')}
-          className={`flex-1 py-1.5 px-2 rounded-xl text-[10px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-            visualMode === 'radar'
-              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.2)]'
-              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 border border-transparent'
-          }`}
-        >
-          <Activity className="w-3.5 h-3.5" /> 4D Manifold
-        </button>
+      {/* 1. Engine Visualizer (Collapsible & Maximizable) */}
+      <CollapsibleCard
+        title="Engine Visualizer"
+        badge={visualMode.toUpperCase()}
+        badgeVariant={
+          visualMode === 'radar' || visualMode === 'ledger'
+            ? 'emerald'
+            : visualMode === 'kelly'
+            ? 'amber'
+            : visualMode === 'grid'
+            ? 'purple'
+            : 'cyan'
+        }
+        icon={<Activity className="w-4 h-4 text-emerald-400" />}
+        storageKey="card_engine_visualizer"
+        defaultCollapsed={false}
+      >
+        <div className="space-y-3">
+          {/* Visual Mode Tab Switcher */}
+          <div className="flex items-center gap-1.5 bg-zinc-950/70 p-1.5 rounded-xl border border-zinc-800/80 overflow-x-auto scrollbar-none">
+            <button
+              onClick={() => setVisualMode('radar')}
+              className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                visualMode === 'radar'
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.2)]'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 border border-transparent'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5" /> 4D Manifold
+            </button>
 
-        <button
-          onClick={() => setVisualMode('cluster')}
-          className={`flex-1 py-1.5 px-2 rounded-xl text-[10px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-            visualMode === 'cluster'
-              ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50 shadow-[0_0_8px_rgba(0,229,255,0.2)]'
-              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 border border-transparent'
-          }`}
-        >
-          <Compass className="w-3.5 h-3.5" /> 2D Cluster
-        </button>
+            <button
+              onClick={() => setVisualMode('cluster')}
+              className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                visualMode === 'cluster'
+                  ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50 shadow-[0_0_8px_rgba(0,229,255,0.2)]'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 border border-transparent'
+              }`}
+            >
+              <Compass className="w-3.5 h-3.5" /> 2D Cluster
+            </button>
 
-        <button
-          onClick={() => setVisualMode('kelly')}
-          className={`flex-1 py-1.5 px-2 rounded-xl text-[10px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-            visualMode === 'kelly'
-              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/50 shadow-[0_0_8px_rgba(245,166,35,0.2)]'
-              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 border border-transparent'
-          }`}
-        >
-          <ShieldCheck className="w-3.5 h-3.5" /> Kelly Risk
-        </button>
+            <button
+              onClick={() => setVisualMode('kelly')}
+              className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                visualMode === 'kelly'
+                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/50 shadow-[0_0_8px_rgba(245,166,35,0.2)]'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 border border-transparent'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5" /> Kelly Risk
+            </button>
 
-        <button
-          onClick={() => setVisualMode('ledger')}
-          className={`flex-1 py-1.5 px-2 rounded-xl text-[10px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-            visualMode === 'ledger'
-              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.2)]'
-              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 border border-transparent'
-          }`}
-        >
-          <History className="w-3.5 h-3.5" /> Ledger ({closedTrades.length})
-        </button>
+            <button
+              onClick={() => setVisualMode('ledger')}
+              className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                visualMode === 'ledger'
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.2)]'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 border border-transparent'
+              }`}
+            >
+              <History className="w-3.5 h-3.5" /> Ledger ({closedTrades.length})
+            </button>
 
-        <button
-          onClick={() => setVisualMode('chart')}
-          className={`flex-1 py-1.5 px-2 rounded-xl text-[10px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-            visualMode === 'chart'
-              ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50 shadow-[0_0_8px_rgba(0,229,255,0.2)]'
-              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 border border-transparent'
-          }`}
-        >
-          <TrendingUp className="w-3.5 h-3.5" /> DEX Chart
-        </button>
+            <button
+              onClick={() => setVisualMode('chart')}
+              className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                visualMode === 'chart'
+                  ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50 shadow-[0_0_8px_rgba(0,229,255,0.2)]'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 border border-transparent'
+              }`}
+            >
+              <TrendingUp className="w-3.5 h-3.5" /> DEX Chart
+            </button>
 
-        <button
-          onClick={() => setVisualMode('grid')}
-          className={`flex-1 py-1.5 px-2 rounded-xl text-[10px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-            visualMode === 'grid'
-              ? 'bg-purple-500/20 text-purple-400 border border-purple-500/50 shadow-[0_0_8px_rgba(168,85,247,0.2)]'
-              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 border border-transparent'
-          }`}
-        >
-          <Grid className="w-3.5 h-3.5" /> Scan Grid (96)
-        </button>
-      </div>
-
-      {/* Visual Component Render */}
-      {visualMode === 'radar' && <StrategyRadar selectedResult={targetResult} />}
-      {visualMode === 'cluster' && (
-        <NarrativeCluster
-          consensusFeed={consensusFeed}
-          selectedResult={targetResult}
-          onSelectToken={(res) => selectResult(res)}
-          onInspectGemini={() => onOpenGemini()}
-        />
-      )}
-      {visualMode === 'kelly' && (
-        <KellyRiskEngine
-          telemetry={telemetry}
-          selectedResult={targetResult}
-        />
-      )}
-      {visualMode === 'ledger' && (
-        <TradeHistoryLedger
-          trades={closedTrades}
-          onSelectTradeForShare={(trade) => onShareTrade && onShareTrade(trade)}
-          onOpenAnalytics={onOpenAnalytics}
-        />
-      )}
-      {visualMode === 'grid' && (
-        <ScanGrid onInspectToken={(res) => selectResult(res)} />
-      )}
-      {visualMode === 'chart' && (
-        targetResult ? (
-          <TerminalCandlestickChart token={targetResult.token} />
-        ) : (
-          <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800/80 rounded-2xl p-8 shadow-xl h-[400px] flex items-center justify-center text-zinc-500 text-xs">
-            Pilih token di Desk Feed untuk memuat candlestick chart
+            <button
+              onClick={() => setVisualMode('grid')}
+              className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                visualMode === 'grid'
+                  ? 'bg-purple-500/20 text-purple-400 border border-purple-500/50 shadow-[0_0_8px_rgba(168,85,247,0.2)]'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 border border-transparent'
+              }`}
+            >
+              <Grid className="w-3.5 h-3.5" /> Scan Grid (96)
+            </button>
           </div>
-        )
-      )}
 
-      {/* 5-Agent Consensus Breakdown Card */}
-      {targetResult && (
-        <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800/80 rounded-2xl p-4 shadow-xl space-y-3">
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
-            <div className="flex items-center gap-3">
-              {targetResult.token.iconUrl ? (
-                <img
-                  src={targetResult.token.iconUrl}
-                  alt={targetResult.token.symbol}
-                  className="w-8 h-8 rounded-xl object-cover border border-zinc-700"
-                />
+          {/* Visual Component Render */}
+          <div className="transition-all duration-300">
+            {visualMode === 'radar' && <StrategyRadar selectedResult={targetResult} />}
+            {visualMode === 'cluster' && (
+              <NarrativeCluster
+                consensusFeed={consensusFeed}
+                selectedResult={targetResult}
+                onSelectToken={(res) => selectResult(res)}
+                onInspectGemini={() => onOpenGemini()}
+              />
+            )}
+            {visualMode === 'kelly' && (
+              <KellyRiskEngine
+                telemetry={telemetry}
+                selectedResult={targetResult}
+              />
+            )}
+            {visualMode === 'ledger' && (
+              <TradeHistoryLedger
+                trades={closedTrades}
+                onSelectTradeForShare={(trade) => onShareTrade && onShareTrade(trade)}
+                onOpenAnalytics={onOpenAnalytics}
+              />
+            )}
+            {visualMode === 'grid' && (
+              <ScanGrid onInspectToken={(res) => selectResult(res)} />
+            )}
+            {visualMode === 'chart' && (
+              targetResult ? (
+                <TerminalCandlestickChart token={targetResult.token} />
               ) : (
-                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center font-black text-xs">
-                  {targetResult.token.symbol.slice(1, 3)}
+                <div className="bg-zinc-950/60 border border-zinc-800/80 rounded-xl p-8 shadow-xl h-[340px] flex items-center justify-center text-zinc-500 text-xs">
+                  Pilih token di Desk Feed untuk memuat candlestick chart
                 </div>
-              )}
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-black text-sm text-zinc-100">
-                    {targetResult.token.symbol}
-                  </span>
-                  <span className="text-xs text-zinc-500 truncate max-w-[120px]">
-                    {targetResult.token.name}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 mt-0.5 text-[10px] text-zinc-500 font-mono">
+              )
+            )}
+          </div>
+        </div>
+      </CollapsibleCard>
+
+      {/* 2. 5-Agent Consensus Breakdown Card (Collapsible & Maximizable) */}
+      {targetResult && (
+        <CollapsibleCard
+          title={`${targetResult.token.symbol} Consensus Analysis`}
+          subtitle={targetResult.token.name}
+          badge={targetResult.verdict}
+          badgeVariant={targetResult.verdict === 'APPROVED' ? 'emerald' : 'rose'}
+          icon={<ShieldCheck className="w-4 h-4 text-cyan-400" />}
+          storageKey="card_consensus_eval"
+          defaultCollapsed={false}
+          headerActions={
+            <button
+              type="button"
+              onClick={onOpenJupiterSwap}
+              className="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-400 font-bold text-[10px] flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Buka Jupiter Swap Modal"
+            >
+              <Layers className="w-3 h-3" />
+              <span className="hidden sm:inline">Swap</span>
+            </button>
+          }
+        >
+          <div className="space-y-3 pt-1">
+            {/* Token Quick Header */}
+            <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-zinc-800/60">
+              <div className="flex items-center gap-2.5">
+                {targetResult.token.iconUrl ? (
+                  <img
+                    src={targetResult.token.iconUrl}
+                    alt={targetResult.token.symbol}
+                    className="w-7 h-7 rounded-lg object-cover border border-zinc-700"
+                  />
+                ) : (
+                  <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center font-black text-xs">
+                    {targetResult.token.symbol.slice(1, 3)}
+                  </div>
+                )}
+                <div className="flex items-center gap-2 text-[10px] text-zinc-400 font-mono">
                   <span>
                     {targetResult.token.mint.slice(0, 6)}...{targetResult.token.mint.slice(-4)}
                   </span>
@@ -230,231 +291,264 @@ export const ConsensusEvaluator: React.FC<ConsensusEvaluatorProps> = ({
                   </a>
                 </div>
               </div>
+
+              <div className="flex items-center gap-1.5 text-[10px]">
+                <span className="text-zinc-500">Consensus:</span>
+                <span className="font-bold text-cyan-400 font-mono">
+                  {targetResult.consensusLatencyMs}ms
+                </span>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={onOpenJupiterSwap}
-                className="px-3 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-400 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
-              >
-                <Layers className="w-3.5 h-3.5" />
-                <span>Swap Jupiter</span>
-              </button>
-
-              <span
-                className={`px-3 py-1 rounded-xl text-xs font-black tracking-wider ${
-                  targetResult.verdict === 'APPROVED'
-                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50'
-                    : 'bg-rose-500/20 text-rose-400 border border-rose-500/50'
+            {/* Key Security Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
+              <div
+                className={`p-2 rounded-xl border flex flex-col items-center justify-center text-center ${
+                  targetResult.token.mintAuthorityRevoked
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                    : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
                 }`}
               >
-                {targetResult.verdict}
-              </span>
-            </div>
-          </div>
-
-          {/* Key Security Grid */}
-          <div className="grid grid-cols-4 gap-2 text-[10px]">
-            <div
-              className={`p-2 rounded-xl border flex flex-col items-center justify-center text-center ${
-                targetResult.token.mintAuthorityRevoked
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                  : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-              }`}
-            >
-              <span className="text-[9px] text-zinc-500">Mint Auth</span>
-              <span className="font-bold flex items-center gap-0.5">
-                {targetResult.token.mintAuthorityRevoked ? (
-                  <Lock className="w-2.5 h-2.5" />
-                ) : (
-                  <Unlock className="w-2.5 h-2.5" />
-                )}
-                {targetResult.token.mintAuthorityRevoked ? 'REVOKED' : 'ACTIVE'}
-              </span>
-            </div>
-
-            <div
-              className={`p-2 rounded-xl border flex flex-col items-center justify-center text-center ${
-                targetResult.token.freezeAuthorityRevoked
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                  : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-              }`}
-            >
-              <span className="text-[9px] text-zinc-500">Freeze Auth</span>
-              <span className="font-bold flex items-center gap-0.5">
-                {targetResult.token.freezeAuthorityRevoked ? (
-                  <Lock className="w-2.5 h-2.5" />
-                ) : (
-                  <Unlock className="w-2.5 h-2.5" />
-                )}
-                {targetResult.token.freezeAuthorityRevoked ? 'REVOKED' : 'ACTIVE'}
-              </span>
-            </div>
-
-            <div
-              className={`p-2 rounded-xl border flex flex-col items-center justify-center text-center ${
-                targetResult.token.burntLiquidityPct >= 90
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                  : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
-              }`}
-            >
-              <span className="text-[9px] text-zinc-500">LP Burn/Lock</span>
-              <span className="font-bold">
-                {targetResult.token.burntLiquidityPct >= 90
-                  ? `${targetResult.token.burntLiquidityPct}% BURN`
-                  : `${targetResult.token.burntLiquidityPct}% LP`}
-              </span>
-            </div>
-
-            <div
-              className={`p-2 rounded-xl border flex flex-col items-center justify-center text-center ${
-                targetResult.token.top10HolderPct <= 20
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                  : targetResult.token.top10HolderPct <= 35
-                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
-                  : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-              }`}
-            >
-              <span className="text-[9px] text-zinc-500">Top 10 Holders</span>
-              <span className="font-bold">{targetResult.token.top10HolderPct}%</span>
-            </div>
-          </div>
-
-          {/* Creator / Deployer Linkage Info */}
-          {targetResult.token.creatorAddress && (
-            <div className="flex items-center justify-between text-[10px] bg-zinc-950/80 px-3 py-1.5 rounded-xl border border-zinc-800">
-              <div className="flex items-center gap-1.5 text-zinc-400">
-                <Wallet className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Deployer:</span>
-                <a
-                  href={`https://solscan.io/account/${targetResult.token.creatorAddress}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-mono text-cyan-400 hover:underline font-bold flex items-center gap-0.5"
-                >
-                  <span>
-                    {targetResult.token.creatorAddress.slice(0, 4)}...
-                    {targetResult.token.creatorAddress.slice(-4)}
-                  </span>
-                  <ExternalLink className="w-2.5 h-2.5" />
-                </a>
-              </div>
-              {targetResult.token.creatorBalancePct !== undefined && (
-                <span
-                  className={`px-1.5 py-0.2 rounded font-bold font-mono text-[9px] ${
-                    targetResult.token.creatorBalancePct > 15
-                      ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
-                      : 'bg-emerald-500/20 text-emerald-400'
-                  }`}
-                >
-                  Hold: {targetResult.token.creatorBalancePct}%
+                <span className="text-[9px] text-zinc-500">Mint Auth</span>
+                <span className="font-bold flex items-center gap-0.5">
+                  {targetResult.token.mintAuthorityRevoked ? (
+                    <Lock className="w-2.5 h-2.5" />
+                  ) : (
+                    <Unlock className="w-2.5 h-2.5" />
+                  )}
+                  {targetResult.token.mintAuthorityRevoked ? 'REVOKED' : 'ACTIVE'}
                 </span>
-              )}
-            </div>
-          )}
+              </div>
 
-          {/* Honeypot Alert if detected */}
-          {targetResult.token.isHoneypotDetected && (
-            <div className="bg-rose-500/20 border border-rose-500/50 text-rose-400 px-3 py-1.5 rounded-xl text-[10px] font-bold flex items-center gap-2 animate-pulse">
-              <AlertTriangle className="w-4 h-4 shrink-0" />
-              <span>CRITICAL: Honeypot Terdeteksi! Token tidak dapat dijual kembali.</span>
-            </div>
-          )}
+              <div
+                className={`p-2 rounded-xl border flex flex-col items-center justify-center text-center ${
+                  targetResult.token.freezeAuthorityRevoked
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                    : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                }`}
+              >
+                <span className="text-[9px] text-zinc-500">Freeze Auth</span>
+                <span className="font-bold flex items-center gap-0.5">
+                  {targetResult.token.freezeAuthorityRevoked ? (
+                    <Lock className="w-2.5 h-2.5" />
+                  ) : (
+                    <Unlock className="w-2.5 h-2.5" />
+                  )}
+                  {targetResult.token.freezeAuthorityRevoked ? 'REVOKED' : 'ACTIVE'}
+                </span>
+              </div>
 
-          {/* Rugcheck Detected Risks Chips (if any) */}
-          {targetResult.token.rugcheckRisks && targetResult.token.rugcheckRisks.length > 0 && (
-            <div className="flex flex-wrap gap-1 pt-1.5 border-t border-zinc-800/60">
-              <span className="text-[9px] text-zinc-500 font-bold self-center mr-1">Risks:</span>
-              {targetResult.token.rugcheckRisks.slice(0, 5).map((risk, idx) => {
-                const isRiskDanger =
-                  risk.toLowerCase().includes('danger') ||
-                  risk.toLowerCase().includes('honeypot') ||
-                  risk.toLowerCase().includes('freeze');
-                const isRiskWarn =
-                  risk.toLowerCase().includes('warn') ||
-                  risk.toLowerCase().includes('top') ||
-                  risk.toLowerCase().includes('holder');
-                return (
+              <div
+                className={`p-2 rounded-xl border flex flex-col items-center justify-center text-center ${
+                  targetResult.token.burntLiquidityPct >= 90
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                    : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                }`}
+              >
+                <span className="text-[9px] text-zinc-500">LP Burn/Lock</span>
+                <span className="font-bold">
+                  {targetResult.token.burntLiquidityPct >= 90
+                    ? `${targetResult.token.burntLiquidityPct}% BURN`
+                    : `${targetResult.token.burntLiquidityPct}% LP`}
+                </span>
+              </div>
+
+              <div
+                className={`p-2 rounded-xl border flex flex-col items-center justify-center text-center ${
+                  targetResult.token.top10HolderPct <= 20
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                    : targetResult.token.top10HolderPct <= 35
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                    : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                }`}
+              >
+                <span className="text-[9px] text-zinc-500">Top 10 Holders</span>
+                <span className="font-bold">{targetResult.token.top10HolderPct}%</span>
+              </div>
+            </div>
+
+            {/* Creator / Deployer Linkage Info */}
+            {targetResult.token.creatorAddress && (
+              <div className="flex items-center justify-between text-[10px] bg-zinc-950/80 px-3 py-1.5 rounded-xl border border-zinc-800">
+                <div className="flex items-center gap-1.5 text-zinc-400">
+                  <Wallet className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Deployer:</span>
+                  <a
+                    href={`https://solscan.io/account/${targetResult.token.creatorAddress}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-cyan-400 hover:underline font-bold flex items-center gap-0.5"
+                  >
+                    <span>
+                      {targetResult.token.creatorAddress.slice(0, 4)}...
+                      {targetResult.token.creatorAddress.slice(-4)}
+                    </span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </div>
+                {targetResult.token.creatorBalancePct !== undefined && (
                   <span
-                    key={idx}
-                    title={risk}
-                    className={`text-[9px] px-1.5 py-0.5 rounded font-mono truncate max-w-[150px] ${
-                      isRiskDanger
-                        ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                        : isRiskWarn
-                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                        : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                    className={`px-1.5 py-0.2 rounded font-bold font-mono text-[9px] ${
+                      targetResult.token.creatorBalancePct > 15
+                        ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
+                        : 'bg-emerald-500/20 text-emerald-400'
                     }`}
                   >
-                    {risk}
+                    Hold: {targetResult.token.creatorBalancePct}%
                   </span>
-                );
-              })}
-            </div>
-          )}
+                )}
+              </div>
+            )}
 
-          {/* 5-Agent Breakdown List */}
-          <div className="space-y-2 pt-1">
-            {(['scanner', 'narrative', 'risk', 'timing', 'exit'] as const).map((agentKey) => {
-              const verdict = targetResult.verdicts[agentKey];
-              const isPass = verdict.status === 'APPROVE';
+            {/* Honeypot Alert if detected */}
+            {targetResult.token.isHoneypotDetected && (
+              <div className="bg-rose-500/20 border border-rose-500/50 text-rose-400 px-3 py-1.5 rounded-xl text-[10px] font-bold flex items-center gap-2 animate-pulse">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>CRITICAL: Honeypot Terdeteksi! Token tidak dapat dijual kembali.</span>
+              </div>
+            )}
 
-              return (
-                <div
-                  key={agentKey}
-                  className={`p-2.5 rounded-xl border text-xs flex flex-col gap-1 transition-all ${
-                    isPass
-                      ? 'bg-zinc-950/60 border-zinc-800'
-                      : 'bg-rose-500/10 border-rose-500/40'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-zinc-200 uppercase text-[11px] flex items-center gap-2">
-                      <span
-                        className={`w-2 h-2 rounded-full ${
-                          isPass ? 'bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.8)]' : 'bg-rose-500'
-                        }`}
-                      />
-                      {verdict.agentName}
-                    </span>
+            {/* Rugcheck Detected Risks Chips (if any) */}
+            {targetResult.token.rugcheckRisks && targetResult.token.rugcheckRisks.length > 0 && (
+              <div className="flex flex-wrap gap-1 pt-1.5 border-t border-zinc-800/60">
+                <span className="text-[9px] text-zinc-500 font-bold self-center mr-1">Risks:</span>
+                {targetResult.token.rugcheckRisks.slice(0, 5).map((risk, idx) => {
+                  const isRiskDanger =
+                    risk.toLowerCase().includes('danger') ||
+                    risk.toLowerCase().includes('honeypot') ||
+                    risk.toLowerCase().includes('freeze');
+                  const isRiskWarn =
+                    risk.toLowerCase().includes('warn') ||
+                    risk.toLowerCase().includes('top') ||
+                    risk.toLowerCase().includes('holder');
+                  return (
                     <span
-                      className={`text-[9px] px-2 py-0.2 rounded font-black ${
-                        isPass
-                          ? 'bg-emerald-500/20 text-emerald-400'
-                          : 'bg-rose-500/20 text-rose-400'
+                      key={idx}
+                      title={risk}
+                      className={`text-[9px] px-1.5 py-0.5 rounded font-mono truncate max-w-[150px] ${
+                        isRiskDanger
+                          ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                          : isRiskWarn
+                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                          : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
                       }`}
                     >
-                      {verdict.status}
+                      {risk}
                     </span>
-                  </div>
-                  <p className="text-[10px] text-zinc-400 leading-relaxed">
-                    {verdict.reason}
-                  </p>
-                  <div className="flex items-center justify-between text-[9px] text-zinc-500 pt-1 border-t border-zinc-800/60">
-                    <span>
-                      Metric: <strong className="text-zinc-200">{verdict.metricValue}</strong>
-                    </span>
-                    <span>
-                      Target: <strong className="text-zinc-200">{verdict.threshold}</strong>
-                    </span>
-                    <span>{verdict.latencyMs}ms</span>
-                  </div>
-                  {agentKey === 'narrative' && (
-                    <div className="pt-1 flex justify-end">
+                  );
+                })}
+              </div>
+            )}
+
+            {/* 5-Agent Breakdown Accordion Section */}
+            <div className="pt-2 border-t border-zinc-800/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-black uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  5-Agent Consensus Breakdown
+                </span>
+                <button
+                  type="button"
+                  onClick={toggleAllAgents}
+                  className="text-[10px] text-cyan-400 hover:text-cyan-300 font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  <ChevronsUpDown className="w-3 h-3" />
+                  <span>
+                    {expandedAgents.size === 5 ? 'Collapse All' : 'Expand All'}
+                  </span>
+                </button>
+              </div>
+
+              {/* Individual Agent Accordion Cards */}
+              <div className="space-y-2">
+                {(['scanner', 'narrative', 'risk', 'timing', 'exit'] as const).map((agentKey) => {
+                  const verdict = targetResult.verdicts[agentKey];
+                  const isPass = verdict.status === 'APPROVE';
+                  const isExpanded = expandedAgents.has(agentKey);
+
+                  return (
+                    <div
+                      key={agentKey}
+                      className={`rounded-xl border transition-all duration-200 overflow-hidden ${
+                        isPass
+                          ? 'bg-zinc-950/60 border-zinc-800/80'
+                          : 'bg-rose-500/10 border-rose-500/30'
+                      }`}
+                    >
+                      {/* Accordion Item Header */}
                       <button
-                        onClick={onOpenGemini}
-                        className="px-2 py-0.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-400 text-[10px] flex items-center gap-1 font-bold transition-all cursor-pointer"
+                        type="button"
+                        onClick={() => toggleAgent(agentKey)}
+                        className="w-full p-2.5 flex items-center justify-between text-left hover:bg-zinc-800/30 transition-colors cursor-pointer"
+                        aria-expanded={isExpanded}
                       >
-                        <Sparkles className="w-3 h-3" />
-                        Deep Dive Gemini AI
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`w-2 h-2 rounded-full ${
+                              isPass ? 'bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.8)]' : 'bg-rose-500'
+                            }`}
+                          />
+                          <span className="font-bold text-zinc-200 uppercase text-[11px]">
+                            {verdict.agentName}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`text-[9px] px-2 py-0.5 rounded font-black ${
+                              isPass
+                                ? 'bg-emerald-500/20 text-emerald-400'
+                                : 'bg-rose-500/20 text-rose-400'
+                            }`}
+                          >
+                            {verdict.status}
+                          </span>
+                          <ChevronDown
+                            className={`w-3.5 h-3.5 text-zinc-400 transition-transform duration-200 ${
+                              isExpanded ? 'rotate-180' : ''
+                            }`}
+                          />
+                        </div>
                       </button>
+
+                      {/* Accordion Item Content Drawer */}
+                      {isExpanded && (
+                        <div className="px-3 pb-3 pt-1 border-t border-zinc-800/50 space-y-2 text-xs">
+                          <p className="text-[10px] text-zinc-400 leading-relaxed">
+                            {verdict.reason}
+                          </p>
+
+                          <div className="flex items-center justify-between text-[9px] text-zinc-500 pt-1.5 border-t border-zinc-800/60">
+                            <span>
+                              Metric: <strong className="text-zinc-200">{verdict.metricValue}</strong>
+                            </span>
+                            <span>
+                              Target: <strong className="text-zinc-200">{verdict.threshold}</strong>
+                            </span>
+                            <span className="text-zinc-400 font-mono">{verdict.latencyMs}ms</span>
+                          </div>
+
+                          {agentKey === 'narrative' && (
+                            <div className="pt-1 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={onOpenGemini}
+                                className="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-400 text-[10px] flex items-center gap-1 font-bold transition-all cursor-pointer"
+                              >
+                                <Sparkles className="w-3 h-3" />
+                                Deep Dive Gemini AI
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            </div>
           </div>
-        </div>
+        </CollapsibleCard>
       )}
     </section>
   );
