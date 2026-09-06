@@ -43,7 +43,6 @@ import {
 } from '../lib/discord';
 import { createJitoBundleReceipt } from '../lib/jito';
 import { rpcFailoverInstance } from '../lib/rpcFailover';
-import { fetchJupiterQuote, executeJupiterSwap } from '../lib/jupiter';
 
 // Extended configs with minGrokScore (not part of base lib type)
 export interface WebhookTelegramConfig extends TelegramConfig {
@@ -81,7 +80,7 @@ const DEFAULT_AGENT_CONFIG: AgentConfig = {
 const DEFAULT_NETWORK_METRICS: NetworkMetrics = {
   rpcLabel: rpcFailoverInstance.getActiveEndpoint().name,
   latencyMs: rpcFailoverInstance.getActiveEndpoint().latencyMs,
-  currentSlot: 284193420,
+  currentSlot: 0,
   gasPriceGwei: 0.000005,
   jitoTipSol: 0.00005,
   isBlockEngineOnline: true
@@ -480,20 +479,10 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     appendLog('JITO', 'SUCCESS', `⚡ JITO TOKYO BUNDLE LANDED: ${bundleReceipt.bundleId} (${bundleReceipt.latencyMs}ms) • Tip: ${tipSol} SOL`);
     appendLog('EXECUTION', 'SUCCESS', `[CONFIRMED] Opened active position on ${token.symbol} @ ${entryPrice.toFixed(8)} SOL via Jito MEV`);
 
-    // Real On-Chain Swap Execution if LIVE_ON_CHAIN is enabled
+    // Real On-Chain Swap via Jupiter Modal (user must approve in Phantom extension)
+    // The actual signing happens in JupiterSwapModal when user clicks "SWAP VIA JUPITER + JITO MEV"
     if (walletState.mode === 'LIVE_ON_CHAIN' && walletState.isConnected) {
-      const provider = typeof window !== 'undefined' ? ((window as any).phantom?.solana || (window as any).solana || (window as any).solflare || (window as any).backpack) : null;
-      if (provider) {
-        appendLog('EXECUTION', 'INFO', `Meminta persetujuan swap di extension Phantom untuk token ${token.symbol}...`);
-        fetchJupiterQuote(token.mint, solInvest)
-          .then((quote) => executeJupiterSwap(quote, token.symbol, tipSol, networkMetrics.currentSlot, walletState.fullPublicKey || undefined, provider))
-          .then((swapRes) => {
-            appendLog('EXECUTION', 'SUCCESS', `✅ Swap On-Chain Terkonfirmasi! Tx: https://solscan.io/tx/${swapRes.signature}`);
-          })
-          .catch((err) => {
-            appendLog('EXECUTION', 'DANGER', `Gagal swap on-chain: ${err.message}`);
-          });
-      }
+      appendLog('EXECUTION', 'INFO', `🟡 [LIVE] Posisi ${token.symbol} dibuka di dashboard. Untuk eksekusi on-chain, gunakan modal Jupiter Swap (tekan J) dan konfirmasi di Phantom.`);
     }
 
     // Omnichannel Buy Alerts
@@ -535,6 +524,31 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [appendLog]);
 
   const realTokensQueueRef = useRef<TokenSignal[]>([]);
+
+  // Live Slot Fetch from Helius RPC on startup
+  useEffect(() => {
+    const fetchLiveSlot = async () => {
+      const rpcUrl = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://solana-rpc.publicnode.com';
+      try {
+        const res = await fetch(rpcUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getSlot' }),
+          signal: AbortSignal.timeout(5000)
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.result) {
+            setNetworkMetrics((m) => ({ ...m, currentSlot: data.result }));
+            setTelemetry((t) => ({ ...t, currentSlot: data.result }));
+          }
+        }
+      } catch {}
+    };
+    fetchLiveSlot();
+    const slotTimer = setInterval(fetchLiveSlot, 60000);
+    return () => clearInterval(slotTimer);
+  }, []);
 
   // Periodic Ingestion of Real Live Solana Tokens from DexScreener API
   useEffect(() => {
@@ -717,20 +731,17 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
             }) via Jito MEV Private Bundle`
           );
 
-          // Real On-Chain Execution for Autonomous Bot
+          // LIVE_ON_CHAIN mode note:
+          // Browser-based dApps cannot autonomously sign transactions without user interaction.
+          // For each APPROVED signal in LIVE mode, we log a prompt for the user to manually swap
+          // via the Jupiter Swap modal (press J). Real autonomous trading requires a private key
+          // server-side bot, which is architecturally separate from this dashboard.
           if (walletState.mode === 'LIVE_ON_CHAIN' && walletState.isConnected) {
-            const provider = typeof window !== 'undefined' ? ((window as any).phantom?.solana || (window as any).solana || (window as any).solflare || (window as any).backpack) : null;
-            if (provider) {
-              appendLog('EXECUTION', 'INFO', `⚡ [AUTO-SNIPE ON-CHAIN] Meminta persetujuan swap di wallet untuk ${consensus.token.symbol}...`);
-              fetchJupiterQuote(consensus.token.mint, solInvest)
-                .then((quote) => executeJupiterSwap(quote, consensus.token.symbol, tipSol, networkMetrics.currentSlot, walletState.fullPublicKey || undefined, provider))
-                .then((swapRes) => {
-                  appendLog('EXECUTION', 'SUCCESS', `🎉 [AUTO-SNIPE ON-CHAIN BERHASIL] Tx: https://solscan.io/tx/${swapRes.signature}`);
-                })
-                .catch((err) => {
-                  appendLog('EXECUTION', 'DANGER', `[AUTO-SNIPE ON-CHAIN GAGAL] ${err.message}`);
-                });
-            }
+            appendLog(
+              'EXECUTION',
+              'INFO',
+              `🟡 [LIVE] Signal ${consensus.token.symbol} APPROVED — Tekan [J] untuk swap manual via Jupiter, atau gunakan bot server-side untuk eksekusi otomatis`
+            );
           }
 
           return newPos;

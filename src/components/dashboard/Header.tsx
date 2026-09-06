@@ -24,7 +24,8 @@ import {
   KeyRound,
   Menu,
   X as CloseIcon,
-  Users
+  Users,
+  ShieldCheck
 } from 'lucide-react';
 import { rpcFailoverInstance } from '../../lib/rpcFailover';
 import { useSolRate } from '../../hooks/useSolRate';
@@ -268,6 +269,30 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <SlidersHorizontal className="w-4 h-4 text-cyan-400" />
             <span className="hidden xl:inline text-[11px] font-bold">Slip: {executionConfig.slippagePct}%</span>
+          </button>
+
+          {/* Mode Indicator: LIVE ON-CHAIN vs PAPER TRADING */}
+          <button
+            onClick={onOpenWallet}
+            title="Klik untuk mengubah Mode Trading (Live On-Chain vs Paper Trading)"
+            aria-label="Ubah Mode Trading"
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[10px] font-mono font-bold border transition-all cursor-pointer ${
+              walletState.mode === 'LIVE_ON_CHAIN'
+                ? 'bg-red-500/15 border-red-500/40 text-red-400 shadow-[0_0_8px_rgba(239,68,68,0.25)] animate-pulse'
+                : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+            }`}
+          >
+            {walletState.mode === 'LIVE_ON_CHAIN' ? (
+              <>
+                <Zap className="w-3 h-3 text-red-400 fill-red-400/30" />
+                <span>LIVE</span>
+              </>
+            ) : (
+              <>
+                <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                <span>PAPER</span>
+              </>
+            )}
           </button>
 
           {/* Web3 Wallet Button */}

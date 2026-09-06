@@ -4,11 +4,14 @@ import { AUTH_COOKIE_NAME, verifySession } from './lib/auth';
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // 1. Allow public static assets and auth API routes
+  // 1. Allow public static assets and essential API routes
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/api/wallet') ||
+    pathname.startsWith('/api/jupiter') ||
+    pathname.startsWith('/api/tokens') ||
+    pathname.startsWith('/api/sol-rate') ||
     pathname === '/robots.txt' ||
     pathname === '/favicon.ico'
   ) {
