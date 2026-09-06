@@ -20,7 +20,8 @@ import {
   SlidersHorizontal,
   Wallet,
   Zap,
-  Radio
+  Radio,
+  Coins
 } from 'lucide-react';
 import Badge from './ui/Badge';
 
@@ -65,6 +66,7 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
         { key: 'E', desc: 'Execution Profile & Slippage Settings', icon: <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-400" /> },
         { key: 'W', desc: 'Koneksikan Web3 Solana Wallet', icon: <Wallet className="w-3.5 h-3.5 text-emerald-400" /> },
         { key: 'R', desc: 'RPC Manager & Failover Telemetri', icon: <Radio className="w-3.5 h-3.5 text-emerald-400" /> },
+        { key: 'C', desc: 'Kalkulator Kurs SOL ⇄ IDR (Rupiah) & USD', icon: <Coins className="w-3.5 h-3.5 text-purple-400" /> },
         { key: '?', desc: 'Buka Bantuan Keyboard Shortcuts ini', icon: <Keyboard className="w-3.5 h-3.5 text-zinc-400" /> }
       ]
     }

@@ -23,6 +23,7 @@ import {
   LogOut
 } from 'lucide-react';
 import { rpcFailoverInstance } from '../../lib/rpcFailover';
+import { useSolRate } from '../../hooks/useSolRate';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import ConfirmModal from '../ui/ConfirmModal';
@@ -36,6 +37,7 @@ interface HeaderProps {
   onOpenJupiter?: () => void;
   onOpenRpc?: () => void;
   onOpenShortcuts?: () => void;
+  onOpenConverter?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -46,7 +48,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenExecution,
   onOpenJupiter,
   onOpenRpc,
-  onOpenShortcuts
+  onOpenShortcuts,
+  onOpenConverter
 }) => {
   const {
     engineStatus,
@@ -59,6 +62,8 @@ export const Header: React.FC<HeaderProps> = ({
     activePosition,
     executionConfig
   } = useTradingAgent();
+
+  const { rate, formatIdrShort, formatUsd } = useSolRate();
 
   const [isKillModalOpen, setIsKillModalOpen] = useState<boolean>(false);
 
@@ -137,10 +142,44 @@ export const Header: React.FC<HeaderProps> = ({
             <span>Jito Tip:</span>
             <span className="text-cyan-400 font-bold">{networkMetrics.jitoTipSol} SOL</span>
           </div>
+
+          <div className="h-3 w-px bg-zinc-800" />
+
+          {/* Live SOL Price in Rupiah & USD */}
+          <button
+            onClick={() => onOpenConverter?.()}
+            title="Klik untuk membuka Kalkulator Kurs SOL ⇄ Rupiah (IDR) & USD"
+            className="flex items-center gap-1.5 text-zinc-300 hover:text-purple-300 transition-all cursor-pointer group"
+          >
+            <span className="text-purple-400 font-bold">1 SOL =</span>
+            <span className="text-emerald-400 font-bold group-hover:underline">
+              {formatIdrShort(1)}
+            </span>
+            <span className="text-[10px] text-zinc-500 hidden xl:inline">
+              ({formatUsd(1)})
+            </span>
+            <span
+              className={`text-[9px] px-1 py-0.2 rounded font-bold ${
+                rate.change24h >= 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
+              }`}
+            >
+              {rate.change24h >= 0 ? '+' : ''}
+              {rate.change24h.toFixed(1)}%
+            </span>
+          </button>
         </div>
 
         {/* Right: Quick Tools & Emergency Kill Switch */}
         <div className="flex items-center gap-2 w-full md:w-auto justify-end flex-wrap">
+          {/* Quick SOL Converter Pill (Visible on all screens) */}
+          <button
+            onClick={() => onOpenConverter?.()}
+            title="Kalkulator Kurs: 1 SOL = Berapa Rupiah / USD"
+            className="lg:hidden flex items-center gap-1.5 bg-gradient-to-r from-purple-500/10 to-emerald-500/10 hover:from-purple-500/20 hover:to-emerald-500/20 border border-purple-500/30 px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-zinc-200 transition-all cursor-pointer active:scale-95"
+          >
+            <span className="text-purple-400">SOL:</span>
+            <span className="text-emerald-400">{formatIdrShort(1)}</span>
+          </button>
           {/* Audio Synthesizer */}
           <button
             onClick={toggleAudio}
@@ -209,7 +248,12 @@ export const Header: React.FC<HeaderProps> = ({
             leftIcon={<Wallet className="w-3.5 h-3.5 text-emerald-400" />}
           >
             {walletState.isConnected ? (
-              <span>{walletState.balanceSol.toFixed(2)} SOL</span>
+              <span className="flex items-center gap-1">
+                <span>{walletState.balanceSol.toFixed(2)} SOL</span>
+                <span className="text-[10px] text-zinc-400 hidden xl:inline">
+                  (≈ {formatIdrShort(walletState.balanceSol)})
+                </span>
+              </span>
             ) : (
               <span>Connect Wallet</span>
             )}

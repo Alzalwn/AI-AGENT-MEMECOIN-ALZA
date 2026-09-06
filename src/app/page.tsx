@@ -25,6 +25,7 @@ import PnlShareModal from '../components/PnlShareModal';
 import JitoBundleTrackerModal from '../components/JitoBundleTrackerModal';
 import KeyboardShortcutsModal from '../components/KeyboardShortcutsModal';
 import RpcManagerModal from '../components/RpcManagerModal';
+import SolConverterModal from '../components/SolConverterModal';
 import { TelegramConfig } from '../lib/telegram';
 import { DiscordConfig } from '../lib/discord';
 import { JitoBundleReceipt } from '../lib/jito';
@@ -67,6 +68,7 @@ function TerminalAppInner() {
   const [isJitoTrackerOpen, setIsJitoTrackerOpen] = useState<boolean>(false);
   const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState<boolean>(false);
   const [isRpcModalOpen, setIsRpcModalOpen] = useState<boolean>(false);
+  const [isConverterOpen, setIsConverterOpen] = useState<boolean>(false);
 
   // Global Pro Trader Keyboard Shortcuts
   React.useEffect(() => {
@@ -107,6 +109,8 @@ function TerminalAppInner() {
         setIsJupiterModalOpen((prev) => !prev);
       } else if (e.key.toLowerCase() === 'r') {
         setIsRpcModalOpen((prev) => !prev);
+      } else if (e.key.toLowerCase() === 'c') {
+        setIsConverterOpen((prev) => !prev);
       } else if (e.key === '?') {
         setIsShortcutsModalOpen((prev) => !prev);
       }
@@ -159,6 +163,7 @@ function TerminalAppInner() {
         onOpenJupiter={() => setIsJupiterModalOpen(true)}
         onOpenRpc={() => setIsRpcModalOpen(true)}
         onOpenShortcuts={() => setIsShortcutsModalOpen(true)}
+        onOpenConverter={() => setIsConverterOpen(true)}
       />
 
       {/* Main Workspace Body */}
@@ -232,6 +237,12 @@ function TerminalAppInner() {
                 M
               </kbd>
               <span>{isAudioMuted ? 'Unmute' : 'Mute'}</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 bg-purple-500/20 border border-purple-500/40 rounded text-purple-300 font-bold">
+                C
+              </kbd>
+              <span className="text-purple-300 font-medium">SOL Kurs (IDR/USD)</span>
             </span>
           </div>
 
@@ -335,6 +346,11 @@ function TerminalAppInner() {
       <RpcManagerModal
         isOpen={isRpcModalOpen}
         onClose={() => setIsRpcModalOpen(false)}
+      />
+
+      <SolConverterModal
+        isOpen={isConverterOpen}
+        onClose={() => setIsConverterOpen(false)}
       />
 
       {/* Floating Pro Trader Hotkeys Trigger Button */}
