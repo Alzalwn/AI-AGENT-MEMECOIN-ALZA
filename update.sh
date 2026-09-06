@@ -25,7 +25,14 @@ npm install --production=false
 npm run build
 
 echo "⚡ [4/4] Memuat ulang instance PM2 dengan kode baru..."
-pm2 restart grok-trencher 2>/dev/null || pm2 restart all
+pm2 restart grok-trencher 2>/dev/null || pm2 start npm --name "grok-trencher" -- start
+
+# Memuat ulang grok-sniper daemon jika aktif
+if pm2 list 2>/dev/null | grep -q "grok-sniper"; then
+    echo "⚡ Memuat ulang grok-sniper 24/7 autonomous bot daemon..."
+    pm2 restart grok-sniper
+fi
+pm2 save
 
 echo ""
 echo "=========================================================================="

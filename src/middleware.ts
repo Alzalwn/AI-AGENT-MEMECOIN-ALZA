@@ -12,6 +12,7 @@ export async function middleware(req: NextRequest) {
     pathname.startsWith('/api/jupiter') ||
     pathname.startsWith('/api/tokens') ||
     pathname.startsWith('/api/sol-rate') ||
+    pathname.startsWith('/api/bot') ||
     pathname === '/robots.txt' ||
     pathname === '/favicon.ico'
   ) {

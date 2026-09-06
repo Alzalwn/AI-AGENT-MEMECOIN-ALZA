@@ -25,7 +25,8 @@ import {
   Menu,
   X as CloseIcon,
   Users,
-  ShieldCheck
+  ShieldCheck,
+  Server
 } from 'lucide-react';
 import { rpcFailoverInstance } from '../../lib/rpcFailover';
 import { useSolRate } from '../../hooks/useSolRate';
@@ -45,6 +46,7 @@ interface HeaderProps {
   onOpenConverter?: () => void;
   onOpenPassword?: () => void;
   onOpenSmartMoney?: () => void;
+  onOpenVpsBot?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -58,7 +60,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenShortcuts,
   onOpenConverter,
   onOpenPassword,
-  onOpenSmartMoney
+  onOpenSmartMoney,
+  onOpenVpsBot
 }) => {
   const {
     engineStatus,
@@ -260,6 +263,19 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
+          {/* VPS Autonomous Sniper 24/7 (Desktop) */}
+          {onOpenVpsBot && (
+            <button
+              onClick={onOpenVpsBot}
+              className="hidden lg:flex p-2 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 hover:text-purple-200 transition-all cursor-pointer items-center gap-1.5 text-xs shadow-[0_0_10px_rgba(168,85,247,0.15)]"
+              title="VPS 24/7 Autonomous Sniper Bot (Hot Wallet & PM2)"
+              aria-label="Buka VPS Bot Status"
+            >
+              <Server className="w-4 h-4 text-purple-400" />
+              <span className="hidden xl:inline text-[11px] font-bold">VPS Bot (24/7)</span>
+            </button>
+          )}
+
           {/* Execution Settings (Desktop) */}
           <button
             onClick={onOpenExecution}
@@ -402,6 +418,17 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 <Users className="w-4 h-4 text-emerald-400 shrink-0" />
                 <span>Smart Money (Copy-Trade)</span>
+              </button>
+            )}
+
+            {/* VPS Bot 24/7 (Mobile) */}
+            {onOpenVpsBot && (
+              <button
+                onClick={() => { onOpenVpsBot(); setIsMobileMenuOpen(false); }}
+                className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/30 hover:bg-purple-500/20 text-purple-300 flex items-center gap-2 transition-all cursor-pointer col-span-2 sm:col-span-1"
+              >
+                <Server className="w-4 h-4 text-purple-400 shrink-0" />
+                <span>VPS Bot (24/7)</span>
               </button>
             )}
 

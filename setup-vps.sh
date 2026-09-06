@@ -76,9 +76,14 @@ npm install --registry=https://registry.npmjs.org/ || npm install --registry=htt
 npm run build
 
 # 7. Start dengan PM2
-echo "⚡ Menjalankan Grok Trencher dengan PM2..."
+echo "⚡ Menjalankan Grok Trencher Web Terminal dengan PM2..."
 pm2 stop grok-trencher 2>/dev/null || true
 pm2 start npm --name "grok-trencher" -- start
+
+# Jalankan 24/7 Autonomous Sniper Bot Daemon
+echo "🤖 Menjalankan Grok Autonomous Sniper Daemon 24/7..."
+pm2 stop grok-sniper 2>/dev/null || true
+pm2 start scripts/sniper-daemon.mjs --name "grok-sniper"
 pm2 save
 pm2 startup || true
 

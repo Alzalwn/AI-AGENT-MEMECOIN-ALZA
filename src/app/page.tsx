@@ -29,6 +29,7 @@ import SolConverterModal from '../components/SolConverterModal';
 import ConfirmSnipeModal from '../components/ConfirmSnipeModal';
 import ChangePasswordModal from '../components/ChangePasswordModal';
 import SmartMoneyModal from '../components/SmartMoneyModal';
+import { VpsBotModal } from '../components/VpsBotModal';
 import { JitoBundleReceipt } from '../lib/jito';
 import { STRATEGY_PRESETS } from '../config/constants';
 import { ActivePosition, ClosedTrade } from '../types/terminal';
@@ -85,6 +86,7 @@ function TerminalAppInner() {
   const [isConverterOpen, setIsConverterOpen] = useState<boolean>(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState<boolean>(false);
   const [isSmartMoneyOpen, setIsSmartMoneyOpen] = useState<boolean>(false);
+  const [isVpsBotOpen, setIsVpsBotOpen] = useState<boolean>(false);
 
   // Global Pro Trader Keyboard Shortcuts
   React.useEffect(() => {
@@ -161,6 +163,7 @@ function TerminalAppInner() {
         onOpenConverter={() => setIsConverterOpen(true)}
         onOpenPassword={() => setIsPasswordModalOpen(true)}
         onOpenSmartMoney={() => setIsSmartMoneyOpen(true)}
+        onOpenVpsBot={() => setIsVpsBotOpen(true)}
       />
 
       {/* Main Workspace Body */}
@@ -382,6 +385,11 @@ function TerminalAppInner() {
         isOpen={isSmartMoneyOpen}
         onClose={() => setIsSmartMoneyOpen(false)}
         onLogMessage={appendLog}
+      />
+
+      <VpsBotModal
+        isOpen={isVpsBotOpen}
+        onClose={() => setIsVpsBotOpen(false)}
       />
 
       {/* Floating Pro Trader Hotkeys Trigger Button */}
