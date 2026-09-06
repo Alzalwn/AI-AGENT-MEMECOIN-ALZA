@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Wallet, ShieldCheck, Zap, Check, X, ExternalLink, AlertTriangle, Radio } from 'lucide-react';
 import { WalletState } from '../types/terminal';
 import { JITO_TIP_ACCOUNTS } from '../config/constants';
+import { rpcFailoverInstance } from '../lib/rpcFailover';
 
 interface WalletConnectModalProps {
   isOpen: boolean;
@@ -45,9 +46,11 @@ export default function WalletConnectModal({
             const resp = await provider.connect();
             const pubKey = resp?.publicKey ? resp.publicKey.toString() : provider.publicKey?.toString();
             if (pubKey) {
+              // Use the active failover RPC endpoint (not hardcoded public endpoint)
               let balance = 0;
               try {
-                const balRes = await fetch('https://api.mainnet-beta.solana.com', {
+                const activeRpc = rpcFailoverInstance.getActiveEndpoint();
+                const balRes = await fetch(activeRpc.url, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
@@ -55,14 +58,34 @@ export default function WalletConnectModal({
                     id: 1,
                     method: 'getBalance',
                     params: [pubKey]
-                  })
+                  }),
+                  signal: AbortSignal.timeout(5000)
                 });
                 const balData = await balRes.json();
                 if (balData.result?.value !== undefined) {
                   balance = +(balData.result.value / 1e9).toFixed(4);
+                } else {
+                  // Try failover endpoint if primary failed
+                  const fallbackRpc = rpcFailoverInstance.triggerFailover('Balance fetch failed');
+                  const balRes2 = await fetch(fallbackRpc.url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      jsonrpc: '2.0',
+                      id: 1,
+                      method: 'getBalance',
+                      params: [pubKey]
+                    }),
+                    signal: AbortSignal.timeout(5000)
+                  });
+                  const balData2 = await balRes2.json();
+                  if (balData2.result?.value !== undefined) {
+                    balance = +(balData2.result.value / 1e9).toFixed(4);
+                  }
                 }
-              } catch (e) {
-                balance = 1.45;
+              } catch {
+                // Balance stays 0 — will be refreshed on next wallet open
+                balance = 0;
               }
 
               onUpdateWallet({
@@ -76,20 +99,13 @@ export default function WalletConnectModal({
               return;
             }
           } catch (err: any) {
-            console.warn(`Real wallet ${walletName} connection cancelled or failed, falling back to paper trading:`, err);
+            console.warn(`Real wallet ${walletName} connection cancelled or failed:`, err);
           }
         }
       }
 
-      // Fallback to simulated paper wallet if extension is not installed
-      const mockPubkey = `${walletName.slice(0, 3)}88...${Math.random().toString(36).substring(2, 6)}`;
-      onUpdateWallet({
-        isConnected: true,
-        publicKey: mockPubkey,
-        balanceSol: 18.45,
-        walletName,
-        mode: walletState.mode,
-      });
+      // Wallet extension not installed — show message instead of fake simulation
+      console.warn(`${walletName} extension not detected. Please install it from the official website.`);
     } finally {
       setIsConnecting(false);
     }

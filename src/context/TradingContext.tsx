@@ -98,39 +98,6 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isAudioMuted, setIsAudioMuted] = useState<boolean>(() => soundFx.getIsMuted());
 
   // Positions & Trades — persisted in localStorage (max 200 entries)
-  const DEMO_TRADE: ClosedTrade = {
-    id: 'POS-8812',
-    token: {
-      id: 'HIST-1',
-      mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
-      symbol: '$BONK',
-      name: 'Bonk',
-      platform: 'Raydium',
-      initialLpUsd: 18000,
-      burntLiquidityPct: 100,
-      mintAuthorityRevoked: true,
-      freezeAuthorityRevoked: true,
-      top10HolderPct: 8,
-      volumeDelta15s: 34,
-      uniqueBuyersCount: 14,
-      narrativeCosineSim: 0.92,
-      narrativeTheme: 'Animals & Doge Meta',
-      priceSol: 0.0000024,
-      detectedAt: Date.now() - 360000
-    },
-    entryPriceSol: 0.0000024,
-    exitPriceSol: 0.0000035,
-    solInvested: 0.62,
-    pnlSol: 0.284,
-    pnlPct: 45.8,
-    rMultiplier: 3.05,
-    holdDurationSec: 42,
-    exitReason: 'Target Take-Profit Reached (+3.0R)',
-    entryTimestamp: Date.now() - 360000,
-    exitTimestamp: Date.now() - 318000,
-    jitoTipSol: 0.00005
-  };
-
   const [activePosition, setActivePosition] = useState<ActivePosition | null>(null);
   const [closedTrades, setClosedTradesState] = useState<ClosedTrade[]>(() => {
     if (typeof window !== 'undefined') {
@@ -142,8 +109,8 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
       } catch {}
     }
-    // First-run: show demo trade
-    return [DEMO_TRADE];
+    // Fresh install: empty history (no demo data on Mainnet)
+    return [];
   });
 
   // Wrapper that saves to localStorage after every update
@@ -197,32 +164,46 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   ]);
 
-  // Telemetry & Metrics
+  // Telemetry & Metrics — all stats start at 0 (filled by real wallet/trading activity)
   const [telemetry, setTelemetry] = useState<TerminalTelemetry>({
     engineStatus: 'LIVE',
     dataSource: 'REAL_SOLANA',
-    slotLatencyMs: 38,
-    currentSlot: 284193420,
-    initialBalanceSol: 10.0,
-    currentBalanceSol: 12.84,
-    totalPnlSol: +2.84,
-    rollingExpectancyR: 3.4,
-    winCount: 7,
-    lossCount: 2,
-    scannedCount: 142,
-    vetoCount: 135,
+    slotLatencyMs: 0,
+    currentSlot: 0,
+    initialBalanceSol: 0,
+    currentBalanceSol: 0,
+    totalPnlSol: 0,
+    rollingExpectancyR: 0,
+    winCount: 0,
+    lossCount: 0,
+    scannedCount: 0,
+    vetoCount: 0,
     activePositionLocked: false
   });
 
   const [networkMetrics, setNetworkMetrics] = useState<NetworkMetrics>(DEFAULT_NETWORK_METRICS);
 
-  // Wallet
-  const [walletState, setWalletState] = useState<WalletState>({
-    isConnected: false,
-    publicKey: null,
-    balanceSol: 0,
-    walletName: null,
-    mode: 'PAPER_TRADING'
+  // Wallet — persisted in localStorage so wallet stays connected after page refresh
+  const [walletState, setWalletState] = useState<WalletState>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('GT_WALLET_STATE');
+        if (saved) {
+          const parsed: WalletState = JSON.parse(saved);
+          // Validate saved state has required fields before trusting it
+          if (parsed && typeof parsed.isConnected === 'boolean' && parsed.mode) {
+            return parsed;
+          }
+        }
+      } catch {}
+    }
+    return {
+      isConnected: false,
+      publicKey: null,
+      balanceSol: 0,
+      walletName: null,
+      mode: 'PAPER_TRADING'
+    };
   });
 
   // Configurations
@@ -871,7 +852,20 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
   }, []);
 
-  const updateWalletState = useCallback((w: WalletState) => setWalletState(w), []);
+  const updateWalletState = useCallback((w: WalletState) => {
+    setWalletState(w);
+    if (typeof window !== 'undefined') {
+      try {
+        if (w.isConnected) {
+          // Persist connected wallet state across page refreshes
+          localStorage.setItem('GT_WALLET_STATE', JSON.stringify(w));
+        } else {
+          // Clear persisted state on disconnect
+          localStorage.removeItem('GT_WALLET_STATE');
+        }
+      } catch {}
+    }
+  }, []);
 
   const value: TradingContextType = {
     engineStatus,
