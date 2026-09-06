@@ -2,13 +2,12 @@
 # Grok Trencher v2.0 PRO — Caddy Reverse Proxy & Auto HTTPS Configuration
 # ==============================================================================
 
-# 1. Akses langsung via IP Public (Port 80 HTTP)
-http://103.30.194.148, :80 {
+# 1. Domain Kustom (Let's Encrypt / ZeroSSL HTTPS Port 443 Otomatis)
+alzasniper.com, www.alzasniper.com {
     reverse_proxy 127.0.0.1:3000
 }
 
-# 2. Domain Kustom (Let's Encrypt / ZeroSSL HTTPS Port 443 Otomatis)
-# Untuk mengaktifkan domain Anda, ganti 'example.com' di bawah ini:
-# example.com, www.example.com {
-#     reverse_proxy 127.0.0.1:3000
-# }
+# 2. Akses langsung via IP Public (Port 80 HTTP)
+http://103.30.194.148, :80 {
+    reverse_proxy 127.0.0.1:3000
+}
