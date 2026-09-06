@@ -716,6 +716,23 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
               isKellyActive ? ' via Fractional Kelly 6.2% Cap' : ''
             }) via Jito MEV Private Bundle`
           );
+
+          // Real On-Chain Execution for Autonomous Bot
+          if (walletState.mode === 'LIVE_ON_CHAIN' && walletState.isConnected) {
+            const provider = typeof window !== 'undefined' ? ((window as any).phantom?.solana || (window as any).solana || (window as any).solflare || (window as any).backpack) : null;
+            if (provider) {
+              appendLog('EXECUTION', 'INFO', `⚡ [AUTO-SNIPE ON-CHAIN] Meminta persetujuan swap di wallet untuk ${consensus.token.symbol}...`);
+              fetchJupiterQuote(consensus.token.mint, solInvest)
+                .then((quote) => executeJupiterSwap(quote, consensus.token.symbol, tipSol, networkMetrics.currentSlot, walletState.fullPublicKey || undefined, provider))
+                .then((swapRes) => {
+                  appendLog('EXECUTION', 'SUCCESS', `🎉 [AUTO-SNIPE ON-CHAIN BERHASIL] Tx: https://solscan.io/tx/${swapRes.signature}`);
+                })
+                .catch((err) => {
+                  appendLog('EXECUTION', 'DANGER', `[AUTO-SNIPE ON-CHAIN GAGAL] ${err.message}`);
+                });
+            }
+          }
+
           return newPos;
         });
       }
