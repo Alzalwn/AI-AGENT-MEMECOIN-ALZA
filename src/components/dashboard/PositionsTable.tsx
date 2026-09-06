@@ -101,10 +101,16 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
                     )}
                   </button>
                   <a
-                    href={`https://dexscreener.com/solana/${activePosition.token.mint}`}
+                    href={
+                      activePosition.token.dexUrl ||
+                      (activePosition.token.mint.includes('...')
+                        ? `https://dexscreener.com/search?q=${encodeURIComponent(activePosition.token.symbol.replace('$', ''))}`
+                        : `https://dexscreener.com/search?q=${encodeURIComponent(activePosition.token.mint)}`)
+                    }
                     target="_blank"
                     rel="noopener noreferrer"
                     className="hover:text-cyan-400 transition-colors flex items-center gap-0.5"
+                    title="Lihat di DexScreener"
                   >
                     <span>DEX</span>
                     <ExternalLink className="w-2.5 h-2.5" />

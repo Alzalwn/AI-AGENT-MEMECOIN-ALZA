@@ -297,7 +297,12 @@ export const ScanGrid: React.FC<ScanGridProps> = ({ onInspectToken }) => {
               Inspect Consensus
             </Button>
             <a
-              href={`https://dexscreener.com/solana/${activeToken.token.mint}`}
+              href={
+                activeToken.token.dexUrl ||
+                (activeToken.token.mint.includes('...')
+                  ? `https://dexscreener.com/search?q=${encodeURIComponent(activeToken.token.symbol.replace('$', ''))}`
+                  : `https://dexscreener.com/search?q=${encodeURIComponent(activeToken.token.mint)}`)
+              }
               target="_blank"
               rel="noopener noreferrer"
               className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"

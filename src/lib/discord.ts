@@ -72,7 +72,11 @@ export async function sendDiscordAlphaAlert(
   }
 
   try {
-    const dexUrl = token.dexUrl || `https://dexscreener.com/solana/${token.mint}`;
+    const dexUrl = token.dexUrl || (
+      token.mint.includes('...')
+        ? `https://dexscreener.com/search?q=${encodeURIComponent(token.symbol.replace('$', ''))}`
+        : `https://dexscreener.com/search?q=${encodeURIComponent(token.mint)}`
+    );
     const photonUrl = `https://photon-sol.tinyastro.io/en/lp/${token.mint}`;
     const rugcheckUrl = token.rugcheckReportUrl || `https://rugcheck.xyz/tokens/${token.mint}`;
 

@@ -25,6 +25,7 @@ import NarrativeCluster from '../NarrativeCluster';
 import KellyRiskEngine from '../KellyRiskEngine';
 import TradeHistoryLedger from '../TradeHistoryLedger';
 import ScanGrid from './ScanGrid';
+import { TerminalCandlestickChart } from './TerminalCandlestickChart';
 
 interface ConsensusEvaluatorProps {
   onOpenGemini: () => void;
@@ -157,34 +158,13 @@ export const ConsensusEvaluator: React.FC<ConsensusEvaluatorProps> = ({
         <ScanGrid onInspectToken={(res) => selectResult(res)} />
       )}
       {visualMode === 'chart' && (
-        <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800/80 rounded-2xl p-4 shadow-xl space-y-3">
-          <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2.5">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-cyan-400" />
-              <span className="font-black text-xs text-zinc-100 uppercase tracking-wider">
-                Live DEX Screener Candlestick Chart
-              </span>
-            </div>
-            {targetResult && (
-              <span className="text-xs text-zinc-400">
-                Pair: <strong className="text-emerald-400">{targetResult.token.symbol} / SOL</strong>
-              </span>
-            )}
+        targetResult ? (
+          <TerminalCandlestickChart token={targetResult.token} />
+        ) : (
+          <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800/80 rounded-2xl p-8 shadow-xl h-[400px] flex items-center justify-center text-zinc-500 text-xs">
+            Pilih token di Desk Feed untuk memuat candlestick chart
           </div>
-          {targetResult ? (
-            <div className="w-full h-[400px] rounded-xl overflow-hidden border border-zinc-800 relative bg-zinc-950">
-              <iframe
-                src={`https://dexscreener.com/solana/${targetResult.token.mint}?embed=1&theme=dark&trades=0&info=0`}
-                className="w-full h-full border-0"
-                title={`Chart ${targetResult.token.symbol}`}
-              />
-            </div>
-          ) : (
-            <div className="h-[400px] flex items-center justify-center text-zinc-600 text-xs">
-              Pilih token di Desk Feed untuk memuat candlestick chart
-            </div>
-          )}
-        </div>
+        )
       )}
 
       {/* 5-Agent Consensus Breakdown Card */}
@@ -234,10 +214,16 @@ export const ConsensusEvaluator: React.FC<ConsensusEvaluatorProps> = ({
                     <ExternalLink className="w-2.5 h-2.5" />
                   </a>
                   <a
-                    href={`https://dexscreener.com/solana/${targetResult.token.mint}`}
+                    href={
+                      targetResult.token.dexUrl ||
+                      (targetResult.token.mint.includes('...')
+                        ? `https://dexscreener.com/search?q=${encodeURIComponent(targetResult.token.symbol.replace('$', ''))}`
+                        : `https://dexscreener.com/search?q=${encodeURIComponent(targetResult.token.mint)}`)
+                    }
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-emerald-400 hover:underline flex items-center gap-0.5 font-bold"
+                    title="Lihat di DexScreener"
                   >
                     <span>DEX</span>
                     <ExternalLink className="w-2.5 h-2.5" />

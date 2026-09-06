@@ -496,6 +496,48 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return () => unsubscribe();
   }, [appendLog]);
 
+  const realTokensQueueRef = useRef<TokenSignal[]>([]);
+
+  // Periodic Ingestion of Real Live Solana Tokens from DexScreener API
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchRealTokens = async () => {
+      try {
+        const res = await fetch('/api/tokens/real');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.tokens) && data.tokens.length > 0) {
+            if (isMounted) {
+              realTokensQueueRef.current = [...data.tokens];
+              const realConsensus = data.tokens.map((t: TokenSignal) =>
+                runAgentConsensus(t, STRATEGY_PRESETS.BALANCED)
+              );
+              setConsensusFeed((prev) => {
+                const combined = [...realConsensus, ...prev];
+                const seen = new Set<string>();
+                return combined.filter((item) => {
+                  if (seen.has(item.token.mint)) return false;
+                  seen.add(item.token.mint);
+                  return true;
+                }).slice(0, 96);
+              });
+            }
+          }
+        }
+      } catch {
+        // Fallback gracefully
+      }
+    };
+
+    fetchRealTokens();
+    const timer = setInterval(fetchRealTokens, 35000);
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+    };
+  }, []);
+
   // Autonomous Ingestion Loop
   useEffect(() => {
     if (engineStatus !== 'AUTONOMOUS') return;
@@ -508,8 +550,14 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         latencyMs: 32 + Math.floor(Math.random() * 14)
       }));
 
-      // Ingest signal
-      const rawToken = generateRandomTokenSignal();
+      // Ingest signal: blend real live DexScreener token with simulation
+      let rawToken: TokenSignal;
+      if (realTokensQueueRef.current.length > 0 && Math.random() > 0.4) {
+        rawToken = realTokensQueueRef.current.shift()!;
+      } else {
+        rawToken = generateRandomTokenSignal();
+      }
+
       const consensus = runAgentConsensus(rawToken, STRATEGY_PRESETS.BALANCED);
 
       // Keep rolling feed of 96 items for the PRD 96-cell Scan Grid Matrix
