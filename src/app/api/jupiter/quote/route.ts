@@ -42,23 +42,36 @@ export async function GET(req: NextRequest) {
     const slippageBps = parseInt(slippageBpsStr, 10) || 100;
     const lamports = Math.floor(amountSol * 1_000_000_000);
 
-    const jupUrl = `https://quote-api.jup.ag/v6/quote?inputMint=${WSOL_MINT}&outputMint=${cleanOutputMint}&amount=${lamports}&slippageBps=${slippageBps}`;
+    const jupEndpoints = [
+      `https://api.jup.ag/swap/v1/quote?inputMint=${WSOL_MINT}&outputMint=${cleanOutputMint}&amount=${lamports}&slippageBps=${slippageBps}`,
+      `https://quote-api.jup.ag/v6/quote?inputMint=${WSOL_MINT}&outputMint=${cleanOutputMint}&amount=${lamports}&slippageBps=${slippageBps}`
+    ];
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3500);
+      let res: Response | null = null;
+      for (const jupUrl of jupEndpoints) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 4000);
+          const r = await fetch(jupUrl, {
+            headers: {
+              'Accept': 'application/json',
+              'User-Agent': 'GrokTrencher-Jupiter/1.0'
+            },
+            signal: controller.signal,
+            next: { revalidate: 3 }
+          });
+          clearTimeout(timeoutId);
+          if (r.ok) {
+            res = r;
+            break;
+          }
+        } catch {
+          continue;
+        }
+      }
 
-      const res = await fetch(jupUrl, {
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'GrokTrencher-Jupiter/1.0'
-        },
-        signal: controller.signal,
-        next: { revalidate: 3 }
-      });
-      clearTimeout(timeoutId);
-
-      if (res.ok) {
+      if (res && res.ok) {
         const quote = await res.json();
         if (quote && quote.outAmount) {
           const outRaw = quote.outAmount;

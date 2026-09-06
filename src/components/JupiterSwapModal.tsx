@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { TokenSignal } from '@/types/terminal';
+import { TokenSignal, WalletState } from '@/types/terminal';
 import { fetchJupiterQuote, executeJupiterSwap, JupiterQuoteResponse, SwapExecutionResult } from '@/lib/jupiter';
 import { 
   X, 
@@ -25,6 +25,7 @@ interface JupiterSwapModalProps {
   currentBalanceSol: number;
   currentSlot: number;
   defaultSlippageBps?: number;
+  walletState?: WalletState;
   onSwapSuccess?: (result: SwapExecutionResult) => void;
 }
 
@@ -35,6 +36,7 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
   currentBalanceSol,
   currentSlot,
   defaultSlippageBps = 150,
+  walletState,
   onSwapSuccess
 }) => {
   const [amountSol, setAmountSol] = useState<number>(0.1);
@@ -91,19 +93,32 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
     setExecutionStep('Mengonfirmasi route terbaik di Jupiter...');
 
     try {
-      await new Promise(r => setTimeout(r, 600));
-      setExecutionStep('Memaketkan transaksi ke Jito MEV Private Mempool...');
-      await new Promise(r => setTimeout(r, 700));
-      setExecutionStep('Mengirim ke Validator Jito (0% Frontrun Leak)...');
+      await new Promise(r => setTimeout(r, 400));
+      setExecutionStep('Menyiapkan transaksi Versioned Transaction...');
+
+      const fullKey = walletState?.fullPublicKey || (typeof window !== 'undefined' ? ((window as any).phantom?.solana?.publicKey?.toString() || (window as any).solana?.publicKey?.toString()) : undefined);
+      const provider = typeof window !== 'undefined' ? ((window as any).phantom?.solana || (window as any).solana || (window as any).solflare || (window as any).backpack) : null;
+
+      // When in LIVE_ON_CHAIN mode and wallet connected, trigger real wallet signing!
+      const isLive = walletState?.mode === 'LIVE_ON_CHAIN' && walletState?.isConnected && provider;
+
+      if (isLive) {
+        setExecutionStep('Menunggu persetujuan di extension Phantom/Wallet...');
+      } else {
+        setExecutionStep('Memaketkan transaksi ke Jito MEV Private Mempool...');
+      }
 
       const result = await executeJupiterSwap(
         quote,
         token.symbol,
         0.00005,
-        currentSlot
+        currentSlot,
+        fullKey,
+        isLive ? provider : undefined
       );
 
-      await new Promise(r => setTimeout(r, 500));
+      setExecutionStep('Memverifikasi status konfirmasi on-chain...');
+      await new Promise(r => setTimeout(r, 400));
       setSwapResult(result);
       if (onSwapSuccess) {
         onSwapSuccess(result);

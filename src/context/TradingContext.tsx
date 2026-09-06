@@ -43,6 +43,7 @@ import {
 } from '../lib/discord';
 import { createJitoBundleReceipt } from '../lib/jito';
 import { rpcFailoverInstance } from '../lib/rpcFailover';
+import { fetchJupiterQuote, executeJupiterSwap } from '../lib/jupiter';
 
 // Extended configs with minGrokScore (not part of base lib type)
 export interface WebhookTelegramConfig extends TelegramConfig {
@@ -479,6 +480,22 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     appendLog('JITO', 'SUCCESS', `⚡ JITO TOKYO BUNDLE LANDED: ${bundleReceipt.bundleId} (${bundleReceipt.latencyMs}ms) • Tip: ${tipSol} SOL`);
     appendLog('EXECUTION', 'SUCCESS', `[CONFIRMED] Opened active position on ${token.symbol} @ ${entryPrice.toFixed(8)} SOL via Jito MEV`);
 
+    // Real On-Chain Swap Execution if LIVE_ON_CHAIN is enabled
+    if (walletState.mode === 'LIVE_ON_CHAIN' && walletState.isConnected) {
+      const provider = typeof window !== 'undefined' ? ((window as any).phantom?.solana || (window as any).solana || (window as any).solflare || (window as any).backpack) : null;
+      if (provider) {
+        appendLog('EXECUTION', 'INFO', `Meminta persetujuan swap di extension Phantom untuk token ${token.symbol}...`);
+        fetchJupiterQuote(token.mint, solInvest)
+          .then((quote) => executeJupiterSwap(quote, token.symbol, tipSol, networkMetrics.currentSlot, walletState.fullPublicKey || undefined, provider))
+          .then((swapRes) => {
+            appendLog('EXECUTION', 'SUCCESS', `✅ Swap On-Chain Terkonfirmasi! Tx: https://solscan.io/tx/${swapRes.signature}`);
+          })
+          .catch((err) => {
+            appendLog('EXECUTION', 'DANGER', `Gagal swap on-chain: ${err.message}`);
+          });
+      }
+    }
+
     // Omnichannel Buy Alerts
     if (telegramConfig.isEnabled) {
       sendTelegramBuyAlert(token, telegramConfig, solInvest, bundleReceipt.txHash, tipSol);
@@ -490,7 +507,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     soundFx.playApproval();
     setPendingSnipeConfirmation(null);
     setSniperStatus(null);
-  }, [pendingSnipeConfirmation, appendLog, telegramConfig, discordConfig, agentConfig, networkMetrics.currentSlot]);
+  }, [pendingSnipeConfirmation, appendLog, telegramConfig, discordConfig, agentConfig, networkMetrics.currentSlot, walletState]);
 
   const cancelSnipe = useCallback(() => {
     if (pendingSnipeConfirmation) {

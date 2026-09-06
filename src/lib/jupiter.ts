@@ -40,6 +40,20 @@ export async function fetchJupiterQuote(
   return data.quote;
 }
 
+import { VersionedTransaction } from '@solana/web3.js';
+
+function base64ToUint8Array(base64: string): Uint8Array {
+  if (typeof window !== 'undefined' && typeof window.atob === 'function') {
+    const binaryString = window.atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+  }
+  return new Uint8Array(Buffer.from(base64, 'base64'));
+}
+
 /**
  * Execute or assemble the swap transaction via Jupiter Aggregator & bundle with Jito
  */
@@ -48,7 +62,8 @@ export async function executeJupiterSwap(
   symbol: string,
   jitoTipSol: number = 0.00005,
   currentSlot: number = 284192000,
-  userPublicKey?: string
+  userPublicKey?: string,
+  walletProvider?: any
 ): Promise<SwapExecutionResult> {
   const res = await fetch('/api/jupiter/swap', {
     method: 'POST',
@@ -66,11 +81,33 @@ export async function executeJupiterSwap(
   }
 
   const data = await res.json();
+  let signature = data.transactionSignature;
+  let isSimulated = data.isSimulated ?? true;
 
-  // Create signature
-  const signature = data.transactionSignature || (
-    'jup_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
-  );
+  // Real On-Chain Execution via Connected Wallet Provider (Phantom / Solflare / Backpack)
+  if (data.swapTransaction && walletProvider && typeof walletProvider.signAndSendTransaction === 'function') {
+    try {
+      const txBytes = base64ToUint8Array(data.swapTransaction);
+      const versionedTx = VersionedTransaction.deserialize(txBytes);
+
+      const sendResult = await walletProvider.signAndSendTransaction(versionedTx);
+      signature = sendResult.signature || (typeof sendResult === 'string' ? sendResult : null);
+      if (!signature && sendResult.publicKey) {
+        signature = sendResult.signature;
+      }
+      isSimulated = false;
+    } catch (walletErr: any) {
+      if (walletErr.message?.includes('User rejected') || walletErr.code === 4001) {
+        throw new Error('Transaksi dibatalkan di extension wallet');
+      }
+      throw new Error(`Gagal menandatangani transaksi on-chain: ${walletErr.message}`);
+    }
+  }
+
+  // Fallback signature for simulation / paper trading
+  if (!signature) {
+    signature = 'jup_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  }
 
   const routeSummary = quote.routes.map(r => `${r.label} (${r.percent}%)`).join(' + ');
 
@@ -84,7 +121,7 @@ export async function executeJupiterSwap(
     priceImpactPct: quote.priceImpactPct,
     jitoTipSol,
     slot: currentSlot + Math.floor(Math.random() * 3) + 1,
-    isSimulated: data.isSimulated ?? true,
+    isSimulated,
     timestamp: Date.now()
   };
 }

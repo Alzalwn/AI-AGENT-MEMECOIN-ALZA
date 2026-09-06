@@ -299,6 +299,7 @@ function TerminalAppInner() {
         currentBalanceSol={walletState.isConnected ? walletState.balanceSol : telemetry.currentBalanceSol}
         currentSlot={telemetry.currentSlot}
         defaultSlippageBps={Math.round(executionConfig.slippagePct * 100)}
+        walletState={walletState}
         onSwapSuccess={(result) => {
           const spent = result.inAmountSol || 0.1;
           if (walletState.isConnected) {

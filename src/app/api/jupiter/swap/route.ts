@@ -11,32 +11,39 @@ export async function POST(req: NextRequest) {
 
     // If we have a real Jupiter raw quote, attempt real Jupiter swap build
     if (quoteResponse && quoteResponse.jupiterRawQuote) {
-      try {
-        const jupRes = await fetch('https://quote-api.jup.ag/v6/swap', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'GrokTrencher-JupiterSwap/1.0'
-          },
-          body: JSON.stringify({
-            quoteResponse: quoteResponse.jupiterRawQuote,
-            userPublicKey: pubkey,
-            wrapAndUnwrapSol: true,
-            prioritizationFeeLamports: prioritizationFeeLamports === 'auto' ? 50000 : prioritizationFeeLamports
-          })
-        });
+      const swapEndpoints = [
+        'https://api.jup.ag/swap/v1/swap',
+        'https://quote-api.jup.ag/v6/swap'
+      ];
 
-        if (jupRes.ok) {
-          const swapData = await jupRes.json();
-          return NextResponse.json({
-            success: true,
-            swapTransaction: swapData.swapTransaction,
-            lastValidBlockHeight: swapData.lastValidBlockHeight,
-            isSimulated: false
+      for (const ep of swapEndpoints) {
+        try {
+          const jupRes = await fetch(ep, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': 'GrokTrencher-JupiterSwap/1.0'
+            },
+            body: JSON.stringify({
+              quoteResponse: quoteResponse.jupiterRawQuote,
+              userPublicKey: pubkey,
+              wrapAndUnwrapSol: true,
+              prioritizationFeeLamports: prioritizationFeeLamports === 'auto' ? 50000 : prioritizationFeeLamports
+            })
           });
+
+          if (jupRes.ok) {
+            const swapData = await jupRes.json();
+            return NextResponse.json({
+              success: true,
+              swapTransaction: swapData.swapTransaction,
+              lastValidBlockHeight: swapData.lastValidBlockHeight,
+              isSimulated: false
+            });
+          }
+        } catch (e: any) {
+          console.warn(`Jupiter swap call to ${ep} failed:`, e.message);
         }
-      } catch (e: any) {
-        console.warn('Real Jupiter swap API call failed, falling back to simulated payload:', e.message);
       }
     }
 
