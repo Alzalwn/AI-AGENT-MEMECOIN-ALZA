@@ -2,8 +2,8 @@
 # Grok Trencher v2.0 PRO — Caddy Reverse Proxy & Auto HTTPS Configuration
 # ==============================================================================
 
-# 1. Domain Kustom (Let's Encrypt / ZeroSSL HTTPS Port 443 Otomatis)
-alzasniper.com, www.alzasniper.com {
+# 1. Domain Kustom IDCloudHost (Let's Encrypt / ZeroSSL HTTPS Port 443 Otomatis)
+alzasniped.my.id, www.alzasniped.my.id {
     reverse_proxy 127.0.0.1:3000
 }
 
