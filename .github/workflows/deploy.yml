@@ -10,6 +10,7 @@ jobs:
   deploy:
     name: Deploy to VPS via SSH
     runs-on: ubuntu-latest
+    environment: Production
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
