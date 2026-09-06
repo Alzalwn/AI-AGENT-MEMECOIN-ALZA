@@ -20,7 +20,7 @@ const customRpcUrl = typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_SO
 export const DEFAULT_RPC_ENDPOINTS: RpcEndpoint[] = [
   ...(customRpcUrl && customRpcUrl.startsWith('http') ? [{
     id: 'user-dedicated-private',
-    name: 'Private Dedicated RPC (Helius/QuickNode Asia)',
+    name: 'Private Dedicated RPC (Custom Setting)',
     url: customRpcUrl,
     type: 'PRIMARY' as const,
     isHealthy: true,
@@ -28,39 +28,30 @@ export const DEFAULT_RPC_ENDPOINTS: RpcEndpoint[] = [
     lastChecked: Date.now()
   }] : []),
   {
-    id: 'helius-tokyo-primary',
-    name: 'Helius Asia-Pacific Cluster (Tokyo)',
-    url: 'https://mainnet.helius-rpc.com/?api-key=public',
+    id: 'publicnode-mainnet-primary',
+    name: 'PublicNode High-Speed Mainnet Cluster',
+    url: 'https://solana-rpc.publicnode.com',
     type: 'PRIMARY',
     isHealthy: true,
-    latencyMs: 28,
+    latencyMs: 32,
     lastChecked: Date.now()
   },
   {
-    id: 'quicknode-singapore',
-    name: 'QuickNode Turbo Cluster (Singapore/Asia)',
-    url: 'https://solana-mainnet.rpc.extrnode.com',
-    type: 'SECONDARY',
-    isHealthy: true,
-    latencyMs: 46,
-    lastChecked: Date.now()
-  },
-  {
-    id: 'extrnode-failover',
-    name: 'Extrnode Load-Balanced Router',
-    url: 'https://solana-mainnet.rpc.extrnode.com',
-    type: 'SECONDARY',
-    isHealthy: true,
-    latencyMs: 68,
-    lastChecked: Date.now()
-  },
-  {
-    id: 'solana-public-fallback',
-    name: 'Solana Public Mainnet (Emergency)',
+    id: 'solana-official-mainnet',
+    name: 'Solana Official Foundation Mainnet',
     url: 'https://api.mainnet-beta.solana.com',
+    type: 'SECONDARY',
+    isHealthy: true,
+    latencyMs: 58,
+    lastChecked: Date.now()
+  },
+  {
+    id: 'publicnode-backup-cluster',
+    name: 'PublicNode Backup Anycast Gateway',
+    url: 'https://solana.publicnode.com',
     type: 'FALLBACK',
     isHealthy: true,
-    latencyMs: 142,
+    latencyMs: 65,
     lastChecked: Date.now()
   }
 ];

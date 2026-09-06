@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Wallet, ShieldCheck, Zap, Check, X, ExternalLink, AlertTriangle, Radio } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Wallet, ShieldCheck, Zap, Check, X, ExternalLink, AlertTriangle, Radio, RefreshCw } from 'lucide-react';
 import { WalletState } from '../types/terminal';
 import { JITO_TIP_ACCOUNTS } from '../config/constants';
 import { rpcFailoverInstance } from '../lib/rpcFailover';
@@ -25,8 +25,98 @@ export default function WalletConnectModal({
 }: WalletConnectModalProps) {
   const [selectedTipAccount, setSelectedTipAccount] = useState<string>(JITO_TIP_ACCOUNTS[0]);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
-  if (!isOpen) return null;
+  // Helper to fetch balance using server API first (no CORS), then public RPCs as fallback
+  const fetchSolBalance = useCallback(async (fullKey: string): Promise<number | null> => {
+    // Strategy 1: Dedicated Server API (high-speed, no browser CORS, server-side failover)
+    try {
+      const res = await fetch(`/api/wallet/balance?address=${encodeURIComponent(fullKey)}`, {
+        signal: AbortSignal.timeout(6000)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && typeof data.balanceSol === 'number') {
+          return data.balanceSol;
+        }
+      }
+    } catch (e) {
+      console.warn('Backend balance API failed, attempting direct public RPC fallback:', e);
+    }
+
+    // Strategy 2: Direct public RPC fallback
+    const rpcUrls = [
+      rpcFailoverInstance.getActiveEndpoint().url,
+      'https://solana-rpc.publicnode.com',
+      'https://api.mainnet-beta.solana.com'
+    ];
+
+    for (const url of rpcUrls) {
+      try {
+        const balRes = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'getBalance',
+            params: [fullKey]
+          }),
+          signal: AbortSignal.timeout(5000)
+        });
+        if (!balRes.ok) continue;
+        const balData = await balRes.json();
+        if (balData.result?.value !== undefined) {
+          return +(Number(balData.result.value) / 1e9).toFixed(4);
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  }, []);
+
+  // Helper to resolve the active full public key from state or window provider
+  const getFullPublicKey = useCallback((): string | null => {
+    if (walletState.fullPublicKey) return walletState.fullPublicKey;
+    if (typeof window !== 'undefined') {
+      const phantom = (window as any).phantom?.solana || (window as any).solana;
+      if (phantom?.publicKey) return phantom.publicKey.toString();
+      const solflare = (window as any).solflare;
+      if (solflare?.publicKey) return solflare.publicKey.toString();
+      const backpack = (window as any).backpack;
+      if (backpack?.publicKey) return backpack.publicKey.toString();
+    }
+    return null;
+  }, [walletState.fullPublicKey]);
+
+  // Refresh balance on modal open or when requested
+  const refreshBalance = useCallback(async () => {
+    const fullKey = getFullPublicKey();
+    if (!fullKey) return;
+
+    setIsRefreshing(true);
+    try {
+      const balance = await fetchSolBalance(fullKey);
+      if (balance !== null) {
+        onUpdateWallet({
+          ...walletState,
+          fullPublicKey: fullKey,
+          balanceSol: balance
+        });
+      }
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [getFullPublicKey, fetchSolBalance, onUpdateWallet, walletState]);
+
+  // Auto-fetch balance when modal opens while wallet is connected
+  useEffect(() => {
+    if (isOpen && walletState.isConnected) {
+      refreshBalance();
+    }
+  }, [isOpen, walletState.isConnected]);
 
   const handleConnect = async (walletName: 'Phantom' | 'Solflare' | 'Backpack') => {
     setIsConnecting(true);
@@ -46,52 +136,13 @@ export default function WalletConnectModal({
             const resp = await provider.connect();
             const pubKey = resp?.publicKey ? resp.publicKey.toString() : provider.publicKey?.toString();
             if (pubKey) {
-              // Use the active failover RPC endpoint (not hardcoded public endpoint)
-              let balance = 0;
-              try {
-                const activeRpc = rpcFailoverInstance.getActiveEndpoint();
-                const balRes = await fetch(activeRpc.url, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    jsonrpc: '2.0',
-                    id: 1,
-                    method: 'getBalance',
-                    params: [pubKey]
-                  }),
-                  signal: AbortSignal.timeout(5000)
-                });
-                const balData = await balRes.json();
-                if (balData.result?.value !== undefined) {
-                  balance = +(balData.result.value / 1e9).toFixed(4);
-                } else {
-                  // Try failover endpoint if primary failed
-                  const fallbackRpc = rpcFailoverInstance.triggerFailover('Balance fetch failed');
-                  const balRes2 = await fetch(fallbackRpc.url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      jsonrpc: '2.0',
-                      id: 1,
-                      method: 'getBalance',
-                      params: [pubKey]
-                    }),
-                    signal: AbortSignal.timeout(5000)
-                  });
-                  const balData2 = await balRes2.json();
-                  if (balData2.result?.value !== undefined) {
-                    balance = +(balData2.result.value / 1e9).toFixed(4);
-                  }
-                }
-              } catch {
-                // Balance stays 0 — will be refreshed on next wallet open
-                balance = 0;
-              }
+              const balance = await fetchSolBalance(pubKey);
 
               onUpdateWallet({
                 isConnected: true,
                 publicKey: `${pubKey.slice(0, 4)}...${pubKey.slice(-4)}`,
-                balanceSol: balance,
+                fullPublicKey: pubKey,
+                balanceSol: balance ?? 0,
                 walletName,
                 mode: walletState.mode,
               });
@@ -104,7 +155,7 @@ export default function WalletConnectModal({
         }
       }
 
-      // Wallet extension not installed — show message instead of fake simulation
+      // Wallet extension not installed
       console.warn(`${walletName} extension not detected. Please install it from the official website.`);
     } finally {
       setIsConnecting(false);
@@ -121,6 +172,7 @@ export default function WalletConnectModal({
     onUpdateWallet({
       isConnected: false,
       publicKey: null,
+      fullPublicKey: null,
       balanceSol: 0,
       walletName: null,
       mode: 'PAPER_TRADING',
@@ -134,6 +186,8 @@ export default function WalletConnectModal({
     { id: 'TURBO', name: 'TURBO', tip: '0.00200 SOL', speed: '< 8ms', badge: '🔥 Live Sniper' },
     { id: 'ULTRA_DEGEN', name: 'Ultra Degen', tip: '0.00500 SOL', speed: '< 5ms', badge: '⚡ Sub-Slot' },
   ];
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 animate-in fade-in duration-200 font-mono select-none">
@@ -208,11 +262,27 @@ export default function WalletConnectModal({
             <div className="grid grid-cols-2 gap-2 pt-1 border-t border-terminal-border/60 text-xs">
               <div>
                 <span className="text-[10px] text-terminal-muted block">PUBLIC KEY</span>
-                <span className="font-mono text-terminal-cyan">{walletState.publicKey}</span>
+                <span className="font-mono text-terminal-cyan" title={walletState.fullPublicKey || walletState.publicKey || ''}>
+                  {walletState.publicKey}
+                </span>
               </div>
               <div>
-                <span className="text-[10px] text-terminal-muted block">RPC BALANCE</span>
-                <span className="font-bold text-terminal-green">{walletState.balanceSol} SOL</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-terminal-muted block">RPC BALANCE</span>
+                  <button
+                    type="button"
+                    onClick={refreshBalance}
+                    disabled={isRefreshing}
+                    title="Perbarui Saldo dari Blockchain"
+                    className="flex items-center gap-1 text-[10px] text-terminal-cyan hover:text-white transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-2.5 h-2.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                    <span className="text-[9px] font-bold">{isRefreshing ? 'Syncing...' : 'Sync'}</span>
+                  </button>
+                </div>
+                <span className="font-bold text-terminal-green">
+                  {walletState.balanceSol} SOL
+                </span>
               </div>
             </div>
           </div>

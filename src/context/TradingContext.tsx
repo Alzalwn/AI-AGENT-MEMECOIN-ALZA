@@ -867,6 +867,59 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, []);
 
+  // Sync telemetry balance with connected wallet balance
+  useEffect(() => {
+    if (walletState.isConnected && walletState.balanceSol > 0) {
+      setTelemetry((prev) => ({
+        ...prev,
+        currentBalanceSol: walletState.balanceSol
+      }));
+    }
+  }, [walletState.isConnected, walletState.balanceSol]);
+
+  // Periodic background refresh of connected wallet balance
+  useEffect(() => {
+    if (!walletState.isConnected) return;
+
+    const fullKey =
+      walletState.fullPublicKey ||
+      (typeof window !== 'undefined'
+        ? (window as any).phantom?.solana?.publicKey?.toString() ||
+          (window as any).solflare?.publicKey?.toString() ||
+          (window as any).backpack?.publicKey?.toString()
+        : null);
+
+    if (!fullKey) return;
+
+    const syncBalance = async () => {
+      try {
+        const res = await fetch(`/api/wallet/balance?address=${encodeURIComponent(fullKey)}`, {
+          signal: AbortSignal.timeout(6000)
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && typeof data.balanceSol === 'number') {
+            setWalletState((prev) => {
+              const updated = {
+                ...prev,
+                fullPublicKey: fullKey,
+                balanceSol: data.balanceSol
+              };
+              if (typeof window !== 'undefined') {
+                localStorage.setItem('GT_WALLET_STATE', JSON.stringify(updated));
+              }
+              return updated;
+            });
+          }
+        }
+      } catch {}
+    };
+
+    syncBalance();
+    const interval = setInterval(syncBalance, 25000);
+    return () => clearInterval(interval);
+  }, [walletState.isConnected, walletState.fullPublicKey]);
+
   const value: TradingContextType = {
     engineStatus,
     dataSource,

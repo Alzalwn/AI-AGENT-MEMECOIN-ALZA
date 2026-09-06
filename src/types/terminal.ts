@@ -122,6 +122,7 @@ export interface ClosedTrade {
 export interface WalletState {
   isConnected: boolean;
   publicKey: string | null;
+  fullPublicKey?: string | null;
   balanceSol: number;
   walletName: 'Phantom' | 'Solflare' | 'Backpack' | null;
   mode: 'PAPER_TRADING' | 'LIVE_ON_CHAIN';
