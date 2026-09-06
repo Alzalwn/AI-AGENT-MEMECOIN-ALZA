@@ -83,6 +83,7 @@ export const AutoSnipeModal: React.FC<AutoSnipeModalProps> = ({
           </div>
           <button
             onClick={onClose}
+            aria-label="Tutup modal auto-sniper"
             className="p-1.5 rounded-lg text-terminal-muted hover:text-terminal-text hover:bg-terminal-card border border-transparent hover:border-terminal-border transition-all cursor-pointer"
           >
             <X className="w-4 h-4" />

@@ -3,6 +3,24 @@ import { TokenSignal } from '@/types/terminal';
 
 export const dynamic = 'force-dynamic';
 
+/** Fetch live SOL/USD rate from our internal API; fallback = 140 */
+async function getLiveSolUsdRate(req: NextRequest): Promise<number> {
+  try {
+    const baseUrl = req.nextUrl.origin;
+    const res = await fetch(`${baseUrl}/api/sol-rate`, {
+      next: { revalidate: 60 } // cache for 60s server-side
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (typeof data.solUsd === 'number' && data.solUsd > 0) return data.solUsd;
+    }
+  } catch {
+    // Network error — silently fall back
+  }
+  return 140; // fallback
+}
+
+
 export async function GET(req: NextRequest) {
   try {
     const mint = req.nextUrl.searchParams.get('mint');
@@ -15,6 +33,8 @@ export async function GET(req: NextRequest) {
     }
 
     const cleanMint = mint.trim();
+    // Fetch live SOL/USD rate concurrently with on-chain data
+    const solUsdRatePromise = getLiveSolUsdRate(req);
 
     // Concurrently fetch DexScreener pair data and Rugcheck security audit report
     const dexscreenerPromise = fetch(`https://api.dexscreener.com/latest/dex/tokens/${cleanMint}`, {
@@ -33,17 +53,17 @@ export async function GET(req: NextRequest) {
       next: { revalidate: 30 }
     }).finally(() => clearTimeout(rugcheckTimeout));
 
-    const [dexResResult, rugcheckResResult] = await Promise.allSettled([
-      dexscreenerPromise,
-      rugcheckPromise
+    const [dexData, rugData, solUsdRate] = await Promise.all([
+      dexscreenerPromise.then(r => r.json()).catch(() => null),
+      rugcheckPromise.then(r => r.json()).catch(() => null),
+      solUsdRatePromise
     ]);
 
     // 1. Process DexScreener Data
     let solanaPair: any = null;
-    if (dexResResult.status === 'fulfilled' && dexResResult.value.ok) {
+    if (dexData && dexData.pairs) {
       try {
-        const data = await dexResResult.value.json();
-        const pairs = data.pairs || [];
+        const pairs = dexData.pairs || [];
         solanaPair = pairs.find((p: any) => p.chainId === 'solana') || pairs[0];
       } catch (e) {
         console.warn('DexScreener parse error:', e);
@@ -61,9 +81,8 @@ export async function GET(req: NextRequest) {
     let creatorAddress: string | undefined = undefined;
     let creatorBalancePct: number | undefined = undefined;
 
-    if (rugcheckResResult.status === 'fulfilled' && rugcheckResResult.value.ok) {
+    if (rugData) {
       try {
-        const rugData = await rugcheckResResult.value.json();
         if (rugData) {
           rugcheckNumericScore = typeof rugData.score === 'number' ? rugData.score : undefined;
 
@@ -165,7 +184,7 @@ export async function GET(req: NextRequest) {
     const platform = isPump ? 'Pump.fun' : 'Raydium';
     const initialLpUsd = solanaPair.liquidity?.usd ? Math.round(solanaPair.liquidity.usd) : 8500;
     const priceUsd = solanaPair.priceUsd ? parseFloat(solanaPair.priceUsd) : 0.00002;
-    const priceSol = +(priceUsd / 140).toFixed(8);
+    const priceSol = +(priceUsd / solUsdRate).toFixed(8);
 
     const buys = solanaPair.txns?.m5?.buys || 6;
     const sells = solanaPair.txns?.m5?.sells || 2;

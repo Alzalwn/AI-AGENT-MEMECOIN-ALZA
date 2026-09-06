@@ -9,6 +9,7 @@ import {
   AutoSnipeConfig
 } from './terminal';
 import { ExecutionConfig } from '../components/ExecutionSettingsModal';
+import type { WebhookTelegramConfig, WebhookDiscordConfig } from '../context/TradingContext';
 
 export type LogLevel = 'INFO' | 'SUCCESS' | 'WARN' | 'DANGER';
 export type LogCategory = 'SCAN' | 'RISK' | 'JITO' | 'EXECUTION' | 'SYSTEM' | 'TELEGRAM';
@@ -49,6 +50,12 @@ export interface AgentConfig {
   };
 }
 
+export interface PendingSnipeConfirmation {
+  token: TokenSignal;
+  consensus: ConsensusResult;
+  solInvest: number;
+}
+
 export interface TradingState {
   engineStatus: 'AUTONOMOUS' | 'IDLE' | 'PAUSED';
   dataSource: 'REAL_SOLANA' | 'SIMULATOR';
@@ -64,9 +71,12 @@ export interface TradingState {
   agentConfig: AgentConfig;
   executionConfig: ExecutionConfig;
   autoSnipeConfig: AutoSnipeConfig;
+  telegramConfig: WebhookTelegramConfig;
+  discordConfig: WebhookDiscordConfig;
   isAudioMuted: boolean;
   isSearchingMint: boolean;
   sniperStatus: string | null;
+  pendingSnipeConfirmation: PendingSnipeConfirmation | null;
 }
 
 export interface TradingActions {
@@ -76,11 +86,15 @@ export interface TradingActions {
   quickSellPosition: (percentage: number) => void;
   manualExitPosition: () => void;
   snipeManualMint: (mint: string) => Promise<void>;
+  confirmSnipe: () => void;
+  cancelSnipe: () => void;
   selectResult: (result: ConsensusResult | null) => void;
   setVisualMode: (mode: 'radar' | 'cluster' | 'kelly' | 'ledger' | 'chart' | 'grid') => void;
   updateAgentConfig: (updates: Partial<AgentConfig>) => void;
   updateExecutionConfig: (updates: Partial<ExecutionConfig>) => void;
   updateAutoSnipeConfig: (updates: Partial<AutoSnipeConfig>) => void;
+  updateTelegramConfig: (updates: Partial<WebhookTelegramConfig>) => void;
+  updateDiscordConfig: (updates: Partial<WebhookDiscordConfig>) => void;
   updateWalletState: (wallet: WalletState) => void;
   toggleAudio: () => void;
   clearLogs: () => void;

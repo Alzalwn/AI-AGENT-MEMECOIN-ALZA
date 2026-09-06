@@ -2,15 +2,18 @@
 
 import React from 'react';
 import { useTradingAgent } from '../../hooks/useTradingAgent';
+import { useSolRate } from '../../hooks/useSolRate';
 import { Wallet, TrendingUp, TrendingDown, Award, ShieldCheck, Target, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 
 export const MetricCards: React.FC = () => {
   const { telemetry, walletState } = useTradingAgent();
+  const { rate, isLoading: isRateLoading } = useSolRate();
 
   const totalTrades = telemetry.winCount + telemetry.lossCount || 1;
   const winRatePct = +((telemetry.winCount / totalTrades) * 100).toFixed(1);
   const isPnlPositive = telemetry.totalPnlSol >= 0;
-  const solPriceUsd = 140; // Reference SOL/USD quote
+  // Use live SOL/USD rate; fall back to last known value (never hardcoded 140)
+  const solPriceUsd = rate.solUsd;
   const balanceUsd = Math.round(telemetry.currentBalanceSol * solPriceUsd);
   const vetoRatePct = +(
     (telemetry.vetoCount / (telemetry.scannedCount || 1)) *
@@ -37,7 +40,16 @@ export const MetricCards: React.FC = () => {
             <span className="text-xs font-bold text-zinc-400">SOL</span>
           </div>
           <div className="flex items-center justify-between text-[11px] text-zinc-500 mt-1">
-            <span>≈ ${balanceUsd.toLocaleString()} USD</span>
+            <span>
+              {isRateLoading ? (
+                <span className="inline-block w-20 h-3 bg-zinc-800 animate-pulse rounded align-middle" />
+              ) : (
+                `≈ $${balanceUsd.toLocaleString()} USD`
+              )}
+              {!isRateLoading && (
+                <span className="ml-1 text-zinc-600">(@ ${solPriceUsd.toFixed(0)})</span>
+              )}
+            </span>
             <span className="px-1.5 py-0.5 rounded bg-zinc-800 text-[10px] font-bold text-zinc-400">
               {walletState.mode === 'LIVE_ON_CHAIN' ? 'MAINNET' : 'PAPER TRADING'}
             </span>

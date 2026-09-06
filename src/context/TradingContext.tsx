@@ -18,7 +18,8 @@ import {
   LogCategory,
   LogLevel,
   AgentConfig,
-  NetworkMetrics
+  NetworkMetrics,
+  PendingSnipeConfirmation
 } from '../types/trading';
 import { ExecutionConfig, DEFAULT_EXECUTION_CONFIG } from '../components/ExecutionSettingsModal';
 import { generateRandomTokenSignal } from '../engine/simulator';
@@ -26,10 +27,25 @@ import { runAgentConsensus } from '../agents/consensus';
 import { evaluateExitAgent } from '../agents/exit';
 import { soundFx } from '../engine/audioEngine';
 import { STRATEGY_PRESETS, JITO_TIP_TIERS } from '../config/constants';
-import { sendTelegramAlphaAlert } from '../lib/telegram';
-import { sendDiscordAlphaAlert } from '../lib/discord';
+import { sendTelegramAlphaAlert, TelegramConfig } from '../lib/telegram';
+import { sendDiscordAlphaAlert, DiscordConfig } from '../lib/discord';
 import { createJitoBundleReceipt } from '../lib/jito';
 import { rpcFailoverInstance } from '../lib/rpcFailover';
+
+// Extended configs with minGrokScore (not part of base lib type)
+export interface WebhookTelegramConfig extends TelegramConfig {
+  minGrokScore: number;
+}
+export interface WebhookDiscordConfig extends DiscordConfig {
+  minGrokScore: number;
+}
+
+const DEFAULT_TELEGRAM_CONFIG: WebhookTelegramConfig = {
+  isEnabled: false, botToken: '', chatId: '', minGrokScore: 80
+};
+const DEFAULT_DISCORD_CONFIG: WebhookDiscordConfig = {
+  isEnabled: false, webhookUrl: '', minGrokScore: 80
+};
 
 const DEFAULT_AGENT_CONFIG: AgentConfig = {
   mode: 'AUTONOMOUS',
@@ -69,42 +85,69 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Audio Telemetry
   const [isAudioMuted, setIsAudioMuted] = useState<boolean>(() => soundFx.getIsMuted());
 
-  // Positions & Trades
+  // Positions & Trades — persisted in localStorage (max 200 entries)
+  const DEMO_TRADE: ClosedTrade = {
+    id: 'POS-8812',
+    token: {
+      id: 'HIST-1',
+      mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+      symbol: '$BONK',
+      name: 'Bonk',
+      platform: 'Raydium',
+      initialLpUsd: 18000,
+      burntLiquidityPct: 100,
+      mintAuthorityRevoked: true,
+      freezeAuthorityRevoked: true,
+      top10HolderPct: 8,
+      volumeDelta15s: 34,
+      uniqueBuyersCount: 14,
+      narrativeCosineSim: 0.92,
+      narrativeTheme: 'Animals & Doge Meta',
+      priceSol: 0.0000024,
+      detectedAt: Date.now() - 360000
+    },
+    entryPriceSol: 0.0000024,
+    exitPriceSol: 0.0000035,
+    solInvested: 0.62,
+    pnlSol: 0.284,
+    pnlPct: 45.8,
+    rMultiplier: 3.05,
+    holdDurationSec: 42,
+    exitReason: 'Target Take-Profit Reached (+3.0R)',
+    entryTimestamp: Date.now() - 360000,
+    exitTimestamp: Date.now() - 318000,
+    jitoTipSol: 0.00005
+  };
+
   const [activePosition, setActivePosition] = useState<ActivePosition | null>(null);
-  const [closedTrades, setClosedTrades] = useState<ClosedTrade[]>([
-    {
-      id: 'POS-8812',
-      token: {
-        id: 'HIST-1',
-        mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
-        symbol: '$BONK',
-        name: 'Bonk',
-        platform: 'Raydium',
-        initialLpUsd: 18000,
-        burntLiquidityPct: 100,
-        mintAuthorityRevoked: true,
-        freezeAuthorityRevoked: true,
-        top10HolderPct: 8,
-        volumeDelta15s: 34,
-        uniqueBuyersCount: 14,
-        narrativeCosineSim: 0.92,
-        narrativeTheme: 'Animals & Doge Meta',
-        priceSol: 0.0000024,
-        detectedAt: Date.now() - 360000
-      },
-      entryPriceSol: 0.0000024,
-      exitPriceSol: 0.0000035,
-      solInvested: 0.62,
-      pnlSol: 0.284,
-      pnlPct: 45.8,
-      rMultiplier: 3.05,
-      holdDurationSec: 42,
-      exitReason: 'Target Take-Profit Reached (+3.0R)',
-      entryTimestamp: Date.now() - 360000,
-      exitTimestamp: Date.now() - 318000,
-      jitoTipSol: 0.00005
+  const [closedTrades, setClosedTradesState] = useState<ClosedTrade[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('GT_TRADE_HISTORY');
+        if (saved) {
+          const parsed: ClosedTrade[] = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
     }
-  ]);
+    // First-run: show demo trade
+    return [DEMO_TRADE];
+  });
+
+  // Wrapper that saves to localStorage after every update
+  const setClosedTrades = useCallback((updater: ClosedTrade[] | ((prev: ClosedTrade[]) => ClosedTrade[])) => {
+    setClosedTradesState((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      const capped = next.slice(0, 200); // cap to 200 trades
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('GT_TRADE_HISTORY', JSON.stringify(capped));
+        } catch {}
+      }
+      return capped;
+    });
+  }, []);
+
 
   // Feed & Selection (Pre-populate with 24 initial signals for Scan Grid throughput)
   const [consensusFeed, setConsensusFeed] = useState<ConsensusResult[]>(() => {
@@ -197,9 +240,25 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     dailyTradesExecuted: 3
   });
 
-  // Sniper Status
+  // Webhook Configs (centralized in context so all components share the same config)
+  const [telegramConfig, setTelegramConfig] = useState<WebhookTelegramConfig>(() => {
+    if (typeof window !== 'undefined') {
+      try { return JSON.parse(localStorage.getItem('GT_TELEGRAM_CONFIG') || 'null') || DEFAULT_TELEGRAM_CONFIG; } catch {}
+    }
+    return DEFAULT_TELEGRAM_CONFIG;
+  });
+
+  const [discordConfig, setDiscordConfig] = useState<WebhookDiscordConfig>(() => {
+    if (typeof window !== 'undefined') {
+      try { return JSON.parse(localStorage.getItem('GT_DISCORD_CONFIG') || 'null') || DEFAULT_DISCORD_CONFIG; } catch {}
+    }
+    return DEFAULT_DISCORD_CONFIG;
+  });
+
+  // Sniper Status & Confirmation
   const [isSearchingMint, setIsSearchingMint] = useState<boolean>(false);
   const [sniperStatus, setSniperStatus] = useState<string | null>(null);
+  const [pendingSnipeConfirmation, setPendingSnipeConfirmation] = useState<PendingSnipeConfirmation | null>(null);
 
   // Append Log helper
   const appendLog = useCallback((category: LogCategory, level: LogLevel, message: string, data?: any) => {
@@ -360,32 +419,14 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         appendLog('RISK', 'SUCCESS', `Manual target ${foundToken.symbol} PASSED 5/5 consensus!`);
         soundFx.playApproval();
 
-        // If no active position, auto open
+        // If no active position, prompt user confirmation dialog before opening (Fix #12)
         if (!activePosition) {
-          const entryPrice = foundToken.priceSol;
-          const solInvest = 0.62;
-          const newPos: ActivePosition = {
-            id: `POS-${Math.floor(1000 + Math.random() * 9000)}`,
+          setPendingSnipeConfirmation({
             token: foundToken,
-            entryPriceSol: entryPrice,
-            currentPriceSol: entryPrice,
-            solInvested: solInvest,
-            tokenAmount: Math.round((solInvest / entryPrice) * 1000) / 1000,
-            pnlSol: 0,
-            pnlPct: 0,
-            rMultiplier: 0,
-            highestPriceSol: entryPrice,
-            trailingStopPriceSol: +(entryPrice * 0.90).toFixed(8),
-            entryTimestamp: Date.now(),
-            status: 'OPEN'
-          };
-          setActivePosition(newPos);
-          setTelemetry((prev) => ({
-            ...prev,
-            activePositionLocked: true,
-            currentBalanceSol: +(prev.currentBalanceSol - solInvest).toFixed(3)
-          }));
-          appendLog('EXECUTION', 'SUCCESS', `Opened active position on ${foundToken.symbol} @ ${entryPrice.toFixed(8)} SOL`);
+            consensus,
+            solInvest: 0.62
+          });
+          setSniperStatus(`Menunggu konfirmasi buka posisi ${foundToken.symbol}...`);
         }
       } else {
         appendLog('RISK', 'WARN', `Manual target ${foundToken.symbol} VETOED by ${consensus.vetoAgent}: ${consensus.vetoReason}`);
@@ -395,9 +436,48 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       appendLog('SYSTEM', 'DANGER', `Lookup error: ${err.message}`);
     } finally {
       setIsSearchingMint(false);
-      setSniperStatus(null);
     }
   }, [activePosition, appendLog]);
+
+  // Confirmation actions for Manual Snipe (Fix #12)
+  const confirmSnipe = useCallback(() => {
+    if (!pendingSnipeConfirmation) return;
+    const { token, solInvest } = pendingSnipeConfirmation;
+    const entryPrice = token.priceSol;
+    const newPos: ActivePosition = {
+      id: `POS-${Math.floor(1000 + Math.random() * 9000)}`,
+      token,
+      entryPriceSol: entryPrice,
+      currentPriceSol: entryPrice,
+      solInvested: solInvest,
+      tokenAmount: Math.round((solInvest / entryPrice) * 1000) / 1000,
+      pnlSol: 0,
+      pnlPct: 0,
+      rMultiplier: 0,
+      highestPriceSol: entryPrice,
+      trailingStopPriceSol: +(entryPrice * 0.90).toFixed(8),
+      entryTimestamp: Date.now(),
+      status: 'OPEN'
+    };
+    setActivePosition(newPos);
+    setTelemetry((prev) => ({
+      ...prev,
+      activePositionLocked: true,
+      currentBalanceSol: +(prev.currentBalanceSol - solInvest).toFixed(3)
+    }));
+    appendLog('EXECUTION', 'SUCCESS', `[CONFIRMED] Opened active position on ${token.symbol} @ ${entryPrice.toFixed(8)} SOL`);
+    soundFx.playApproval();
+    setPendingSnipeConfirmation(null);
+    setSniperStatus(null);
+  }, [pendingSnipeConfirmation, appendLog]);
+
+  const cancelSnipe = useCallback(() => {
+    if (pendingSnipeConfirmation) {
+      appendLog('EXECUTION', 'WARN', `Snipe order ${pendingSnipeConfirmation.token.symbol} dibatalkan oleh operator.`);
+    }
+    setPendingSnipeConfirmation(null);
+    setSniperStatus(null);
+  }, [pendingSnipeConfirmation, appendLog]);
 
   // RPC Failover Listener (PRD Section 7.2 Sub-100ms failover)
   useEffect(() => {
@@ -611,6 +691,26 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setAutoSnipeConfig((prev) => ({ ...prev, ...updates }));
   }, []);
 
+  const updateTelegramConfig = useCallback((updates: Partial<WebhookTelegramConfig>) => {
+    setTelegramConfig((prev) => {
+      const updated = { ...prev, ...updates };
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('GT_TELEGRAM_CONFIG', JSON.stringify(updated));
+      }
+      return updated;
+    });
+  }, []);
+
+  const updateDiscordConfig = useCallback((updates: Partial<WebhookDiscordConfig>) => {
+    setDiscordConfig((prev) => {
+      const updated = { ...prev, ...updates };
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('GT_DISCORD_CONFIG', JSON.stringify(updated));
+      }
+      return updated;
+    });
+  }, []);
+
   const updateWalletState = useCallback((w: WalletState) => setWalletState(w), []);
 
   const value: TradingContextType = {
@@ -628,20 +728,27 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     agentConfig,
     executionConfig,
     autoSnipeConfig,
+    telegramConfig,
+    discordConfig,
     isAudioMuted,
     isSearchingMint,
     sniperStatus,
+    pendingSnipeConfirmation,
     setEngineStatus,
     toggleEngine,
     emergencyKillSwitch,
     quickSellPosition,
     manualExitPosition,
     snipeManualMint,
+    confirmSnipe,
+    cancelSnipe,
     selectResult: setSelectedResult,
     setVisualMode,
     updateAgentConfig,
     updateExecutionConfig,
     updateAutoSnipeConfig,
+    updateTelegramConfig,
+    updateDiscordConfig,
     updateWalletState,
     toggleAudio,
     clearLogs,

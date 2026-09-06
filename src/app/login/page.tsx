@@ -149,7 +149,7 @@ function LoginContent() {
             Sesi aman menggunakan cookie <code className="text-zinc-400">HttpOnly</code>, <code className="text-zinc-400">SameSite=Strict</code>.
           </p>
           <p className="text-[10px] text-zinc-600">
-            Default local passcode: <code className="text-emerald-500/80 font-bold">grok2026</code> (dapat diubah di Vercel Environment Variables).
+            Passcode diatur melalui environment variable <code className="text-zinc-500">ADMIN_PASSCODE</code>.
           </p>
         </div>
       </div>

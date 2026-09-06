@@ -83,6 +83,10 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
 
   const handleExecuteSwap = async () => {
     if (!quote || isExecuting) return;
+    if (amountSol > currentBalanceSol) {
+      setQuoteError(`Saldo SOL tidak mencukupi. Butuh ${amountSol} SOL, saldo tersedia hanya ${currentBalanceSol.toFixed(4)} SOL.`);
+      return;
+    }
     setIsExecuting(true);
     setExecutionStep('Mengonfirmasi route terbaik di Jupiter...');
 
@@ -212,6 +216,12 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
                   SOL
                 </span>
               </div>
+              {amountSol > currentBalanceSol && (
+                <div className="mt-1.5 flex items-center gap-1.5 text-rose-400 text-[10px] font-bold">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>Saldo SOL tidak mencukupi (Tersedia: {currentBalanceSol.toFixed(3)} SOL)</span>
+                </div>
+              )}
               {/* Presets */}
               <div className="flex items-center gap-1.5 mt-2">
                 {amountPresets.map((p) => (
@@ -382,13 +392,15 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
         <div className="p-4 border-t border-terminal-border bg-terminal-card/80 flex items-center gap-3">
           <button
             onClick={onClose}
+            aria-label="Tutup modal Jupiter swap"
             className="px-4 py-2 rounded-xl bg-terminal-panel border border-terminal-border text-terminal-muted hover:text-terminal-text font-bold transition-all cursor-pointer"
           >
             Tutup
           </button>
           <button
             onClick={handleExecuteSwap}
-            disabled={!quote || isExecuting || isLoadingQuote}
+            disabled={!quote || isExecuting || isLoadingQuote || amountSol > currentBalanceSol}
+            aria-label="Eksekusi swap Jupiter dengan Jito MEV bundle"
             className="flex-1 py-2 rounded-xl bg-terminal-cyan text-terminal-bg hover:bg-terminal-cyan/90 font-black text-xs flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg cursor-pointer glow-cyan"
           >
             {isExecuting ? (
@@ -396,6 +408,8 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
                 <RefreshCw className="w-4 h-4 animate-spin" />
                 <span>{executionStep || 'EXECUTING SWAP...'}</span>
               </>
+            ) : amountSol > currentBalanceSol ? (
+              <span>SALDO SOL TIDAK CUKUP</span>
             ) : (
               <>
                 <Zap className="w-4 h-4" />

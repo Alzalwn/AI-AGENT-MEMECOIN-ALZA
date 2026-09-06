@@ -26,8 +26,7 @@ import JitoBundleTrackerModal from '../components/JitoBundleTrackerModal';
 import KeyboardShortcutsModal from '../components/KeyboardShortcutsModal';
 import RpcManagerModal from '../components/RpcManagerModal';
 import SolConverterModal from '../components/SolConverterModal';
-import { TelegramConfig } from '../lib/telegram';
-import { DiscordConfig } from '../lib/discord';
+import ConfirmSnipeModal from '../components/ConfirmSnipeModal';
 import { JitoBundleReceipt } from '../lib/jito';
 import { STRATEGY_PRESETS } from '../config/constants';
 import { ActivePosition, ClosedTrade } from '../types/terminal';
@@ -42,17 +41,30 @@ function TerminalAppInner() {
     consensusFeed,
     walletState,
     updateWalletState,
+    agentConfig,
+    updateAgentConfig,
     executionConfig,
     updateExecutionConfig,
     autoSnipeConfig,
     updateAutoSnipeConfig,
+    telegramConfig,
+    updateTelegramConfig,
+    discordConfig,
+    updateDiscordConfig,
     engineStatus,
     toggleEngine,
     emergencyKillSwitch,
     setVisualMode,
     toggleAudio,
-    isAudioMuted
+    isAudioMuted,
+    appendLog
   } = useTradingAgent();
+
+  // Strategy thresholds — mirrors agentConfig; initialized from BALANCED preset
+  const [agentThresholds, setAgentThresholds] = React.useState<import('../types/terminal').AgentThresholds>(() => STRATEGY_PRESETS.BALANCED);
+
+  // Jito Tip Tier selection (matches WalletConnectModal's ECONOMY | STANDARD | FAST | TURBO)
+  const [selectedTipTier, setSelectedTipTier] = React.useState<'ECONOMY' | 'STANDARD' | 'FAST' | 'TURBO'>('STANDARD');
 
   // Modal Visibility States
   const [isWalletModalOpen, setIsWalletModalOpen] = useState<boolean>(false);
@@ -107,6 +119,8 @@ function TerminalAppInner() {
         setIsWalletModalOpen((prev) => !prev);
       } else if (e.key.toLowerCase() === 'j') {
         setIsJupiterModalOpen((prev) => !prev);
+      } else if (e.key.toLowerCase() === 'n') {
+        setIsAutoSnipeModalOpen((prev) => !prev);
       } else if (e.key.toLowerCase() === 'r') {
         setIsRpcModalOpen((prev) => !prev);
       } else if (e.key.toLowerCase() === 'c') {
@@ -119,31 +133,6 @@ function TerminalAppInner() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleEngine, emergencyKillSwitch, setVisualMode, toggleAudio]);
-
-  // Webhook Alert Configs
-  const [telegramConfig, setTelegramConfig] = useState<TelegramConfig>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('GT_TELEGRAM_CONFIG');
-      if (saved) {
-        try {
-          return JSON.parse(saved);
-        } catch {}
-      }
-    }
-    return { isEnabled: false, botToken: '', chatId: '', minGrokScore: 80 };
-  });
-
-  const [discordConfig, setDiscordConfig] = useState<DiscordConfig>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('GT_DISCORD_CONFIG');
-      if (saved) {
-        try {
-          return JSON.parse(saved);
-        } catch {}
-      }
-    }
-    return { isEnabled: false, webhookUrl: '', minGrokScore: 80 };
-  });
 
   const [latestJitoReceipt, setLatestJitoReceipt] = useState<JitoBundleReceipt | null>(null);
 
@@ -228,7 +217,7 @@ function TerminalAppInner() {
             </span>
             <span className="flex items-center gap-1">
               <kbd className="px-1.5 py-0.5 bg-zinc-800 border border-zinc-700 rounded text-zinc-200 font-bold">
-                1 - 5
+                1 - 6
               </kbd>
               <span>Switch Visualizer</span>
             </span>
@@ -258,44 +247,61 @@ function TerminalAppInner() {
         onClose={() => setIsWalletModalOpen(false)}
         walletState={walletState}
         onUpdateWallet={updateWalletState}
-        selectedTipTier="STANDARD"
-        onSelectTipTier={() => {}}
+        selectedTipTier={selectedTipTier}
+        onSelectTipTier={(tier) => {
+          setSelectedTipTier(tier);
+          updateAgentConfig({ jitoTipTier: tier });
+        }}
       />
 
       <StrategyPresetModal
         isOpen={isStrategyModalOpen}
         onClose={() => setIsStrategyModalOpen(false)}
-        currentThresholds={STRATEGY_PRESETS.BALANCED}
-        onSaveThresholds={() => {}}
+        currentThresholds={agentThresholds}
+        onSaveThresholds={(thresholds) => {
+          setAgentThresholds(thresholds);
+          // Sync key strategy params into agentConfig
+          updateAgentConfig({
+            takeProfitMultiplier: thresholds.targetTakeProfitR,
+            trailingStopLossPct: thresholds.trailingStopLossR,
+            antiRugpull: {
+              ...agentConfig.antiRugpull,
+              requireMintRevoked: thresholds.requireMintRevoked,
+              requireFreezeRevoked: thresholds.requireFreezeRevoked,
+              maxTop10HoldersPct: thresholds.maxTop10HoldersPct
+            }
+          });
+          appendLog('SYSTEM', 'SUCCESS', `Strategy preset changed to ${thresholds.presetName}`);
+        }}
       />
 
       <TelegramSettingsModal
         isOpen={isTelegramModalOpen}
         onClose={() => setIsTelegramModalOpen(false)}
         config={telegramConfig}
-        onSaveConfig={(cfg) => {
-          setTelegramConfig(cfg);
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('GT_TELEGRAM_CONFIG', JSON.stringify(cfg));
-          }
-        }}
+        onSaveConfig={(cfg) => updateTelegramConfig(cfg)}
         discordConfig={discordConfig}
-        onSaveDiscordConfig={(cfg) => {
-          setDiscordConfig(cfg);
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('GT_DISCORD_CONFIG', JSON.stringify(cfg));
-          }
-        }}
+        onSaveDiscordConfig={(cfg) => updateDiscordConfig(cfg)}
       />
 
       <JupiterSwapModal
         isOpen={isJupiterModalOpen}
         onClose={() => setIsJupiterModalOpen(false)}
         token={targetToken}
-        currentBalanceSol={telemetry.currentBalanceSol}
+        currentBalanceSol={walletState.isConnected ? walletState.balanceSol : telemetry.currentBalanceSol}
         currentSlot={telemetry.currentSlot}
         defaultSlippageBps={Math.round(executionConfig.slippagePct * 100)}
-        onSwapSuccess={() => {}}
+        onSwapSuccess={(result) => {
+          const spent = result.inAmountSol || 0.1;
+          if (walletState.isConnected) {
+            updateWalletState({
+              ...walletState,
+              balanceSol: Math.max(0, +(walletState.balanceSol - spent).toFixed(4))
+            });
+          }
+          appendLog('EXECUTION', 'SUCCESS', `Jupiter Swap Berhasil: Beli ${result.outAmountFormatted} ${result.symbol} seharga ${spent} SOL (-${spent} SOL)`);
+          setIsJupiterModalOpen(false);
+        }}
       />
 
       <AutoSnipeModal
@@ -303,7 +309,7 @@ function TerminalAppInner() {
         onClose={() => setIsAutoSnipeModalOpen(false)}
         config={autoSnipeConfig}
         onSaveConfig={updateAutoSnipeConfig}
-        currentBalanceSol={telemetry.currentBalanceSol}
+        currentBalanceSol={walletState.isConnected ? walletState.balanceSol : telemetry.currentBalanceSol}
       />
 
       <PerformanceStatsModal
@@ -353,9 +359,12 @@ function TerminalAppInner() {
         onClose={() => setIsConverterOpen(false)}
       />
 
+      <ConfirmSnipeModal />
+
       {/* Floating Pro Trader Hotkeys Trigger Button */}
       <button
         onClick={() => setIsShortcutsModalOpen(true)}
+        aria-label="Buka Pro Trader Keyboard Shortcuts"
         className="fixed bottom-4 right-4 z-30 p-2.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-400 hover:text-zinc-100 shadow-[0_0_20px_rgba(0,0,0,0.6)] flex items-center gap-2 text-xs font-mono backdrop-blur-md transition-all cursor-pointer group"
         title="Buka Pro Trader Keyboard Shortcuts (?)"
       >

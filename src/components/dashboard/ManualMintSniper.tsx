@@ -40,6 +40,7 @@ export const ManualMintSniper: React.FC<ManualMintSniperProps> = ({ onOpenJitoTr
           {mintInput && (
             <button
               onClick={() => setMintInput('')}
+              aria-label="Bersihkan input mint CA"
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 text-xs cursor-pointer"
             >
               ✕

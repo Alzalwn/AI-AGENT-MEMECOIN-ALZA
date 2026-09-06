@@ -20,7 +20,9 @@ import {
   ExternalLink,
   RefreshCw,
   Keyboard,
-  LogOut
+  LogOut,
+  Menu,
+  X as CloseIcon
 } from 'lucide-react';
 import { rpcFailoverInstance } from '../../lib/rpcFailover';
 import { useSolRate } from '../../hooks/useSolRate';
@@ -66,6 +68,7 @@ export const Header: React.FC<HeaderProps> = ({
   const { rate, formatIdrShort, formatUsd } = useSolRate();
 
   const [isKillModalOpen, setIsKillModalOpen] = useState<boolean>(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
   const isAutonomous = engineStatus === 'AUTONOMOUS';
 
@@ -149,6 +152,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={() => onOpenConverter?.()}
             title="Klik untuk membuka Kalkulator Kurs SOL ⇄ Rupiah (IDR) & USD"
+            aria-label="Kalkulator Kurs SOL ke Rupiah dan USD"
             className="flex items-center gap-1.5 text-zinc-300 hover:text-purple-300 transition-all cursor-pointer group"
           >
             <span className="text-purple-400 font-bold">1 SOL =</span>
@@ -175,6 +179,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={() => onOpenConverter?.()}
             title="Kalkulator Kurs: 1 SOL = Berapa Rupiah / USD"
+            aria-label="Kalkulator Kurs SOL Mobile"
             className="lg:hidden flex items-center gap-1.5 bg-gradient-to-r from-purple-500/10 to-emerald-500/10 hover:from-purple-500/20 hover:to-emerald-500/20 border border-purple-500/30 px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-zinc-200 transition-all cursor-pointer active:scale-95"
           >
             <span className="text-purple-400">SOL:</span>
@@ -184,57 +189,63 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={toggleAudio}
             title={isAudioMuted ? 'Aktifkan Audio Telemetri' : 'Bisukan Audio'}
+            aria-label={isAudioMuted ? 'Aktifkan Audio Telemetri' : 'Bisukan Audio'}
             className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
           >
             {isAudioMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
           </button>
 
-          {/* Keyboard Shortcuts Cheat Sheet */}
+          {/* Keyboard Shortcuts Cheat Sheet (Desktop) */}
           {onOpenShortcuts && (
             <button
               onClick={onOpenShortcuts}
               title="Keyboard Shortcuts Cheat Sheet (?)"
-              className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
+              aria-label="Buka Keyboard Shortcuts"
+              className="hidden lg:flex p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
             >
               <Keyboard className="w-4 h-4 text-purple-400" />
             </button>
           )}
 
-          {/* Strategy Presets */}
+          {/* Strategy Presets (Desktop) */}
           <button
             onClick={onOpenStrategy}
-            className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer flex items-center gap-1.5 text-xs"
+            className="hidden lg:flex p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer items-center gap-1.5 text-xs"
             title="Konfigurasi Preset Strategi 5-Agen"
+            aria-label="Buka Strategy Presets"
           >
             <Sliders className="w-4 h-4 text-cyan-400" />
             <span className="hidden xl:inline text-[11px] font-bold">Strategy</span>
           </button>
 
-          {/* Omnichannel Alerts */}
+          {/* Omnichannel Alerts (Desktop) */}
           <button
             onClick={onOpenAlerts}
-            className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer flex items-center gap-1.5 text-xs"
+            className="hidden lg:flex p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer items-center gap-1.5 text-xs"
             title="Telegram & Discord Webhook Alerts"
+            aria-label="Buka Omnichannel Alerts"
           >
             <Bell className="w-4 h-4 text-emerald-400" />
             <span className="hidden xl:inline text-[11px] font-bold">Alerts</span>
           </button>
 
-          {/* Performance Analytics */}
+          {/* Performance Analytics (Desktop) */}
           <button
             onClick={onOpenAnalytics}
-            className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer flex items-center gap-1.5 text-xs"
+            className="hidden lg:flex p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer items-center gap-1.5 text-xs"
             title="Performance Stats ($E[R]$ Expectancy & Winrate)"
+            aria-label="Buka Performance Analytics"
           >
             <BarChart3 className="w-4 h-4 text-amber-400" />
             <span className="hidden xl:inline text-[11px] font-bold">Analytics</span>
           </button>
 
-          {/* Execution Settings */}
+          {/* Execution Settings (Desktop) */}
           <button
             onClick={onOpenExecution}
-            className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer flex items-center gap-1.5 text-xs"
+            className="hidden lg:flex p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer items-center gap-1.5 text-xs"
             title="Slippage & Priority Fee Settings"
+            aria-label="Buka Execution Settings"
           >
             <SlidersHorizontal className="w-4 h-4 text-cyan-400" />
             <span className="hidden xl:inline text-[11px] font-bold">Slip: {executionConfig.slippagePct}%</span>
@@ -245,6 +256,7 @@ export const Header: React.FC<HeaderProps> = ({
             variant={walletState.isConnected ? 'outline' : 'secondary'}
             size="sm"
             onClick={onOpenWallet}
+            aria-label={walletState.isConnected ? `Wallet terhubung: ${walletState.balanceSol.toFixed(2)} SOL` : 'Koneksikan Web3 Solana Wallet'}
             leftIcon={<Wallet className="w-3.5 h-3.5 text-emerald-400" />}
           >
             {walletState.isConnected ? (
@@ -264,13 +276,14 @@ export const Header: React.FC<HeaderProps> = ({
             variant="danger"
             size="sm"
             onClick={() => setIsKillModalOpen(true)}
+            aria-label="Emergency Kill-Switch: Liquidate positions and halt autonomous engine"
             leftIcon={<AlertOctagon className="w-3.5 h-3.5 animate-pulse" />}
             glow
           >
             KILL-SWITCH
           </Button>
 
-          {/* LOCK / LOGOUT SESSION */}
+          {/* LOCK / LOGOUT SESSION (Desktop) */}
           <button
             onClick={async () => {
               if (confirm('Kunci terminal dan akhiri sesi admin sekarang?')) {
@@ -279,11 +292,87 @@ export const Header: React.FC<HeaderProps> = ({
               }
             }}
             title="Kunci Akses Terminal (Logout)"
-            className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-500 hover:text-rose-400 hover:border-rose-500/40 transition-all cursor-pointer"
+            aria-label="Logout dan Kunci Terminal"
+            className="hidden lg:flex p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-500 hover:text-rose-400 hover:border-rose-500/40 transition-all cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
           </button>
+
+          {/* Mobile Hamburger Menu Toggle (Fix #16) */}
+          <button
+            onClick={() => setIsMobileMenuOpen((prev) => !prev)}
+            aria-label={isMobileMenuOpen ? 'Tutup menu navigasi terminal' : 'Buka menu navigasi terminal'}
+            className="lg:hidden p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white transition-all cursor-pointer"
+          >
+            {isMobileMenuOpen ? <CloseIcon className="w-4 h-4 text-rose-400" /> : <Menu className="w-4 h-4 text-cyan-400" />}
+          </button>
         </div>
+
+        {/* Mobile Slide-Down Drawer (Fix #16) */}
+        {isMobileMenuOpen && (
+          <div className="lg:hidden w-full pt-3 pb-1 border-t border-zinc-800/80 mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2 font-mono text-xs animate-in slide-in-from-top-2 duration-150">
+            {/* Strategy */}
+            <button
+              onClick={() => { onOpenStrategy(); setIsMobileMenuOpen(false); }}
+              className="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800 hover:border-cyan-500/50 flex items-center gap-2 text-zinc-300 hover:text-cyan-300 transition-all cursor-pointer"
+            >
+              <Sliders className="w-4 h-4 text-cyan-400 shrink-0" />
+              <span>Strategy</span>
+            </button>
+
+            {/* Alerts */}
+            <button
+              onClick={() => { onOpenAlerts(); setIsMobileMenuOpen(false); }}
+              className="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800 hover:border-emerald-500/50 flex items-center gap-2 text-zinc-300 hover:text-emerald-300 transition-all cursor-pointer"
+            >
+              <Bell className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>Alerts</span>
+            </button>
+
+            {/* Analytics */}
+            <button
+              onClick={() => { onOpenAnalytics(); setIsMobileMenuOpen(false); }}
+              className="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800 hover:border-amber-500/50 flex items-center gap-2 text-zinc-300 hover:text-amber-300 transition-all cursor-pointer"
+            >
+              <BarChart3 className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>Analytics</span>
+            </button>
+
+            {/* Execution / Slippage */}
+            <button
+              onClick={() => { onOpenExecution(); setIsMobileMenuOpen(false); }}
+              className="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800 hover:border-cyan-500/50 flex items-center gap-2 text-zinc-300 hover:text-cyan-300 transition-all cursor-pointer"
+            >
+              <SlidersHorizontal className="w-4 h-4 text-cyan-400 shrink-0" />
+              <span>Slip: {executionConfig.slippagePct}%</span>
+            </button>
+
+            {/* Shortcuts */}
+            {onOpenShortcuts && (
+              <button
+                onClick={() => { onOpenShortcuts(); setIsMobileMenuOpen(false); }}
+                className="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800 hover:border-purple-500/50 flex items-center gap-2 text-zinc-300 hover:text-purple-300 transition-all cursor-pointer"
+              >
+                <Keyboard className="w-4 h-4 text-purple-400 shrink-0" />
+                <span>Hotkeys (?)</span>
+              </button>
+            )}
+
+            {/* Logout */}
+            <button
+              onClick={async () => {
+                if (confirm('Kunci terminal dan akhiri sesi admin sekarang?')) {
+                  await fetch('/api/auth/logout', { method: 'POST' });
+                  window.location.href = '/login';
+                }
+              }}
+              className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 hover:bg-rose-500/20 text-rose-400 flex items-center gap-2 transition-all cursor-pointer"
+            >
+              <LogOut className="w-4 h-4 shrink-0" />
+              <span>Lock Terminal</span>
+            </button>
+          </div>
+        )}
       </header>
 
       {/* Confirmation Modal for Kill Switch */}

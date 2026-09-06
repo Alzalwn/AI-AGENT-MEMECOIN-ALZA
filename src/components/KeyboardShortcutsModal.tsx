@@ -61,6 +61,7 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
       category: 'System & Modals',
       items: [
         { key: 'S', desc: 'Konfigurasi Strategy Presets 5-Agen', icon: <Sliders className="w-3.5 h-3.5 text-cyan-400" /> },
+        { key: 'N', desc: 'Auto-Snipe Config & One-Click Sniper', icon: <Zap className="w-3.5 h-3.5 text-rose-400" /> },
         { key: 'A', desc: 'Omnichannel Alerts (Telegram & Discord)', icon: <Bell className="w-3.5 h-3.5 text-emerald-400" /> },
         { key: 'P', desc: 'Performance Analytics ($E[R]$ & Winrate)', icon: <BarChart3 className="w-3.5 h-3.5 text-amber-400" /> },
         { key: 'E', desc: 'Execution Profile & Slippage Settings', icon: <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-400" /> },
@@ -98,6 +99,7 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
 
           <button
             onClick={onClose}
+            aria-label="Tutup modal keyboard shortcuts"
             className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
           >
             <X className="w-5 h-5" />

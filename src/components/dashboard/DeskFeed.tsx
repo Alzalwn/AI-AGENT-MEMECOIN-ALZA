@@ -4,6 +4,7 @@ import React from 'react';
 import { useTradingAgent } from '../../hooks/useTradingAgent';
 import { Activity, AlertTriangle } from 'lucide-react';
 import Badge from '../ui/Badge';
+import { DeskFeedSkeletonItem } from '../ui/Skeleton';
 
 export const DeskFeed: React.FC = () => {
   const {
@@ -148,8 +149,14 @@ export const DeskFeed: React.FC = () => {
             );
           })
         ) : (
-          <div className="p-8 text-center text-zinc-600 text-xs">
-            Menunggu sinyal pool baru...
+          <div className="space-y-2">
+            <div className="text-[10px] text-zinc-500 font-bold px-1 py-0.5 animate-pulse">
+              Menghubungkan ke Solana mempool & mensinkronisasi feed...
+            </div>
+            <DeskFeedSkeletonItem />
+            <DeskFeedSkeletonItem />
+            <DeskFeedSkeletonItem />
+            <DeskFeedSkeletonItem />
           </div>
         )}
       </div>

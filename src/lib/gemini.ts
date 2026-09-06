@@ -36,7 +36,7 @@ export async function evaluateTokenWithGemini(
   token: TokenSignal,
   customApiKey?: string
 ): Promise<GeminiNarrativeEvaluation> {
-  const apiKey = customApiKey || process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+  const apiKey = customApiKey || process.env.GEMINI_API_KEY;
 
   // Fallback to algorithmic semantic heuristic if no Gemini API Key is configured
   if (!apiKey) {

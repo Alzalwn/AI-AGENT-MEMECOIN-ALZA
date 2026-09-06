@@ -1,5 +1,6 @@
-﻿import type { Metadata } from 'next';
+import type { Metadata } from 'next';
 import './globals.css';
+import { ToastProvider } from '../components/ui/ToastProvider';
 
 export const metadata: Metadata = {
   title: 'Grok Trencher | Solana Multi-Agent Memecoin Terminal',
@@ -14,7 +15,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased min-h-screen bg-terminal-bg text-terminal-text">
-        {children}
+        <ToastProvider>
+          {children}
+        </ToastProvider>
       </body>
     </html>
   );
