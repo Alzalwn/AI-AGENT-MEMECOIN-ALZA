@@ -28,6 +28,7 @@ import RpcManagerModal from '../components/RpcManagerModal';
 import SolConverterModal from '../components/SolConverterModal';
 import ConfirmSnipeModal from '../components/ConfirmSnipeModal';
 import ChangePasswordModal from '../components/ChangePasswordModal';
+import SmartMoneyModal from '../components/SmartMoneyModal';
 import { JitoBundleReceipt } from '../lib/jito';
 import { STRATEGY_PRESETS } from '../config/constants';
 import { ActivePosition, ClosedTrade } from '../types/terminal';
@@ -83,6 +84,7 @@ function TerminalAppInner() {
   const [isRpcModalOpen, setIsRpcModalOpen] = useState<boolean>(false);
   const [isConverterOpen, setIsConverterOpen] = useState<boolean>(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState<boolean>(false);
+  const [isSmartMoneyOpen, setIsSmartMoneyOpen] = useState<boolean>(false);
 
   // Global Pro Trader Keyboard Shortcuts
   React.useEffect(() => {
@@ -127,6 +129,8 @@ function TerminalAppInner() {
         setIsRpcModalOpen((prev) => !prev);
       } else if (e.key.toLowerCase() === 'c') {
         setIsConverterOpen((prev) => !prev);
+      } else if (e.key.toLowerCase() === 't') {
+        setIsSmartMoneyOpen((prev) => !prev);
       } else if (e.key === '?') {
         setIsShortcutsModalOpen((prev) => !prev);
       }
@@ -156,6 +160,7 @@ function TerminalAppInner() {
         onOpenShortcuts={() => setIsShortcutsModalOpen(true)}
         onOpenConverter={() => setIsConverterOpen(true)}
         onOpenPassword={() => setIsPasswordModalOpen(true)}
+        onOpenSmartMoney={() => setIsSmartMoneyOpen(true)}
       />
 
       {/* Main Workspace Body */}
@@ -371,6 +376,12 @@ function TerminalAppInner() {
       />
 
       <ConfirmSnipeModal />
+
+      <SmartMoneyModal
+        isOpen={isSmartMoneyOpen}
+        onClose={() => setIsSmartMoneyOpen(false)}
+        onLogMessage={appendLog}
+      />
 
       {/* Floating Pro Trader Hotkeys Trigger Button */}
       <button

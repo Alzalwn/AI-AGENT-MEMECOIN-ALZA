@@ -23,7 +23,8 @@ import {
   LogOut,
   KeyRound,
   Menu,
-  X as CloseIcon
+  X as CloseIcon,
+  Users
 } from 'lucide-react';
 import { rpcFailoverInstance } from '../../lib/rpcFailover';
 import { useSolRate } from '../../hooks/useSolRate';
@@ -42,6 +43,7 @@ interface HeaderProps {
   onOpenShortcuts?: () => void;
   onOpenConverter?: () => void;
   onOpenPassword?: () => void;
+  onOpenSmartMoney?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -54,7 +56,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenRpc,
   onOpenShortcuts,
   onOpenConverter,
-  onOpenPassword
+  onOpenPassword,
+  onOpenSmartMoney
 }) => {
   const {
     engineStatus,
@@ -243,6 +246,19 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden xl:inline text-[11px] font-bold">Analytics</span>
           </button>
 
+          {/* Smart Money Copy-Trading (Desktop) */}
+          {onOpenSmartMoney && (
+            <button
+              onClick={onOpenSmartMoney}
+              className="hidden lg:flex p-2 rounded-xl bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 hover:from-emerald-500/20 hover:to-cyan-500/20 border border-emerald-500/30 text-emerald-400 hover:text-emerald-300 transition-all cursor-pointer items-center gap-1.5 text-xs shadow-[0_0_10px_rgba(16,185,129,0.15)]"
+              title="Smart Money & Whale Tracker (Copy-Trading)"
+              aria-label="Buka Smart Money Tracker"
+            >
+              <Users className="w-4 h-4 text-emerald-400" />
+              <span className="hidden xl:inline text-[11px] font-bold">Copy-Trade</span>
+            </button>
+          )}
+
           {/* Execution Settings (Desktop) */}
           <button
             onClick={onOpenExecution}
@@ -352,6 +368,17 @@ export const Header: React.FC<HeaderProps> = ({
               <BarChart3 className="w-4 h-4 text-amber-400 shrink-0" />
               <span>Analytics</span>
             </button>
+
+            {/* Smart Money Copy-Trade */}
+            {onOpenSmartMoney && (
+              <button
+                onClick={() => { onOpenSmartMoney(); setIsMobileMenuOpen(false); }}
+                className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-300 flex items-center gap-2 transition-all cursor-pointer"
+              >
+                <Users className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Smart Money (Copy-Trade)</span>
+              </button>
+            )}
 
             {/* Execution / Slippage */}
             <button

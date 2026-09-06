@@ -27,8 +27,20 @@ import { runAgentConsensus } from '../agents/consensus';
 import { evaluateExitAgent } from '../agents/exit';
 import { soundFx } from '../engine/audioEngine';
 import { STRATEGY_PRESETS, JITO_TIP_TIERS } from '../config/constants';
-import { sendTelegramAlphaAlert, TelegramConfig } from '../lib/telegram';
-import { sendDiscordAlphaAlert, DiscordConfig } from '../lib/discord';
+import {
+  sendTelegramAlphaAlert,
+  sendTelegramBuyAlert,
+  sendTelegramExitAlert,
+  sendTelegramRugpullWarning,
+  TelegramConfig
+} from '../lib/telegram';
+import {
+  sendDiscordAlphaAlert,
+  sendDiscordBuyAlert,
+  sendDiscordExitAlert,
+  sendDiscordRugpullWarning,
+  DiscordConfig
+} from '../lib/discord';
 import { createJitoBundleReceipt } from '../lib/jito';
 import { rpcFailoverInstance } from '../lib/rpcFailover';
 
@@ -364,6 +376,14 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         currentBalanceSol: +(prev.currentBalanceSol + activePosition.solInvested + activePosition.pnlSol).toFixed(3)
       }));
 
+      // Omnichannel Exit Alerts
+      if (telegramConfig.isEnabled) {
+        sendTelegramExitAlert(closed, telegramConfig);
+      }
+      if (discordConfig.isEnabled) {
+        sendDiscordExitAlert(closed, discordConfig);
+      }
+
       appendLog('EXECUTION', 'SUCCESS', `Sold 100% ${activePosition.token.symbol} for ${activePosition.pnlSol} SOL PnL`);
     } else {
       // 50% partial take-profit
@@ -477,10 +497,19 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     appendLog('JITO', 'SUCCESS', `⚡ JITO TOKYO BUNDLE LANDED: ${bundleReceipt.bundleId} (${bundleReceipt.latencyMs}ms) • Tip: ${tipSol} SOL`);
     appendLog('EXECUTION', 'SUCCESS', `[CONFIRMED] Opened active position on ${token.symbol} @ ${entryPrice.toFixed(8)} SOL via Jito MEV`);
+
+    // Omnichannel Buy Alerts
+    if (telegramConfig.isEnabled) {
+      sendTelegramBuyAlert(token, telegramConfig, solInvest, bundleReceipt.txHash, tipSol);
+    }
+    if (discordConfig.isEnabled) {
+      sendDiscordBuyAlert(token, discordConfig, solInvest, bundleReceipt.txHash, tipSol);
+    }
+
     soundFx.playApproval();
     setPendingSnipeConfirmation(null);
     setSniperStatus(null);
-  }, [pendingSnipeConfirmation, appendLog]);
+  }, [pendingSnipeConfirmation, appendLog, telegramConfig, discordConfig, agentConfig, networkMetrics.currentSlot]);
 
   const cancelSnipe = useCallback(() => {
     if (pendingSnipeConfirmation) {
@@ -787,6 +816,14 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
           lossCount: pnlSol < 0 ? prev.lossCount + 1 : prev.lossCount
         }));
 
+        // Omnichannel Exit Alerts (Take Profit / Stop Loss)
+        if (telegramConfig.isEnabled) {
+          sendTelegramExitAlert(closed, telegramConfig);
+        }
+        if (discordConfig.isEnabled) {
+          sendDiscordExitAlert(closed, discordConfig);
+        }
+
         appendLog('EXECUTION', pnlSol >= 0 ? 'SUCCESS' : 'DANGER', `Exit Agent closed ${updatedPos.token.symbol}: ${exitVerdict.reason}`);
       } else {
         setActivePosition(updatedPos);
@@ -794,7 +831,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }, 3200);
 
     return () => clearInterval(interval);
-  }, [activePosition, appendLog]);
+  }, [activePosition, appendLog, telegramConfig, discordConfig]);
 
   const updateAgentConfig = useCallback((updates: Partial<AgentConfig>) => {
     setAgentConfig((prev) => ({ ...prev, ...updates }));

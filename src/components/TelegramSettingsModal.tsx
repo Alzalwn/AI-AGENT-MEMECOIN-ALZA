@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Send, X, Check, AlertCircle, Loader2, HelpCircle, MessageSquare } from 'lucide-react';
-import { TelegramConfig, testTelegramConnection } from '../lib/telegram';
-import { DiscordConfig, testDiscordWebhook } from '../lib/discord';
+import { TelegramConfig, testTelegramConnection, sendTelegramExitAlert } from '../lib/telegram';
+import { DiscordConfig, testDiscordWebhook, sendDiscordExitAlert } from '../lib/discord';
 
 interface TelegramSettingsModalProps {
   isOpen: boolean;
@@ -57,11 +57,89 @@ export default function TelegramSettingsModal({
     setIsTestingTelegram(false);
   };
 
+  const handleTestTelegramTrade = async () => {
+    setIsTestingTelegram(true);
+    setTelegramTestResult(null);
+    const dummyTrade = {
+      token: {
+        id: 'TEST-1',
+        mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+        symbol: '$TEST',
+        name: 'Grok Alpha Test',
+        platform: 'Pump.fun' as const,
+        initialLpUsd: 25000,
+        burntLiquidityPct: 100,
+        mintAuthorityRevoked: true,
+        freezeAuthorityRevoked: true,
+        top10HolderPct: 12,
+        volumeDelta15s: 18,
+        uniqueBuyersCount: 10,
+        narrativeCosineSim: 0.94,
+        narrativeTheme: 'AI / AGENTIC',
+        priceSol: 0.000035,
+        detectedAt: Date.now()
+      },
+      entryPriceSol: 0.000035,
+      exitPriceSol: 0.000056,
+      solInvested: 0.5,
+      pnlSol: 0.300,
+      pnlPct: 60.0,
+      rMultiplier: 3.2,
+      holdDurationSec: 38,
+      exitReason: 'Target Take-Profit Reached (+3.2R)'
+    };
+    const ok = await sendTelegramExitAlert(dummyTrade, { botToken, chatId, isEnabled: true });
+    setTelegramTestResult({
+      success: ok,
+      message: ok ? 'Contoh Trade Alert berhasil dikirim ke Telegram!' : 'Gagal mengirim Test Trade Alert. Periksa Bot Token & Chat ID.'
+    });
+    setIsTestingTelegram(false);
+  };
+
   const handleTestDiscord = async () => {
     setIsTestingDiscord(true);
     setDiscordTestResult(null);
     const result = await testDiscordWebhook(discordWebhookUrl);
     setDiscordTestResult(result);
+    setIsTestingDiscord(false);
+  };
+
+  const handleTestDiscordTrade = async () => {
+    setIsTestingDiscord(true);
+    setDiscordTestResult(null);
+    const dummyTrade = {
+      token: {
+        id: 'TEST-1',
+        mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+        symbol: '$TEST',
+        name: 'Grok Alpha Test',
+        platform: 'Pump.fun' as const,
+        initialLpUsd: 25000,
+        burntLiquidityPct: 100,
+        mintAuthorityRevoked: true,
+        freezeAuthorityRevoked: true,
+        top10HolderPct: 12,
+        volumeDelta15s: 18,
+        uniqueBuyersCount: 10,
+        narrativeCosineSim: 0.94,
+        narrativeTheme: 'AI / AGENTIC',
+        priceSol: 0.000035,
+        detectedAt: Date.now()
+      },
+      entryPriceSol: 0.000035,
+      exitPriceSol: 0.000056,
+      solInvested: 0.5,
+      pnlSol: 0.300,
+      pnlPct: 60.0,
+      rMultiplier: 3.2,
+      holdDurationSec: 38,
+      exitReason: 'Target Take-Profit Reached (+3.2R)'
+    };
+    const ok = await sendDiscordExitAlert(dummyTrade, { webhookUrl: discordWebhookUrl, isEnabled: true });
+    setDiscordTestResult({
+      success: ok,
+      message: ok ? 'Contoh Rich Embed Trade Alert berhasil dikirim ke Discord!' : 'Gagal mengirim Test Trade Alert. Periksa URL Webhook.'
+    });
     setIsTestingDiscord(false);
   };
 
@@ -196,16 +274,26 @@ export default function TelegramSettingsModal({
               </div>
             )}
 
-            <div className="pt-1 flex justify-between items-center">
-              <button
-                type="button"
-                onClick={handleTestTelegram}
-                disabled={isTestingTelegram || !botToken.trim() || !chatId.trim()}
-                className="py-1.5 px-3 rounded-lg bg-terminal-card border border-terminal-border hover:border-sky-400 text-xs font-bold text-sky-400 flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-40"
-              >
-                {isTestingTelegram ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                Test Ping Bot
-              </button>
+            <div className="pt-1 flex flex-wrap gap-2 justify-between items-center">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleTestTelegram}
+                  disabled={isTestingTelegram || !botToken.trim() || !chatId.trim()}
+                  className="py-1.5 px-3 rounded-lg bg-terminal-card border border-terminal-border hover:border-sky-400 text-xs font-bold text-sky-400 flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-40"
+                >
+                  {isTestingTelegram ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                  Test Ping Bot
+                </button>
+                <button
+                  type="button"
+                  onClick={handleTestTelegramTrade}
+                  disabled={isTestingTelegram || !botToken.trim() || !chatId.trim()}
+                  className="py-1.5 px-3 rounded-lg bg-sky-500/10 border border-sky-500/30 hover:border-sky-400 text-xs font-bold text-sky-300 flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-40"
+                >
+                  ⚡ Test Trade Alert
+                </button>
+              </div>
 
               <button
                 type="button"
@@ -270,16 +358,26 @@ export default function TelegramSettingsModal({
               </div>
             )}
 
-            <div className="pt-1 flex justify-between items-center">
-              <button
-                type="button"
-                onClick={handleTestDiscord}
-                disabled={isTestingDiscord || !discordWebhookUrl.trim()}
-                className="py-1.5 px-3 rounded-lg bg-terminal-card border border-terminal-border hover:border-indigo-400 text-xs font-bold text-indigo-400 flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-40"
-              >
-                {isTestingDiscord ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MessageSquare className="w-3.5 h-3.5" />}
-                Test Ping Discord
-              </button>
+            <div className="pt-1 flex flex-wrap gap-2 justify-between items-center">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleTestDiscord}
+                  disabled={isTestingDiscord || !discordWebhookUrl.trim()}
+                  className="py-1.5 px-3 rounded-lg bg-terminal-card border border-terminal-border hover:border-indigo-400 text-xs font-bold text-indigo-400 flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-40"
+                >
+                  {isTestingDiscord ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MessageSquare className="w-3.5 h-3.5" />}
+                  Test Ping Discord
+                </button>
+                <button
+                  type="button"
+                  onClick={handleTestDiscordTrade}
+                  disabled={isTestingDiscord || !discordWebhookUrl.trim()}
+                  className="py-1.5 px-3 rounded-lg bg-indigo-500/10 border border-indigo-500/30 hover:border-indigo-400 text-xs font-bold text-indigo-300 flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-40"
+                >
+                  ⚡ Test Trade Alert
+                </button>
+              </div>
 
               <button
                 type="button"

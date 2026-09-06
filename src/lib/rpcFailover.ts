@@ -72,14 +72,74 @@ export class RpcFailoverManager {
 
   constructor(initialEndpoints: RpcEndpoint[] = DEFAULT_RPC_ENDPOINTS) {
     this.endpoints = [...initialEndpoints];
+    this.loadCustomEndpoints();
+  }
+
+  private loadCustomEndpoints() {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('GT_CUSTOM_RPC_ENDPOINTS');
+        if (saved) {
+          const parsed: RpcEndpoint[] = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            // Merge custom endpoints at the top
+            const existingIds = new Set(this.endpoints.map(e => e.id));
+            const newCustoms = parsed.filter(p => !existingIds.has(p.id));
+            this.endpoints = [...newCustoms, ...this.endpoints];
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load custom RPC endpoints from localStorage:', err);
+      }
+    }
+  }
+
+  private saveCustomEndpoints() {
+    if (typeof window !== 'undefined') {
+      try {
+        const customs = this.endpoints.filter(e => e.id.startsWith('custom-') || e.id === 'user-dedicated-private');
+        localStorage.setItem('GT_CUSTOM_RPC_ENDPOINTS', JSON.stringify(customs));
+      } catch (err) {
+        console.warn('Failed to save custom RPC endpoints to localStorage:', err);
+      }
+    }
   }
 
   public getActiveEndpoint(): RpcEndpoint {
-    return this.endpoints[this.activeIndex];
+    return this.endpoints[this.activeIndex] || this.endpoints[0];
   }
 
   public getAllEndpoints(): RpcEndpoint[] {
     return [...this.endpoints];
+  }
+
+  public addCustomEndpoint(name: string, url: string, type: 'PRIMARY' | 'SECONDARY' = 'PRIMARY'): RpcEndpoint {
+    const newEndpoint: RpcEndpoint = {
+      id: `custom-${Date.now()}`,
+      name: name.trim() || 'Custom Private RPC',
+      url: url.trim(),
+      type,
+      isHealthy: true,
+      latencyMs: 35,
+      lastChecked: Date.now()
+    };
+    this.endpoints = [newEndpoint, ...this.endpoints];
+    this.activeIndex = 0; // set newly added as active
+    this.saveCustomEndpoints();
+    return newEndpoint;
+  }
+
+  public removeCustomEndpoint(id: string): boolean {
+    const initialLen = this.endpoints.length;
+    this.endpoints = this.endpoints.filter(e => e.id !== id);
+    if (this.endpoints.length === 0) {
+      this.endpoints = [...DEFAULT_RPC_ENDPOINTS];
+    }
+    if (this.activeIndex >= this.endpoints.length) {
+      this.activeIndex = 0;
+    }
+    this.saveCustomEndpoints();
+    return this.endpoints.length < initialLen;
   }
 
   public onFailover(callback: (oldRpc: RpcEndpoint, newRpc: RpcEndpoint, reason: string, durationMs: number) => void): () => void {
@@ -94,7 +154,7 @@ export class RpcFailoverManager {
    */
   public triggerFailover(reason: string = 'High latency / Disconnect'): RpcEndpoint {
     const start = performance.now();
-    const oldRpc = this.endpoints[this.activeIndex];
+    const oldRpc = this.getActiveEndpoint();
     oldRpc.isHealthy = false;
 
     // Search for next available healthy or fallback endpoint
@@ -137,6 +197,39 @@ export class RpcFailoverManager {
   }
 
   /**
+   * Benchmark all endpoints simultaneously with real getSlot latency test
+   */
+  public async benchmarkAll(): Promise<RpcEndpoint[]> {
+    const promises = this.endpoints.map(async (ep) => {
+      const start = performance.now();
+      try {
+        const res = await fetch(ep.url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'getSlot'
+          }),
+          signal: AbortSignal.timeout(2800)
+        });
+        const latency = Math.round(performance.now() - start);
+        ep.latencyMs = latency;
+        ep.isHealthy = res.ok;
+        ep.lastChecked = Date.now();
+      } catch {
+        ep.latencyMs = 999;
+        ep.isHealthy = false;
+        ep.lastChecked = Date.now();
+      }
+      return ep;
+    });
+
+    await Promise.all(promises);
+    return [...this.endpoints];
+  }
+
+  /**
    * Ping check active RPC endpoint health
    */
   public async checkHealth(): Promise<{ isHealthy: boolean; latencyMs: number }> {
@@ -176,3 +269,4 @@ export class RpcFailoverManager {
 }
 
 export const rpcFailoverInstance = new RpcFailoverManager();
+

@@ -85,3 +85,133 @@ export async function sendTelegramAlphaAlert(
     return false;
   }
 }
+
+export async function sendTelegramBuyAlert(
+  token: TokenSignal,
+  config: TelegramConfig,
+  amountSol: number,
+  txSignature: string,
+  jitoTipSol: number = 0.0001
+): Promise<boolean> {
+  if (!config.isEnabled || !config.botToken.trim() || !config.chatId.trim()) {
+    return false;
+  }
+
+  try {
+    const solscanTx = `https://solscan.io/tx/${txSignature}`;
+    const dexUrl = token.dexUrl || `https://dexscreener.com/solana/${token.mint}`;
+
+    const text = `🎯 <b>GROK TRENCHER // POSITION OPENED</b> ⚡\n\n` +
+      `🪙 <b>Token:</b> <b>${token.symbol}</b> (${token.name})\n` +
+      `💰 <b>Amount:</b> <b>${amountSol.toFixed(3)} SOL</b>\n` +
+      `💵 <b>Entry Price:</b> ${token.priceSol.toFixed(8)} SOL\n` +
+      `🔑 <b>Mint:</b> <code>${token.mint}</code>\n` +
+      `🛡️ <b>MEV Defense:</b> Jito Tokyo Bundle (${jitoTipSol.toFixed(5)} SOL Tip)\n\n` +
+      `🔗 <a href="${solscanTx}">Solscan TX</a> | <a href="${dexUrl}">DexScreener</a>`;
+
+    const res = await fetch(`https://api.telegram.org/bot${config.botToken.trim()}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: config.chatId.trim(),
+        text,
+        parse_mode: 'HTML',
+        disable_web_page_preview: true
+      })
+    });
+
+    const data = await res.json();
+    return !!(res.ok && data.ok);
+  } catch (err) {
+    console.error('sendTelegramBuyAlert error:', err);
+    return false;
+  }
+}
+
+export async function sendTelegramExitAlert(
+  trade: {
+    token: TokenSignal;
+    entryPriceSol: number;
+    exitPriceSol: number;
+    solInvested: number;
+    pnlSol: number;
+    pnlPct: number;
+    rMultiplier: number;
+    holdDurationSec: number;
+    exitReason: string;
+  },
+  config: TelegramConfig
+): Promise<boolean> {
+  if (!config.isEnabled || !config.botToken.trim() || !config.chatId.trim()) {
+    return false;
+  }
+
+  try {
+    const isProfit = trade.pnlSol >= 0;
+    const emoji = isProfit ? '🟢 💰 <b>TAKE PROFIT HIT</b>' : '🔴 🛑 <b>STOP LOSS TRIGGERED</b>';
+    const sign = isProfit ? '+' : '';
+    const dexUrl = trade.token.dexUrl || `https://dexscreener.com/solana/${trade.token.mint}`;
+
+    const text = `${emoji} 🚨\n\n` +
+      `🪙 <b>Token:</b> <b>${trade.token.symbol}</b>\n` +
+      `📊 <b>P&L:</b> <b>${sign}${trade.pnlSol.toFixed(4)} SOL (${sign}${trade.pnlPct.toFixed(2)}%)</b>\n` +
+      `🎯 <b>R-Multiple:</b> ${sign}${trade.rMultiplier}R\n` +
+      `⏱️ <b>Hold Time:</b> ${trade.holdDurationSec} detik\n` +
+      `📝 <b>Reason:</b> ${trade.exitReason}\n` +
+      `🔑 <b>Mint:</b> <code>${trade.token.mint}</code>\n\n` +
+      `🔗 <a href="${dexUrl}">DexScreener Chart</a>`;
+
+    const res = await fetch(`https://api.telegram.org/bot${config.botToken.trim()}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: config.chatId.trim(),
+        text,
+        parse_mode: 'HTML',
+        disable_web_page_preview: true
+      })
+    });
+
+    const data = await res.json();
+    return !!(res.ok && data.ok);
+  } catch (err) {
+    console.error('sendTelegramExitAlert error:', err);
+    return false;
+  }
+}
+
+export async function sendTelegramRugpullWarning(
+  token: TokenSignal,
+  config: TelegramConfig,
+  riskDetails: string
+): Promise<boolean> {
+  if (!config.isEnabled || !config.botToken.trim() || !config.chatId.trim()) {
+    return false;
+  }
+
+  try {
+    const text = `⚠️ <b>GROK TRENCHER // RUGPULL DETECTED</b> ⚠️\n\n` +
+      `🪙 <b>Token:</b> <b>${token.symbol}</b> (${token.name})\n` +
+      `🚨 <b>Veto Reason:</b> ${riskDetails}\n` +
+      `🔑 <b>Mint:</b> <code>${token.mint}</code>\n` +
+      `🛡️ <b>Action:</b> Execution blocked by Risk Agent automatically.`;
+
+    const res = await fetch(`https://api.telegram.org/bot${config.botToken.trim()}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: config.chatId.trim(),
+        text,
+        parse_mode: 'HTML',
+        disable_web_page_preview: true
+      })
+    });
+
+    const data = await res.json();
+    return !!(res.ok && data.ok);
+  } catch (err) {
+    console.error('sendTelegramRugpullWarning error:', err);
+    return false;
+  }
+}
+

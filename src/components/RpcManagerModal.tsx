@@ -11,7 +11,8 @@ import {
   Plus,
   ShieldCheck,
   Activity,
-  Server
+  Server,
+  Trash2
 } from 'lucide-react';
 import { rpcFailoverInstance, RpcEndpoint } from '../lib/rpcFailover';
 import Badge from './ui/Badge';
@@ -62,55 +63,36 @@ export const RpcManagerModal: React.FC<RpcManagerModalProps> = ({
   const handlePingAll = async () => {
     setIsTestingPing(true);
     setFailoverLog(null);
-
-    const updated = [...endpoints];
-    for (let i = 0; i < updated.length; i++) {
-      const ep = updated[i];
-      const start = performance.now();
-      try {
-        const res = await fetch(ep.url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            method: 'getSlot'
-          }),
-          signal: AbortSignal.timeout(2500)
-        });
-        const latency = Math.round(performance.now() - start);
-        ep.latencyMs = latency;
-        ep.isHealthy = res.ok;
-      } catch {
-        ep.latencyMs = 999;
-        ep.isHealthy = false;
-      }
+    try {
+      const benchmarked = await rpcFailoverInstance.benchmarkAll();
+      setEndpoints([...benchmarked]);
+      setActiveEndpoint(rpcFailoverInstance.getActiveEndpoint());
+    } catch (err) {
+      console.error('Benchmark failed:', err);
+    } finally {
+      setIsTestingPing(false);
     }
-
-    setEndpoints([...updated]);
-    setActiveEndpoint(rpcFailoverInstance.getActiveEndpoint());
-    setIsTestingPing(false);
   };
 
   const handleAddCustomEndpoint = () => {
     if (!customUrl.trim()) return;
-    const newEp: RpcEndpoint = {
-      id: `custom-${Date.now()}`,
-      name: customName.trim() || 'Custom Private RPC',
-      url: customUrl.trim(),
-      type: 'SECONDARY',
-      isHealthy: true,
-      latencyMs: 45,
-      lastChecked: Date.now()
-    };
-
-    endpoints.push(newEp);
-    setEndpoints([...endpoints]);
+    const newEp = rpcFailoverInstance.addCustomEndpoint(customName, customUrl, 'PRIMARY');
+    setEndpoints(rpcFailoverInstance.getAllEndpoints());
+    setActiveEndpoint(newEp);
     setCustomName('');
     setCustomUrl('');
     setIsAddingCustom(false);
     if (onLogMessage) {
-      onLogMessage('SYSTEM', 'SUCCESS', `Added custom Solana RPC endpoint: ${newEp.name}`);
+      onLogMessage('SYSTEM', 'SUCCESS', `Added & activated custom Solana RPC endpoint: ${newEp.name}`);
+    }
+  };
+
+  const handleRemoveCustomEndpoint = (id: string, name: string) => {
+    rpcFailoverInstance.removeCustomEndpoint(id);
+    setEndpoints(rpcFailoverInstance.getAllEndpoints());
+    setActiveEndpoint(rpcFailoverInstance.getActiveEndpoint());
+    if (onLogMessage) {
+      onLogMessage('SYSTEM', 'WARN', `Removed custom Solana RPC: ${name}`);
     }
   };
 
@@ -265,6 +247,16 @@ export const RpcManagerModal: React.FC<RpcManagerModalProps> = ({
                       >
                         {isActive ? 'ACTIVE' : 'SWITCH'}
                       </Button>
+
+                      {ep.id.startsWith('custom-') && !isActive && (
+                        <button
+                          onClick={() => handleRemoveCustomEndpoint(ep.id, ep.name)}
+                          title="Hapus custom RPC ini"
+                          className="p-1 rounded text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

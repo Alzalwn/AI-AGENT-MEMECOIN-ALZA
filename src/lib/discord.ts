@@ -121,3 +121,154 @@ export async function sendDiscordAlphaAlert(
     return false;
   }
 }
+
+export async function sendDiscordBuyAlert(
+  token: TokenSignal,
+  config: DiscordConfig,
+  amountSol: number,
+  txSignature: string,
+  jitoTipSol: number = 0.0001
+): Promise<boolean> {
+  if (!config.isEnabled || !config.webhookUrl?.trim()) return false;
+  const url = config.webhookUrl.trim();
+  if (!url.startsWith('https://discord.com/api/webhooks/') && !url.startsWith('https://discordapp.com/api/webhooks/')) return false;
+
+  try {
+    const solscanTx = `https://solscan.io/tx/${txSignature}`;
+    const dexUrl = token.dexUrl || `https://dexscreener.com/solana/${token.mint}`;
+
+    const payload = {
+      username: 'Grok Trencher Execution',
+      avatar_url: token.iconUrl || 'https://cdn-icons-png.flaticon.com/512/6001/6001368.png',
+      embeds: [
+        {
+          title: `🎯 POSITION OPENED: ${token.symbol}`,
+          url: dexUrl,
+          description: `Bot telah membuka posisi aktif via **Jito Tokyo MEV Bundle**`,
+          color: 3066993, // #2ECC71
+          fields: [
+            { name: '🪙 Token', value: `**${token.symbol}** (${token.name})`, inline: true },
+            { name: '💰 Invested', value: `**${amountSol.toFixed(3)} SOL**`, inline: true },
+            { name: '💵 Entry Price', value: `${token.priceSol.toFixed(8)} SOL`, inline: true },
+            { name: '🛡️ Jito MEV Tip', value: `${jitoTipSol.toFixed(5)} SOL (Private Bundle)`, inline: true },
+            { name: '🔑 Contract Mint', value: `\`${token.mint}\``, inline: false },
+            { name: '🔗 Explorer Links', value: `[Solscan TX](${solscanTx}) • [DexScreener](${dexUrl})`, inline: false }
+          ],
+          footer: { text: 'Grok Trencher Multi-Agent Terminal' },
+          timestamp: new Date().toISOString()
+        }
+      ]
+    };
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.ok || res.status === 204;
+  } catch (err) {
+    console.error('sendDiscordBuyAlert error:', err);
+    return false;
+  }
+}
+
+export async function sendDiscordExitAlert(
+  trade: {
+    token: TokenSignal;
+    entryPriceSol: number;
+    exitPriceSol: number;
+    solInvested: number;
+    pnlSol: number;
+    pnlPct: number;
+    rMultiplier: number;
+    holdDurationSec: number;
+    exitReason: string;
+  },
+  config: DiscordConfig
+): Promise<boolean> {
+  if (!config.isEnabled || !config.webhookUrl?.trim()) return false;
+  const url = config.webhookUrl.trim();
+  if (!url.startsWith('https://discord.com/api/webhooks/') && !url.startsWith('https://discordapp.com/api/webhooks/')) return false;
+
+  try {
+    const isProfit = trade.pnlSol >= 0;
+    const sign = isProfit ? '+' : '';
+    const color = isProfit ? 3066993 : 15158332; // Green #2ECC71 or Red #E74C3C
+    const dexUrl = trade.token.dexUrl || `https://dexscreener.com/solana/${trade.token.mint}`;
+
+    const payload = {
+      username: 'Grok Trencher Exit Agent',
+      avatar_url: trade.token.iconUrl || 'https://cdn-icons-png.flaticon.com/512/6001/6001368.png',
+      embeds: [
+        {
+          title: isProfit ? `🟢 TAKE PROFIT: ${trade.token.symbol} (${sign}${trade.pnlPct.toFixed(2)}%)` : `🔴 STOP LOSS: ${trade.token.symbol} (${sign}${trade.pnlPct.toFixed(2)}%)`,
+          url: dexUrl,
+          description: `**Exit Reason:** ${trade.exitReason}`,
+          color,
+          fields: [
+            { name: '🪙 Token', value: `**${trade.token.symbol}**`, inline: true },
+            { name: '📊 Net P&L', value: `**${sign}${trade.pnlSol.toFixed(4)} SOL**`, inline: true },
+            { name: '🎯 R-Multiple', value: `${sign}${trade.rMultiplier}R`, inline: true },
+            { name: '⏱️ Hold Duration', value: `${trade.holdDurationSec}s`, inline: true },
+            { name: '💵 Entry / Exit Price', value: `${trade.entryPriceSol.toFixed(8)} → ${trade.exitPriceSol.toFixed(8)} SOL`, inline: false },
+            { name: '🔑 Contract Mint', value: `\`${trade.token.mint}\``, inline: false }
+          ],
+          footer: { text: 'Grok Trencher Autonomous Exit Engine' },
+          timestamp: new Date().toISOString()
+        }
+      ]
+    };
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.ok || res.status === 204;
+  } catch (err) {
+    console.error('sendDiscordExitAlert error:', err);
+    return false;
+  }
+}
+
+export async function sendDiscordRugpullWarning(
+  token: TokenSignal,
+  config: DiscordConfig,
+  riskDetails: string
+): Promise<boolean> {
+  if (!config.isEnabled || !config.webhookUrl?.trim()) return false;
+  const url = config.webhookUrl.trim();
+  if (!url.startsWith('https://discord.com/api/webhooks/') && !url.startsWith('https://discordapp.com/api/webhooks/')) return false;
+
+  try {
+    const payload = {
+      username: 'Grok Trencher Risk Engine',
+      avatar_url: 'https://cdn-icons-png.flaticon.com/512/6001/6001368.png',
+      embeds: [
+        {
+          title: `⚠️ RUGPULL BLOCKED: ${token.symbol}`,
+          description: `Risk Agent telah memblokir eksekusi token ini untuk melindungi modal Anda.`,
+          color: 15158332, // Red
+          fields: [
+            { name: '🪙 Token Name', value: `${token.name} (${token.symbol})`, inline: true },
+            { name: '🚨 Veto Reason', value: `**${riskDetails}**`, inline: true },
+            { name: '🔑 Contract Mint', value: `\`${token.mint}\``, inline: false }
+          ],
+          footer: { text: 'Grok Trencher Anti-Rugpull Guard' },
+          timestamp: new Date().toISOString()
+        }
+      ]
+    };
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.ok || res.status === 204;
+  } catch (err) {
+    console.error('sendDiscordRugpullWarning error:', err);
+    return false;
+  }
+}
+
