@@ -21,6 +21,7 @@ import {
   RefreshCw,
   Keyboard,
   LogOut,
+  KeyRound,
   Menu,
   X as CloseIcon
 } from 'lucide-react';
@@ -40,6 +41,7 @@ interface HeaderProps {
   onOpenRpc?: () => void;
   onOpenShortcuts?: () => void;
   onOpenConverter?: () => void;
+  onOpenPassword?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -51,7 +53,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenJupiter,
   onOpenRpc,
   onOpenShortcuts,
-  onOpenConverter
+  onOpenConverter,
+  onOpenPassword
 }) => {
   const {
     engineStatus,
@@ -283,6 +286,18 @@ export const Header: React.FC<HeaderProps> = ({
             KILL-SWITCH
           </Button>
 
+          {/* GANTI PASSWORD / SECURITY (Desktop) */}
+          {onOpenPassword && (
+            <button
+              onClick={onOpenPassword}
+              title="Pengaturan Keamanan: Ganti Password Master (Aktif: Alza0839)"
+              aria-label="Ganti Password Master Terminal"
+              className="hidden lg:flex p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-emerald-400 hover:border-emerald-500/40 transition-all cursor-pointer"
+            >
+              <KeyRound className="w-4 h-4" />
+            </button>
+          )}
+
           {/* LOCK / LOGOUT SESSION (Desktop) */}
           <button
             onClick={async () => {
@@ -355,6 +370,20 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 <Keyboard className="w-4 h-4 text-purple-400 shrink-0" />
                 <span>Hotkeys (?)</span>
+              </button>
+            )}
+
+            {/* Ganti Password */}
+            {onOpenPassword && (
+              <button
+                onClick={() => {
+                  onOpenPassword();
+                  setIsMobileMenuOpen(false);
+                }}
+                className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-400 flex items-center gap-2 transition-all cursor-pointer"
+              >
+                <KeyRound className="w-4 h-4 shrink-0" />
+                <span>Ganti Password</span>
               </button>
             )}
 

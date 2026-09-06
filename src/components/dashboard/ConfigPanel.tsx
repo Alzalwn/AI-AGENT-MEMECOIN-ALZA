@@ -11,11 +11,16 @@ import {
   CheckCircle2,
   Lock,
   Unlock,
-  AlertTriangle
+  AlertTriangle,
+  KeyRound
 } from 'lucide-react';
 import Badge from '../ui/Badge';
 
-export const ConfigPanel: React.FC = () => {
+interface ConfigPanelProps {
+  onOpenPasswordModal?: () => void;
+}
+
+export const ConfigPanel: React.FC<ConfigPanelProps> = ({ onOpenPasswordModal }) => {
   const {
     agentConfig,
     updateAgentConfig,
@@ -252,6 +257,37 @@ export const ConfigPanel: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* 5. Terminal Access & Security Settings */}
+      {onOpenPasswordModal && (
+        <div className="pt-2 border-t border-zinc-800/80 space-y-1.5">
+          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+            Terminal Access & Security
+          </span>
+          <button
+            type="button"
+            onClick={onOpenPasswordModal}
+            className="w-full flex items-center justify-between p-2.5 rounded-xl bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 border border-emerald-500/30 hover:border-emerald-500/60 hover:from-emerald-500/20 hover:to-cyan-500/20 transition-all cursor-pointer text-[11px] group"
+          >
+            <div className="flex items-center gap-2 text-zinc-200">
+              <div className="p-1 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 group-hover:scale-110 transition-transform">
+                <KeyRound className="w-3.5 h-3.5" />
+              </div>
+              <div className="text-left">
+                <span className="block font-bold group-hover:text-emerald-300 transition-colors">
+                  Ganti Master Password
+                </span>
+                <span className="text-[9px] text-zinc-400 block">
+                  Aktif: Alza0839 • Klik untuk ganti
+                </span>
+              </div>
+            </div>
+            <span className="text-[9px] px-2 py-0.5 rounded font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+              UBAH
+            </span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };

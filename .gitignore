@@ -9,6 +9,8 @@ id.json
 keypair.json
 phantom.json
 solana-keypair*.json
+data/
+.admin_passcode*
 
 # Dependencies
 node_modules/

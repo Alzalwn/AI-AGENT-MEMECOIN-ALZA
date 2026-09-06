@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { AUTH_COOKIE_NAME, getAdminPasscode, signSession } from '@/lib/auth';
+import { AUTH_COOKIE_NAME, signSession } from '@/lib/auth';
+import { getActivePasscode } from '@/lib/passcodeStorage';
 
 export const dynamic = 'force-dynamic';
 
@@ -81,7 +82,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const expectedPasscode = getAdminPasscode();
+    const expectedPasscode = getActivePasscode();
 
     // Constant time length check & string comparison
     if (passcode.trim() !== expectedPasscode.trim()) {

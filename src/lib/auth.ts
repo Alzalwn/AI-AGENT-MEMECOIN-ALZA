@@ -10,7 +10,7 @@ const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // Fallback secret for hashing if not explicitly provided in environment
 const DEFAULT_SECRET = 'grok-trencher-solana-terminal-ultra-secure-key-2026';
-const DEFAULT_PASSCODE = 'grok2026'; // Default password if ADMIN_PASSCODE is not set in .env
+const DEFAULT_PASSCODE = 'Alza0839'; // Default password requested by user: Alza0839
 
 export function getAdminPasscode(): string {
   return process.env.ADMIN_PASSCODE || DEFAULT_PASSCODE;

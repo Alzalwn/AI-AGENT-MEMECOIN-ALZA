@@ -27,6 +27,7 @@ import KeyboardShortcutsModal from '../components/KeyboardShortcutsModal';
 import RpcManagerModal from '../components/RpcManagerModal';
 import SolConverterModal from '../components/SolConverterModal';
 import ConfirmSnipeModal from '../components/ConfirmSnipeModal';
+import ChangePasswordModal from '../components/ChangePasswordModal';
 import { JitoBundleReceipt } from '../lib/jito';
 import { STRATEGY_PRESETS } from '../config/constants';
 import { ActivePosition, ClosedTrade } from '../types/terminal';
@@ -81,6 +82,7 @@ function TerminalAppInner() {
   const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState<boolean>(false);
   const [isRpcModalOpen, setIsRpcModalOpen] = useState<boolean>(false);
   const [isConverterOpen, setIsConverterOpen] = useState<boolean>(false);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState<boolean>(false);
 
   // Global Pro Trader Keyboard Shortcuts
   React.useEffect(() => {
@@ -153,6 +155,7 @@ function TerminalAppInner() {
         onOpenRpc={() => setIsRpcModalOpen(true)}
         onOpenShortcuts={() => setIsShortcutsModalOpen(true)}
         onOpenConverter={() => setIsConverterOpen(true)}
+        onOpenPassword={() => setIsPasswordModalOpen(true)}
       />
 
       {/* Main Workspace Body */}
@@ -199,7 +202,7 @@ function TerminalAppInner() {
               }}
             />
             <TerminalLogs />
-            <ConfigPanel />
+            <ConfigPanel onOpenPasswordModal={() => setIsPasswordModalOpen(true)} />
           </div>
         </div>
 
@@ -357,6 +360,14 @@ function TerminalAppInner() {
       <SolConverterModal
         isOpen={isConverterOpen}
         onClose={() => setIsConverterOpen(false)}
+      />
+
+      <ChangePasswordModal
+        isOpen={isPasswordModalOpen}
+        onClose={() => setIsPasswordModalOpen(false)}
+        onSuccess={() => {
+          appendLog('SYSTEM', 'SUCCESS', 'Master Admin Passcode berhasil diubah via web terminal.');
+        }}
       />
 
       <ConfirmSnipeModal />
