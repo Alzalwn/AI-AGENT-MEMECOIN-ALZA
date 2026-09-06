@@ -41,9 +41,8 @@ function LoginContent() {
       const data = await res.json();
 
       if (res.ok && data.success) {
-        // Successful login, redirect to dashboard
-        router.push(redirectPath);
-        router.refresh();
+        // Successful login, full browser navigation ensures cookie transmission to middleware
+        window.location.href = redirectPath;
       } else {
         setErrorMsg(data.error || 'Passcode salah. Akses ditolak.');
       }
