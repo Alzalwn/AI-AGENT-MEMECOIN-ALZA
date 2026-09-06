@@ -82,8 +82,27 @@ pm2 start npm --name "grok-trencher" -- start
 pm2 save
 pm2 startup || true
 
+# 8. Setup Caddy Web Server (Reverse Proxy Port 80 & Auto SSL HTTPS)
+echo "🌐 [7/7] Mengonfigurasi Caddy Web Server..."
+if ! command -v caddy &> /dev/null; then
+    sudo dnf install -y 'dnf-command(copr)' 2>/dev/null || true
+    sudo dnf copr enable -y @caddy/caddy 2>/dev/null || true
+    sudo dnf install -y caddy 2>/dev/null || true
+fi
+
+if [ -f "Caddyfile" ]; then
+    sudo cp Caddyfile /etc/caddy/Caddyfile
+    sudo systemctl enable --now caddy 2>/dev/null || true
+    sudo systemctl restart caddy 2>/dev/null || true
+fi
+
 echo ""
 echo "=========================================================================="
 echo "🎉 GROK TRENCHER BERHASIL DI-DEPLOY & BERJALAN 24/7!"
-echo "👉 Buka dashboard terminal Anda di: http://103.30.194.148:3000"
+echo "👉 Buka dashboard terminal Anda di:"
+echo "   - Langsung (Port 80): http://103.30.194.148"
+echo "   - Port Internal:      http://103.30.194.148:3000"
+echo ""
+echo "🔗 Ingin menghubungkan nama domain kustom (SSL HTTPS Gratis)?"
+echo "   Jalankan: sudo ./set-domain.sh namadomainanda.com"
 echo "=========================================================================="
