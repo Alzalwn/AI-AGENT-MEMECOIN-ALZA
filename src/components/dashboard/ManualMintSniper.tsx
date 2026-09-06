@@ -7,15 +7,22 @@ import Button from '../ui/Button';
 
 interface ManualMintSniperProps {
   onOpenJitoTracker?: () => void;
+  onOpenJupiterSwap?: (ca?: string) => void;
 }
 
-export const ManualMintSniper: React.FC<ManualMintSniperProps> = ({ onOpenJitoTracker }) => {
+export const ManualMintSniper: React.FC<ManualMintSniperProps> = ({ onOpenJitoTracker, onOpenJupiterSwap }) => {
   const { snipeManualMint, isSearchingMint, sniperStatus } = useTradingAgent();
   const [mintInput, setMintInput] = useState<string>('');
 
   const handleSnipe = async () => {
     if (!mintInput.trim() || isSearchingMint) return;
     await snipeManualMint(mintInput.trim());
+  };
+
+  const handleOpenBuy = () => {
+    if (onOpenJupiterSwap) {
+      onOpenJupiterSwap(mintInput.trim() || undefined);
+    }
   };
 
   return (
@@ -47,16 +54,27 @@ export const ManualMintSniper: React.FC<ManualMintSniperProps> = ({ onOpenJitoTr
             </button>
           )}
         </div>
+        
+        {/* Tombol Beli / Swap Langsung */}
+        <button
+          onClick={handleOpenBuy}
+          className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-terminal-cyan to-terminal-green text-zinc-950 font-black text-xs flex items-center gap-1.5 shadow-[0_0_12px_rgba(0,240,255,0.3)] hover:brightness-110 transition-all cursor-pointer whitespace-nowrap"
+          title="Buka Jupiter Swap untuk membeli token ini dengan SOL"
+        >
+          <Zap className="w-3.5 h-3.5 fill-current" />
+          <span>BELI / SWAP</span>
+        </button>
+
+        {/* Tombol Audit 5-Agen */}
         <Button
-          variant="primary"
+          variant="secondary"
           size="sm"
           onClick={handleSnipe}
           disabled={isSearchingMint || !mintInput.trim()}
           isLoading={isSearchingMint}
           leftIcon={<Search className="w-3.5 h-3.5" />}
-          glow
         >
-          {isSearchingMint ? 'SNIPING...' : 'SNIPE & AUDIT'}
+          {isSearchingMint ? 'AUDITING...' : 'AUDIT CA'}
         </Button>
       </div>
 

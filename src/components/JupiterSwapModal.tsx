@@ -17,7 +17,8 @@ import {
   Sliders, 
   Layers,
   Edit3,
-  Search
+  Search,
+  Smartphone
 } from 'lucide-react';
 
 const POPULAR_TOKENS = [
@@ -33,6 +34,7 @@ interface JupiterSwapModalProps {
   isOpen: boolean;
   onClose: () => void;
   token: TokenSignal | null;
+  initialMint?: string;
   currentBalanceSol: number;
   currentSlot: number;
   defaultSlippageBps?: number;
@@ -44,6 +46,7 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
   isOpen,
   onClose,
   token,
+  initialMint,
   currentBalanceSol,
   currentSlot,
   defaultSlippageBps = 150,
@@ -52,7 +55,9 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
 }) => {
   // Token state (allow user to switch token or paste custom CA directly)
   const isTokenMintValid = Boolean(token?.mint && token.mint.length >= 32 && !token.mint.includes('...'));
-  const fallbackMint = isTokenMintValid ? token!.mint : 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263';
+  const fallbackMint = initialMint && initialMint.length >= 32
+    ? initialMint
+    : (isTokenMintValid ? token!.mint : 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263');
   const fallbackSymbol = isTokenMintValid ? token!.symbol : '$BONK';
   const fallbackName = isTokenMintValid ? token!.name : 'Bonk Memecoin';
 
@@ -60,7 +65,7 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
   const [activeSymbol, setActiveSymbol] = useState<string>(fallbackSymbol);
   const [activeName, setActiveName] = useState<string>(fallbackName);
   const [customCaInput, setCustomCaInput] = useState<string>('');
-  const [isEditingCa, setIsEditingCa] = useState<boolean>(!isTokenMintValid);
+  const [isEditingCa, setIsEditingCa] = useState<boolean>(!isTokenMintValid && !initialMint);
 
   // Amount state (handles both comma and dot decimals cleanly)
   const [amountInput, setAmountInput] = useState<string>('0.1');
@@ -78,26 +83,32 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
 
   // Sync token prop when modal opens or selected token changes
   useEffect(() => {
-    if (isOpen && token) {
+    if (isOpen) {
       setSwapResult(null);
-      const isValid = Boolean(token.mint && token.mint.length >= 32 && !token.mint.includes('...'));
-      if (isValid) {
-        setActiveMint(token.mint);
-        setActiveSymbol(token.symbol);
-        setActiveName(token.name);
+      if (initialMint && initialMint.length >= 32 && !initialMint.includes('...')) {
+        setActiveMint(initialMint);
+        setActiveSymbol('$' + initialMint.slice(0, 4).toUpperCase());
+        setActiveName(initialMint.slice(0, 8));
         setIsEditingCa(false);
-      } else {
-        // If token from simulator has invalid dummy string, default to BONK and show selector
-        setActiveMint('DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263');
-        setActiveSymbol('$BONK');
-        setActiveName('Bonk Memecoin');
-        setIsEditingCa(true);
+      } else if (token) {
+        const isValid = Boolean(token.mint && token.mint.length >= 32 && !token.mint.includes('...'));
+        if (isValid) {
+          setActiveMint(token.mint);
+          setActiveSymbol(token.symbol);
+          setActiveName(token.name);
+          setIsEditingCa(false);
+        } else {
+          setActiveMint('DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263');
+          setActiveSymbol('$BONK');
+          setActiveName('Bonk Memecoin');
+          setIsEditingCa(true);
+        }
       }
       if (defaultSlippageBps) {
         setSlippageBps(defaultSlippageBps);
       }
     }
-  }, [isOpen, token, defaultSlippageBps]);
+  }, [isOpen, token, initialMint, defaultSlippageBps]);
 
   // Load quote whenever activeMint, amountSol, or slippage changes
   const loadQuote = useCallback(async () => {
@@ -180,24 +191,62 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
       setExecutionStep('Menyiapkan transaksi Versioned Transaction...');
 
       const fullKey = walletState?.fullPublicKey || (typeof window !== 'undefined' ? ((window as any).phantom?.solana?.publicKey?.toString() || (window as any).solana?.publicKey?.toString()) : undefined);
-      const provider = typeof window !== 'undefined' ? ((window as any).phantom?.solana || (window as any).solana || (window as any).solflare || (window as any).backpack) : null;
+      let provider = typeof window !== 'undefined' ? ((window as any).phantom?.solana || (window as any).solana || (window as any).solflare || (window as any).backpack) : null;
+      const isMobile = typeof window !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-      // When in LIVE_ON_CHAIN mode and wallet connected, trigger real wallet signing!
-      const isLive = walletState?.mode === 'LIVE_ON_CHAIN' && walletState?.isConnected && provider;
+      // When in LIVE_ON_CHAIN mode, strictly enforce real on-chain wallet signing
+      if (walletState?.mode === 'LIVE_ON_CHAIN') {
+        if (!provider) {
+          if (isMobile) {
+            window.location.href = `https://phantom.app/ul/browse/${encodeURIComponent(window.location.href)}`;
+            return;
+          }
+          throw new Error('Dompet Phantom/Solflare tidak terdeteksi. Silakan buka website di Phantom App atau pasang ekstensi browser Phantom.');
+        }
 
-      if (isLive) {
-        setExecutionStep('Menunggu persetujuan di extension Phantom/Wallet...');
-      } else {
-        setExecutionStep('Memaketkan transaksi ke Jito MEV Private Mempool...');
+        // Auto-connect if needed
+        if (!provider.isConnected) {
+          setExecutionStep('Menghubungkan ke dompet Phantom...');
+          try {
+            await provider.connect();
+          } catch (connErr: any) {
+            throw new Error('Koneksi ke dompet Phantom dibatalkan');
+          }
+        }
+
+        const activePubKey = provider.publicKey?.toString() || fullKey;
+        if (!activePubKey) {
+          throw new Error('Alamat dompet Phantom tidak ditemukan. Pastikan dompet sudah terbuka dan terhubung.');
+        }
+
+        setExecutionStep('Menunggu persetujuan (Approve) di aplikasi Phantom...');
+        const result = await executeJupiterSwap(
+          quote,
+          activeSymbol,
+          0.00005,
+          currentSlot,
+          activePubKey,
+          provider
+        );
+
+        setExecutionStep('Memverifikasi status konfirmasi on-chain...');
+        await new Promise(r => setTimeout(r, 400));
+        setSwapResult(result);
+        if (onSwapSuccess) {
+          onSwapSuccess(result);
+        }
+        return;
       }
 
+      // Paper trading fallback
+      setExecutionStep('Memaketkan simulasi transaksi ke Jito MEV Private Mempool...');
       const result = await executeJupiterSwap(
         quote,
         activeSymbol,
         0.00005,
         currentSlot,
         fullKey,
-        isLive ? provider : undefined
+        undefined
       );
 
       setExecutionStep('Memverifikasi status konfirmasi on-chain...');
@@ -256,6 +305,29 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
 
         {/* Content Body */}
         <div className="p-4 overflow-y-auto space-y-3.5 flex-1">
+          {/* Mobile Phantom In-App Browser Guidance */}
+          {typeof window !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) && !((window as any).phantom?.solana || (window as any).solana) && (
+            <div className="p-3 rounded-xl bg-purple-500/15 border border-purple-500/40 text-purple-200 text-xs space-y-2 animate-pulse">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 font-bold text-purple-300">
+                  <Smartphone className="w-4 h-4 text-purple-400 shrink-0" />
+                  <span>Petunjuk Penting Trading di HP</span>
+                </div>
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/30 text-purple-300 font-bold">Wajib</span>
+              </div>
+              <p className="text-[11px] text-purple-200/90 leading-relaxed">
+                Browser Chrome/Safari HP <strong>tidak memiliki ekstensi Phantom</strong>. Agar pop-up tanda tangan & saldo asli SOL Anda bisa Approve, website ini wajib dibuka di <strong>Browser dalam aplikasi Phantom</strong> (ikon bola dunia 🌐 di kanan bawah Phantom).
+              </p>
+              <a
+                href={`https://phantom.app/ul/browse/${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : 'https://alzasniped.my.id')}`}
+                className="inline-flex items-center justify-center gap-2 w-full py-2 px-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs shadow-lg transition-all"
+              >
+                <span>Buka Otomatis di Aplikasi Phantom</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
+          )}
+
           {/* Token Target Info Card */}
           <div className="bg-terminal-card p-3 rounded-xl border border-terminal-border flex items-center justify-between">
             <div className="flex items-center gap-3">

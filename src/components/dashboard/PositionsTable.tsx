@@ -46,14 +46,25 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
             Active Position (Single Mutex)
           </span>
         </div>
-        <Badge
-          variant={activePosition ? 'emerald' : 'zinc'}
-          size="xs"
-          dot
-          pulse={!!activePosition}
-        >
-          {activePosition ? 'STATUS: IN POSITION' : 'STANDBY (MUTEX READY)'}
-        </Badge>
+        <div className="flex items-center gap-2">
+          {activePosition && (
+            <button
+              onClick={() => manualExitPosition()}
+              className="text-[10px] px-2 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 transition-all font-bold cursor-pointer"
+              title="Tutup posisi ini dan kosongkan slot mutex"
+            >
+              Tutup & Buka Mutex
+            </button>
+          )}
+          <Badge
+            variant={activePosition ? 'emerald' : 'zinc'}
+            size="xs"
+            dot
+            pulse={!!activePosition}
+          >
+            {activePosition ? 'STATUS: IN POSITION' : 'STANDBY (MUTEX READY)'}
+          </Badge>
+        </div>
       </div>
 
       {activePosition ? (

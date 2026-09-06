@@ -311,6 +311,16 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </button>
 
+          {/* Direct Jupiter Swap Button */}
+          <button
+            onClick={onOpenJupiter}
+            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-400 via-cyan-400 to-terminal-cyan text-zinc-950 font-black text-xs flex items-center gap-1.5 shadow-[0_0_15px_rgba(16,185,129,0.35)] hover:brightness-110 transition-all cursor-pointer animate-pulse"
+            title="Buka Modal Beli / Swap Jupiter dengan SOL"
+          >
+            <Zap className="w-3.5 h-3.5 fill-current" />
+            <span>BELI / SWAP</span>
+          </button>
+
           {/* Web3 Wallet Button */}
           <Button
             variant={walletState.isConnected ? 'outline' : 'secondary'}

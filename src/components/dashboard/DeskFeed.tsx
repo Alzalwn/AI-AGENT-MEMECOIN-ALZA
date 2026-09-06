@@ -6,7 +6,11 @@ import { Activity, AlertTriangle } from 'lucide-react';
 import Badge from '../ui/Badge';
 import { DeskFeedSkeletonItem } from '../ui/Skeleton';
 
-export const DeskFeed: React.FC = () => {
+interface DeskFeedProps {
+  onOpenJupiterSwap?: (mint: string) => void;
+}
+
+export const DeskFeed: React.FC<DeskFeedProps> = ({ onOpenJupiterSwap }) => {
   const {
     consensusFeed,
     selectedResult,
@@ -76,6 +80,18 @@ export const DeskFeed: React.FC = () => {
 
                   <div className="flex items-center gap-1.5">
                     <span className="text-[10px] text-zinc-500">{item.consensusLatencyMs}ms</span>
+                    {onOpenJupiterSwap && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenJupiterSwap(item.token.mint);
+                        }}
+                        className="text-[9px] px-2 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 font-bold transition-all cursor-pointer"
+                        title={`Beli ${item.token.symbol} di Jupiter`}
+                      >
+                        SWAP
+                      </button>
+                    )}
                     <span
                       className={`text-[9px] px-2 py-0.5 rounded font-black tracking-wider ${
                         isApproved

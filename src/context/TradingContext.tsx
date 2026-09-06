@@ -626,6 +626,11 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         appendLog('SCAN', 'SUCCESS', `Signal APPROVED: ${consensus.token.symbol} (Score: ${consensus.token.narrativeCosineSim})`);
 
         // Auto Snipe Execution if no active position (Single Position Mutex Guard)
+        // In LIVE_ON_CHAIN mode, the client-side simulator MUST NOT create fake positions!
+        if (walletState.mode === 'LIVE_ON_CHAIN') {
+          return;
+        }
+
         setActivePosition((currPos) => {
           if (currPos !== null) return currPos; // Single position mutex
 

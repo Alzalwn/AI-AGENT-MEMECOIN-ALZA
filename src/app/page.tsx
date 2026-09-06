@@ -76,6 +76,7 @@ function TerminalAppInner() {
   const [isStatsModalOpen, setIsStatsModalOpen] = useState<boolean>(false);
   const [isExecutionModalOpen, setIsExecutionModalOpen] = useState<boolean>(false);
   const [isJupiterModalOpen, setIsJupiterModalOpen] = useState<boolean>(false);
+  const [customSwapMint, setCustomSwapMint] = useState<string | undefined>(undefined);
   const [isAutoSnipeModalOpen, setIsAutoSnipeModalOpen] = useState<boolean>(false);
   const [isGeminiModalOpen, setIsGeminiModalOpen] = useState<boolean>(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
@@ -172,7 +173,13 @@ function TerminalAppInner() {
         <MetricCards />
 
         {/* 3. Manual Mint Address Sniper & On-Chain Lookup */}
-        <ManualMintSniper onOpenJitoTracker={() => setIsJitoTrackerOpen(true)} />
+        <ManualMintSniper 
+          onOpenJitoTracker={() => setIsJitoTrackerOpen(true)}
+          onOpenJupiterSwap={(ca) => {
+            setCustomSwapMint(ca);
+            setIsJupiterModalOpen(true);
+          }}
+        />
 
         {/* 4. Cumulative PnL Curve & Equity Chart */}
         <CumulativeCurve
@@ -185,7 +192,12 @@ function TerminalAppInner() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1">
           {/* Left Column: Desk Feed (Real-Time Ingestion Stream) */}
           <div className="lg:col-span-4">
-            <DeskFeed />
+            <DeskFeed 
+              onOpenJupiterSwap={(mint) => {
+                setCustomSwapMint(mint);
+                setIsJupiterModalOpen(true);
+              }}
+            />
           </div>
 
           {/* Middle Column: 4D Strategy Radar & 5-Agent Evaluator */}
@@ -297,8 +309,12 @@ function TerminalAppInner() {
 
       <JupiterSwapModal
         isOpen={isJupiterModalOpen}
-        onClose={() => setIsJupiterModalOpen(false)}
+        onClose={() => {
+          setIsJupiterModalOpen(false);
+          setCustomSwapMint(undefined);
+        }}
         token={targetToken}
+        initialMint={customSwapMint}
         currentBalanceSol={walletState.isConnected ? walletState.balanceSol : telemetry.currentBalanceSol}
         currentSlot={telemetry.currentSlot}
         defaultSlippageBps={Math.round(executionConfig.slippagePct * 100)}
@@ -313,6 +329,7 @@ function TerminalAppInner() {
           }
           appendLog('EXECUTION', 'SUCCESS', `Jupiter Swap Berhasil: Beli ${result.outAmountFormatted} ${result.symbol} seharga ${spent} SOL (-${spent} SOL)`);
           setIsJupiterModalOpen(false);
+          setCustomSwapMint(undefined);
         }}
       />
 

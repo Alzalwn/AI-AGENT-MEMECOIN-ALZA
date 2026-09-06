@@ -85,28 +85,38 @@ export async function executeJupiterSwap(
   let isSimulated = data.isSimulated ?? true;
 
   // Real On-Chain Execution via Connected Wallet Provider (Phantom / Solflare / Backpack)
-  if (data.swapTransaction && walletProvider && typeof walletProvider.signAndSendTransaction === 'function') {
+  if (walletProvider) {
+    if (!data.swapTransaction) {
+      throw new Error(data.error || 'Jupiter tidak mengembalikan swap transaction on-chain. Coba refresh route.');
+    }
+    if (typeof walletProvider.signAndSendTransaction !== 'function') {
+      throw new Error('Provider dompet tidak mendukung signAndSendTransaction.');
+    }
+
     try {
       const txBytes = base64ToUint8Array(data.swapTransaction);
       const versionedTx = VersionedTransaction.deserialize(txBytes);
 
       const sendResult = await walletProvider.signAndSendTransaction(versionedTx);
-      signature = sendResult.signature || (typeof sendResult === 'string' ? sendResult : null);
-      if (!signature && sendResult.publicKey) {
+      signature = sendResult?.signature || (typeof sendResult === 'string' ? sendResult : null);
+      if (!signature && sendResult?.publicKey) {
         signature = sendResult.signature;
+      }
+      if (!signature) {
+        throw new Error('Dompet tidak mengembalikan signature transaksi.');
       }
       isSimulated = false;
     } catch (walletErr: any) {
       if (walletErr.message?.includes('User rejected') || walletErr.code === 4001) {
-        throw new Error('Transaksi dibatalkan di extension wallet');
+        throw new Error('Transaksi dibatalkan di dompet Phantom.');
       }
       throw new Error(`Gagal menandatangani transaksi on-chain: ${walletErr.message}`);
     }
-  }
-
-  // Fallback signature for simulation / paper trading
-  if (!signature) {
-    signature = 'jup_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  } else {
+    // Fallback signature ONLY for simulation / paper trading
+    if (!signature) {
+      signature = 'jup_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    }
   }
 
   const routeSummary = quote.routes.map(r => `${r.label} (${r.percent}%)`).join(' + ');
