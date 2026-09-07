@@ -7,6 +7,7 @@ set -e
 
 echo "🚀 [1/6] Memulai Setup Otomatis Grok Trencher di AlmaLinux..."
 
+
 # 0. Perbaiki DNS & Matikan IPv6 agar npm / network tidak ETIMEDOUT
 echo "🌐 Mengonfigurasi DNS & Jaringan..."
 sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1 2>/dev/null || true

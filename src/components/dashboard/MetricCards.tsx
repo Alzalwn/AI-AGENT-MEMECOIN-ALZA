@@ -41,16 +41,19 @@ export const MetricCards: React.FC = () => {
   const isPnlPositive = telemetry.totalPnlSol >= 0;
   // Use live SOL/USD rate; fall back to last known value (never hardcoded 140)
   const solPriceUsd = rate.solUsd;
-  const balanceUsd = Math.round(telemetry.currentBalanceSol * solPriceUsd);
+  const currentSolBalance = walletState.isConnected
+    ? walletState.balanceSol
+    : telemetry.currentBalanceSol;
+  const balanceUsd = Math.round(currentSolBalance * solPriceUsd);
   const vetoRatePct = +(
     (telemetry.vetoCount / (telemetry.scannedCount || 1)) *
     100
   ).toFixed(1);
 
   const formattedBalance =
-    telemetry.currentBalanceSol < 1 && telemetry.currentBalanceSol > 0
-      ? telemetry.currentBalanceSol.toFixed(4)
-      : telemetry.currentBalanceSol.toFixed(2);
+    currentSolBalance < 1 && currentSolBalance > 0
+      ? currentSolBalance.toFixed(4)
+      : currentSolBalance.toFixed(2);
 
   return (
     <CollapsibleCard

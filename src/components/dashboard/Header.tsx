@@ -348,14 +348,19 @@ export const Header: React.FC<HeaderProps> = ({
             variant={walletState.isConnected ? 'outline' : 'secondary'}
             size="sm"
             onClick={onOpenWallet}
-            aria-label={walletState.isConnected ? `Wallet terhubung: ${walletState.balanceSol.toFixed(2)} SOL` : 'Koneksikan Web3 Solana Wallet'}
+            aria-label={walletState.isConnected ? `Wallet terhubung: ${walletState.balanceSol} SOL` : 'Koneksikan Web3 Solana Wallet'}
             leftIcon={<Wallet className="w-3.5 h-3.5 text-emerald-400" />}
           >
             {walletState.isConnected ? (
-              <span className="flex items-center gap-1">
-                <span>{walletState.balanceSol.toFixed(2)} SOL</span>
+              <span className="flex items-center gap-1.5 font-bold">
+                <span className="text-emerald-400">
+                  {walletState.balanceSol < 1 && walletState.balanceSol > 0
+                    ? walletState.balanceSol.toFixed(4)
+                    : walletState.balanceSol.toFixed(2)}{' '}
+                  SOL
+                </span>
                 <span className="text-[10px] text-zinc-400 hidden xl:inline">
-                  (≈ {formatIdrShort(walletState.balanceSol)})
+                  ({walletState.publicKey})
                 </span>
               </span>
             ) : (

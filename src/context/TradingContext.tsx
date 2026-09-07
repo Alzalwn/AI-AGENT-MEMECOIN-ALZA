@@ -560,10 +560,14 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (data.success && typeof data.balanceSol === 'number') {
           const liveBal = data.balanceSol;
           setWalletState((prev) => {
-            const updated = {
+            const updated: WalletState = {
               ...prev,
+              isConnected: true,
               fullPublicKey: fullKey,
-              balanceSol: liveBal
+              publicKey: prev.publicKey || `${fullKey.slice(0, 4)}...${fullKey.slice(-4)}`,
+              balanceSol: liveBal,
+              walletName: prev.walletName || 'Phantom',
+              mode: 'LIVE_ON_CHAIN'
             };
             if (typeof window !== 'undefined') {
               localStorage.setItem('GT_WALLET_STATE', JSON.stringify(updated));
@@ -2052,6 +2056,10 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const updateWalletState = useCallback((w: WalletState) => {
     setWalletState(w);
+    setTelemetry((prev) => ({
+      ...prev,
+      currentBalanceSol: w.balanceSol
+    }));
     if (typeof window !== 'undefined') {
       try {
         localStorage.setItem('GT_WALLET_STATE', JSON.stringify(w));
@@ -2061,7 +2069,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // Sync telemetry balance with connected wallet balance
   useEffect(() => {
-    if (walletState.isConnected && walletState.balanceSol > 0) {
+    if (walletState.isConnected) {
       setTelemetry((prev) => ({
         ...prev,
         currentBalanceSol: walletState.balanceSol
@@ -2069,10 +2077,101 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [walletState.isConnected, walletState.balanceSol]);
 
+  // Phantom & Solana Web3 Wallet Auto-Detect & Native Event Listeners on Mount
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    let isMounted = true;
+
+    const setupPhantom = async () => {
+      const phantom =
+        (window as any).phantom?.solana ||
+        ((window as any).solana?.isPhantom ? (window as any).solana : null);
+
+      if (!phantom) return;
+
+      const handleWalletPubkey = async (pubKey: any) => {
+        if (!isMounted || !pubKey) return;
+        const pubKeyStr = pubKey.toString();
+        try {
+          const res = await fetch(`/api/wallet/balance?address=${encodeURIComponent(pubKeyStr)}`, {
+            signal: AbortSignal.timeout(6000)
+          });
+          const data = res.ok ? await res.json() : null;
+          const liveBal = data && typeof data.balanceSol === 'number' ? data.balanceSol : 0;
+
+          const updated: WalletState = {
+            isConnected: true,
+            publicKey: `${pubKeyStr.slice(0, 4)}...${pubKeyStr.slice(-4)}`,
+            fullPublicKey: pubKeyStr,
+            balanceSol: liveBal,
+            walletName: 'Phantom',
+            mode: 'LIVE_ON_CHAIN'
+          };
+
+          setWalletState(updated);
+          setTelemetry((prev) => ({ ...prev, currentBalanceSol: liveBal }));
+          try {
+            localStorage.setItem('GT_WALLET_STATE', JSON.stringify(updated));
+          } catch {}
+          appendLog('SYSTEM', 'SUCCESS', `⚡ [PHANTOM DETECTED] Dompet Phantom aktif: ${updated.publicKey} (${liveBal} SOL)`);
+        } catch (err: any) {
+          console.warn('[Phantom Auto-Sync] Sync failed:', err.message);
+        }
+      };
+
+      // 1. If Phantom is already connected in browser
+      if (phantom.isConnected && phantom.publicKey) {
+        await handleWalletPubkey(phantom.publicKey);
+      } else {
+        // 2. Silent reconnect (onlyIfTrusted)
+        try {
+          const resp = await phantom.connect({ onlyIfTrusted: true });
+          if (resp?.publicKey) {
+            await handleWalletPubkey(resp.publicKey);
+          }
+        } catch {}
+      }
+
+      // 3. Native event listeners on Phantom provider
+      phantom.on?.('accountChanged', (publicKey: any) => {
+        if (publicKey) {
+          handleWalletPubkey(publicKey);
+        } else {
+          setWalletState((prev) => ({
+            ...prev,
+            isConnected: false,
+            publicKey: null,
+            fullPublicKey: null,
+            balanceSol: 0
+          }));
+        }
+      });
+
+      phantom.on?.('connect', (publicKey: any) => {
+        if (publicKey) handleWalletPubkey(publicKey);
+      });
+
+      phantom.on?.('disconnect', () => {
+        setWalletState((prev) => ({
+          ...prev,
+          isConnected: false,
+          publicKey: null,
+          fullPublicKey: null,
+          balanceSol: 0
+        }));
+      });
+    };
+
+    const timer = setTimeout(setupPhantom, 350);
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [appendLog]);
+
   // Real-Time Hot Wallet Balance Synchronization via Solana WebSocket connection.onAccountChange
   useEffect(() => {
-    if (!walletState.isConnected) return;
-
     const fullKey =
       walletState.fullPublicKey ||
       (typeof window !== 'undefined'
@@ -2099,10 +2198,14 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         .then((lamports) => {
           const liveBal = +(lamports / 1_000_000_000).toFixed(4);
           setWalletState((prev) => {
-            const updated = {
+            const updated: WalletState = {
               ...prev,
+              isConnected: true,
               fullPublicKey: fullKey,
-              balanceSol: liveBal
+              publicKey: `${fullKey.slice(0, 4)}...${fullKey.slice(-4)}`,
+              balanceSol: liveBal,
+              walletName: prev.walletName || 'Phantom',
+              mode: 'LIVE_ON_CHAIN'
             };
             if (typeof window !== 'undefined') {
               localStorage.setItem('GT_WALLET_STATE', JSON.stringify(updated));
@@ -2119,10 +2222,14 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         (accountInfo) => {
           const liveBal = +(accountInfo.lamports / 1_000_000_000).toFixed(4);
           setWalletState((prev) => {
-            const updated = {
+            const updated: WalletState = {
               ...prev,
+              isConnected: true,
               fullPublicKey: fullKey,
-              balanceSol: liveBal
+              publicKey: `${fullKey.slice(0, 4)}...${fullKey.slice(-4)}`,
+              balanceSol: liveBal,
+              walletName: prev.walletName || 'Phantom',
+              mode: 'LIVE_ON_CHAIN'
             };
             if (typeof window !== 'undefined') {
               localStorage.setItem('GT_WALLET_STATE', JSON.stringify(updated));

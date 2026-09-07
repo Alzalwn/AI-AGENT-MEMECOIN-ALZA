@@ -102,8 +102,11 @@ export default function WalletConnectModal({
       if (balance !== null) {
         onUpdateWallet({
           ...walletState,
+          isConnected: true,
           fullPublicKey: fullKey,
-          balanceSol: balance
+          publicKey: walletState.publicKey || `${fullKey.slice(0, 4)}...${fullKey.slice(-4)}`,
+          balanceSol: balance,
+          mode: 'LIVE_ON_CHAIN'
         });
       }
     } finally {
@@ -124,7 +127,9 @@ export default function WalletConnectModal({
       if (typeof window !== 'undefined') {
         let provider: any = null;
         if (walletName === 'Phantom') {
-          provider = (window as any).phantom?.solana || ((window as any).solana?.isPhantom ? (window as any).solana : null);
+          provider =
+            (window as any).phantom?.solana ||
+            ((window as any).solana?.isPhantom ? (window as any).solana : (window as any).solana);
         } else if (walletName === 'Solflare') {
           provider = (window as any).solflare;
         } else if (walletName === 'Backpack') {
@@ -144,9 +149,10 @@ export default function WalletConnectModal({
                 fullPublicKey: pubKey,
                 balanceSol: balance ?? 0,
                 walletName,
-                mode: walletState.mode,
+                mode: 'LIVE_ON_CHAIN',
               });
               setIsConnecting(false);
+              onClose();
               return;
             }
           } catch (err: any) {
@@ -297,7 +303,9 @@ export default function WalletConnectModal({
                   </button>
                 </div>
                 <span className="font-bold text-terminal-green">
-                  {walletState.balanceSol} SOL
+                  {walletState.balanceSol < 1 && walletState.balanceSol > 0
+                    ? walletState.balanceSol.toFixed(4)
+                    : walletState.balanceSol.toFixed(2)} SOL
                 </span>
               </div>
             </div>
