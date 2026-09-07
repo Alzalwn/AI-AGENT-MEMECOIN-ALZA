@@ -19,6 +19,7 @@ import {
   RotateCcw
 } from 'lucide-react';
 import TrailingStopVisualizer from '../TrailingStopVisualizer';
+import TakeProfitProgressBar from '../TakeProfitProgressBar';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import CollapsibleCard from '../ui/CollapsibleCard';
@@ -28,7 +29,7 @@ interface PositionsTableProps {
 }
 
 export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) => {
-  const { activePosition, quickSellPosition, manualExitPosition } = useTradingAgent();
+  const { activePosition, quickSellPosition, manualExitPosition, agentConfig, updateAgentConfig, appendLog } = useTradingAgent();
   const [copiedCa, setCopiedCa] = useState<boolean>(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState<boolean>(false);
 
@@ -201,6 +202,14 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
             </div>
           </div>
 
+          {/* Take Profit Progress Bar with Real-Time Velocity & ETA */}
+          <TakeProfitProgressBar
+            position={activePosition}
+            defaultTargetTpPct={agentConfig.takeProfitPct ?? 100}
+            defaultStopLossPct={agentConfig.stopLossPct ?? -25}
+            defaultMaxHoldTimeSec={agentConfig.maxHoldTimeSec ?? 180}
+          />
+
           {/* Dynamic Trailing Stop Corridor Visualizer */}
           <TrailingStopVisualizer position={activePosition} />
 
@@ -214,7 +223,7 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
             >
               <span className="font-bold flex items-center gap-1.5">
                 <Shield className="w-3.5 h-3.5 text-cyan-400" />
-                Rincian Order & Exit Target
+                Rincian Order & Exit Target (Smart Arbiter)
               </span>
               <div className="flex items-center gap-1 text-[10px] text-zinc-500">
                 <span>{isDetailsOpen ? 'Sembunyikan' : 'Lihat Detail'}</span>
@@ -227,7 +236,19 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
             </button>
 
             {isDetailsOpen && (
-              <div className="px-3 pb-3 pt-1 border-t border-zinc-800/60 grid grid-cols-2 gap-2 text-[10px]">
+              <div className="px-3 pb-3 pt-1 border-t border-zinc-800/60 grid grid-cols-2 sm:grid-cols-3 gap-2 text-[10px]">
+                <div className="bg-zinc-900/60 p-2 rounded-lg border border-zinc-800">
+                  <span className="text-zinc-500 block">Take Profit Target:</span>
+                  <span className="font-mono text-emerald-400 font-bold">
+                    +{activePosition.targetTpPct ?? agentConfig.takeProfitPct ?? 100}% ({(activePosition.targetTpPriceSol ?? activePosition.entryPriceSol * 2).toFixed(8)} SOL)
+                  </span>
+                </div>
+                <div className="bg-zinc-900/60 p-2 rounded-lg border border-zinc-800">
+                  <span className="text-zinc-500 block">Stop Loss Level:</span>
+                  <span className="font-mono text-rose-400 font-bold">
+                    {activePosition.stopLossPct ?? agentConfig.stopLossPct ?? -25}% ({(activePosition.stopLossPriceSol ?? activePosition.entryPriceSol * 0.75).toFixed(8)} SOL)
+                  </span>
+                </div>
                 <div className="bg-zinc-900/60 p-2 rounded-lg border border-zinc-800">
                   <span className="text-zinc-500 block">Trailing Stop Floor:</span>
                   <span className="font-mono text-amber-400 font-bold">
@@ -235,22 +256,67 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
                   </span>
                 </div>
                 <div className="bg-zinc-900/60 p-2 rounded-lg border border-zinc-800">
-                  <span className="text-zinc-500 block">Entry Time:</span>
+                  <span className="text-zinc-500 block">Entry Timestamp:</span>
                   <span className="font-mono text-zinc-300 font-bold">
                     {new Date(activePosition.entryTimestamp).toLocaleTimeString('id-ID')}
                   </span>
                 </div>
                 <div className="bg-zinc-900/60 p-2 rounded-lg border border-zinc-800">
-                  <span className="text-zinc-500 block">Stop Loss Level:</span>
-                  <span className="font-mono text-rose-400 font-bold">
-                    -{(activePosition.entryPriceSol * 0.15).toFixed(8)} SOL (-15%)
+                  <span className="text-zinc-500 block">Hold Duration / TTL:</span>
+                  <span className="font-mono text-cyan-300 font-bold">
+                    {Math.round((Date.now() - activePosition.entryTimestamp) / 1000)}s / Max {activePosition.maxHoldTimeSec ?? agentConfig.maxHoldTimeSec ?? 180}s
                   </span>
                 </div>
                 <div className="bg-zinc-900/60 p-2 rounded-lg border border-zinc-800">
-                  <span className="text-zinc-500 block">Take Profit Target:</span>
-                  <span className="font-mono text-emerald-400 font-bold">
-                    +{(activePosition.entryPriceSol * 0.50).toFixed(8)} SOL (+50%)
+                  <span className="text-zinc-500 block">Exit Strategy Mode:</span>
+                  <span className="font-mono text-purple-400 font-bold">
+                    Dynamic Trailing + Momentum
                   </span>
+                </div>
+
+                {/* Quick Target Adjustment Buttons */}
+                <div className="col-span-2 sm:col-span-3 pt-2.5 mt-1 border-t border-zinc-800/70 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-zinc-500 text-[10px] font-medium">Quick TP:</span>
+                    {[30, 50, 100, 200, 500].map((tp) => (
+                      <button
+                        key={tp}
+                        type="button"
+                        onClick={() => {
+                          updateAgentConfig({ takeProfitPct: tp });
+                          appendLog('RISK', 'INFO', `Target TP disesuaikan menjadi +${tp}% untuk posisi aktif.`);
+                        }}
+                        className={`px-2 py-0.5 rounded text-[9px] font-semibold border transition-all ${
+                          (agentConfig.takeProfitPct ?? activePosition.targetTpPct ?? 100) === tp
+                            ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
+                            : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                        }`}
+                      >
+                        +{tp}%
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-zinc-500 text-[10px] font-medium">Quick SL:</span>
+                    {[-15, -25, -35, -50].map((sl) => (
+                      <button
+                        key={sl}
+                        type="button"
+                        onClick={() => {
+                          updateAgentConfig({ stopLossPct: sl });
+                          appendLog('RISK', 'INFO', `Stop Loss disesuaikan menjadi ${sl}% untuk posisi aktif.`);
+                        }}
+                        className={`px-2 py-0.5 rounded text-[9px] font-semibold border transition-all ${
+                          (agentConfig.stopLossPct ?? activePosition.stopLossPct ?? -25) === sl
+                            ? 'bg-rose-500/20 border-rose-500 text-rose-400'
+                            : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                        }`}
+                      >
+                        {sl}%
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}

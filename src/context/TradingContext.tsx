@@ -69,7 +69,11 @@ const DEFAULT_AGENT_CONFIG: AgentConfig = {
   priorityFeeMicroLamports: 150000,
   jitoTipTier: 'STANDARD',
   takeProfitMultiplier: 3.0,
-  trailingStopLossPct: 0.33,
+  trailingStopLossPct: 15,
+  takeProfitPct: 100, // +100% Target Take Profit
+  stopLossPct: -25, // -25% Hard Stop Loss
+  maxHoldTimeSec: 180, // 180s (3m) Time-to-Live Fallback
+  enableMomentumExit: true,
   antiRugpull: {
     requireMintRevoked: true,
     requireFreezeRevoked: true,
@@ -232,7 +236,12 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     takeProfitMultiplierR: 3.0,
     stopLossMultiplierR: 0.33,
     maxDailyTrades: 20,
-    dailyTradesExecuted: 3
+    dailyTradesExecuted: 3,
+    takeProfitPct: 100,
+    stopLossPct: -25,
+    trailingStopLossPct: 15,
+    maxHoldTimeSec: 180,
+    enableMomentumExit: true
   });
 
   // Webhook Configs (centralized in context so all components share the same config)
@@ -255,6 +264,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [sniperStatus, setSniperStatus] = useState<string | null>(null);
   const [pendingSnipeConfirmation, setPendingSnipeConfirmation] = useState<PendingSnipeConfirmation | null>(null);
   const isAutoSnipingRef = useRef<boolean>(false);
+  const priceSamplesRef = useRef<Array<{ price: number; timestamp: number }>>([]);
 
   // Append Log helper
   const appendLog = useCallback((category: LogCategory, level: LogLevel, message: string, data?: any) => {
@@ -382,6 +392,14 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
       }
 
+      const tpPct = agentConfig.takeProfitPct ?? autoSnipeConfig.takeProfitPct ?? 100;
+      const slPct = agentConfig.stopLossPct ?? autoSnipeConfig.stopLossPct ?? -25;
+      const trailingDist = agentConfig.trailingStopLossPct ?? autoSnipeConfig.trailingStopLossPct ?? 15;
+      const maxTtl = agentConfig.maxHoldTimeSec ?? autoSnipeConfig.maxHoldTimeSec ?? 180;
+      const targetTpPrice = +(entryPrice * (1 + tpPct / 100)).toFixed(8);
+      const slPrice = +(entryPrice * (1 + slPct / 100)).toFixed(8);
+      const trailingStop = +(entryPrice * (1 - trailingDist / 100)).toFixed(8);
+
       const newPos: ActivePosition = {
         id: `POS-${Math.floor(1000 + Math.random() * 9000)}`,
         token,
@@ -393,10 +411,22 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         pnlPct: 0,
         rMultiplier: 0,
         highestPriceSol: entryPrice,
-        trailingStopPriceSol: +(entryPrice * (1 - (agentConfig.trailingStopLossPct || 0.15))).toFixed(8),
+        trailingStopPriceSol: trailingStop,
         entryTimestamp: Date.now(),
-        status: 'OPEN'
+        status: 'OPEN',
+        targetTpPct: tpPct,
+        targetTpPriceSol: targetTpPrice,
+        stopLossPct: slPct,
+        stopLossPriceSol: slPrice,
+        trailingDistancePct: trailingDist,
+        maxHoldTimeSec: maxTtl,
+        velocityPctPerSec: 0,
+        etaToTpSeconds: null,
+        momentumStatus: 'STAGNANT',
+        holdDurationSec: 0
       };
+
+      priceSamplesRef.current = [{ price: entryPrice, timestamp: Date.now() }];
 
       // 3. Update state immediately (Requirement 1 & 4)
       setActivePosition(newPos);
@@ -456,6 +486,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       setClosedTrades((prev) => [closed, ...prev]);
       setActivePosition(null);
+      priceSamplesRef.current = [];
       setTelemetry((prev) => ({
         ...prev,
         activePositionLocked: false,
@@ -499,6 +530,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       setClosedTrades((prev) => [closed, ...prev]);
       setActivePosition(null);
+      priceSamplesRef.current = [];
       setTelemetry((prev) => ({
         ...prev,
         activePositionLocked: false,
@@ -594,7 +626,15 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const confirmSnipe = useCallback(() => {
     if (!pendingSnipeConfirmation) return;
     const { token, solInvest } = pendingSnipeConfirmation;
-    const entryPrice = token.priceSol;
+    const entryPrice = token.priceSol || 0.0001;
+    const tpPct = agentConfig.takeProfitPct ?? autoSnipeConfig.takeProfitPct ?? 100;
+    const slPct = agentConfig.stopLossPct ?? autoSnipeConfig.stopLossPct ?? -25;
+    const trailingDist = agentConfig.trailingStopLossPct ?? autoSnipeConfig.trailingStopLossPct ?? 15;
+    const maxTtl = agentConfig.maxHoldTimeSec ?? autoSnipeConfig.maxHoldTimeSec ?? 180;
+    const targetTpPrice = +(entryPrice * (1 + tpPct / 100)).toFixed(8);
+    const slPrice = +(entryPrice * (1 + slPct / 100)).toFixed(8);
+    const trailingStop = +(entryPrice * (1 - trailingDist / 100)).toFixed(8);
+
     const newPos: ActivePosition = {
       id: `POS-${Math.floor(1000 + Math.random() * 9000)}`,
       token,
@@ -606,10 +646,21 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       pnlPct: 0,
       rMultiplier: 0,
       highestPriceSol: entryPrice,
-      trailingStopPriceSol: +(entryPrice * 0.90).toFixed(8),
+      trailingStopPriceSol: trailingStop,
       entryTimestamp: Date.now(),
-      status: 'OPEN'
+      status: 'OPEN',
+      targetTpPct: tpPct,
+      targetTpPriceSol: targetTpPrice,
+      stopLossPct: slPct,
+      stopLossPriceSol: slPrice,
+      trailingDistancePct: trailingDist,
+      maxHoldTimeSec: maxTtl,
+      velocityPctPerSec: 0,
+      etaToTpSeconds: null,
+      momentumStatus: 'STAGNANT',
+      holdDurationSec: 0
     };
+    priceSamplesRef.current = [{ price: entryPrice, timestamp: Date.now() }];
     setActivePosition(newPos);
     setTelemetry((prev) => ({
       ...prev,
@@ -970,7 +1021,10 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // Real-Time On-Chain Price Stream & Exit Agent Evaluator
   useEffect(() => {
-    if (!activePosition) return;
+    if (!activePosition) {
+      priceSamplesRef.current = [];
+      return;
+    }
 
     const interval = setInterval(async () => {
       let livePrice = activePosition.currentPriceSol;
@@ -1006,11 +1060,59 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         livePrice = +(livePrice * (1 + drift)).toFixed(8);
       }
 
+      const now = Date.now();
+      // Record sample in ring-buffer (capped at 8 items to strictly prevent memory leaks)
+      priceSamplesRef.current.push({ price: livePrice, timestamp: now });
+      if (priceSamplesRef.current.length > 8) {
+        priceSamplesRef.current = priceSamplesRef.current.slice(-8);
+      }
+
+      // Calculate Price Velocity: (∆Price / EntryPrice) * (100 / ∆Time) in %/sec
+      let velocityPctPerSec = 0;
+      if (priceSamplesRef.current.length >= 2) {
+        const oldestSample = priceSamplesRef.current[0];
+        const dtSec = Math.max(0.5, (now - oldestSample.timestamp) / 1000);
+        const dPrice = livePrice - oldestSample.price;
+        velocityPctPerSec = +(((dPrice / activePosition.entryPriceSol) * 100) / dtSec).toFixed(2);
+      }
+
+      // Momentum Classification
+      let momentumStatus: 'ACCELERATING' | 'STEADY' | 'STAGNANT' | 'DROPPING' = 'STAGNANT';
+      if (velocityPctPerSec >= 1.5) {
+        momentumStatus = 'ACCELERATING';
+      } else if (velocityPctPerSec > 0.08) {
+        momentumStatus = 'STEADY';
+      } else if (velocityPctPerSec <= -0.3) {
+        momentumStatus = 'DROPPING';
+      } else {
+        momentumStatus = 'STAGNANT';
+      }
+
       const pnlSol = +((livePrice - activePosition.entryPriceSol) * activePosition.tokenAmount).toFixed(4);
       const pnlPct = +(((livePrice - activePosition.entryPriceSol) / activePosition.entryPriceSol) * 100).toFixed(2);
       const rMultiplier = +(pnlPct / 15).toFixed(2);
       const newHigh = Math.max(activePosition.highestPriceSol, livePrice);
-      const trailingStop = +(newHigh * 0.88).toFixed(8);
+
+      const targetTpPct = agentConfig.takeProfitPct ?? activePosition.targetTpPct ?? autoSnipeConfig.takeProfitPct ?? 100;
+      const stopLossPct = agentConfig.stopLossPct ?? activePosition.stopLossPct ?? autoSnipeConfig.stopLossPct ?? -25;
+      const trailingDistancePct = agentConfig.trailingStopLossPct ?? activePosition.trailingDistancePct ?? autoSnipeConfig.trailingStopLossPct ?? 15;
+      const maxHoldTimeSec = agentConfig.maxHoldTimeSec ?? activePosition.maxHoldTimeSec ?? autoSnipeConfig.maxHoldTimeSec ?? 180;
+      const holdDurationSec = Math.round((now - activePosition.entryTimestamp) / 1000);
+
+      const targetTpPriceSol = +(activePosition.entryPriceSol * (1 + targetTpPct / 100)).toFixed(8);
+      const stopLossPriceSol = +(activePosition.entryPriceSol * (1 + stopLossPct / 100)).toFixed(8);
+      const trailingStopPriceSol = +(newHigh * (1 - trailingDistancePct / 100)).toFixed(8);
+
+      // Calculate Projected ETA to TP in seconds
+      const remainingPctToTp = targetTpPct - pnlPct;
+      let etaToTpSeconds: number | null = null;
+      if (remainingPctToTp <= 0) {
+        etaToTpSeconds = 0; // Target reached
+      } else if (velocityPctPerSec > 0.05) {
+        etaToTpSeconds = Math.max(1, Math.round(remainingPctToTp / velocityPctPerSec));
+      } else {
+        etaToTpSeconds = null; // Stagnant or dropping momentum
+      }
 
       const updatedPos: ActivePosition = {
         ...activePosition,
@@ -1019,12 +1121,30 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         pnlPct,
         rMultiplier,
         highestPriceSol: newHigh,
-        trailingStopPriceSol: trailingStop
+        trailingStopPriceSol: trailingStopPriceSol,
+        targetTpPct,
+        targetTpPriceSol,
+        stopLossPct,
+        stopLossPriceSol,
+        trailingDistancePct,
+        maxHoldTimeSec,
+        holdDurationSec,
+        velocityPctPerSec,
+        etaToTpSeconds,
+        momentumStatus
       };
 
-      // Check Exit Agent Rules
-      const exitVerdict = evaluateExitAgent(updatedPos);
+      // Check Smart Arbiter Exit Rules
+      const exitVerdict = evaluateExitAgent(updatedPos, {
+        targetTpPct,
+        stopLossPct,
+        trailingDistancePct,
+        maxHoldTimeSec,
+        enableMomentumExit: agentConfig.enableMomentumExit ?? autoSnipeConfig.enableMomentumExit ?? true
+      });
+
       if (exitVerdict.shouldExit) {
+        priceSamplesRef.current = [];
         // Trigger Exit
         if (exitVerdict.exitType === 'TAKE_PROFIT') {
           soundFx.playTakeProfit();
@@ -1040,7 +1160,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
           pnlSol,
           pnlPct,
           rMultiplier,
-          holdDurationSec: Math.round((Date.now() - updatedPos.entryTimestamp) / 1000),
+          holdDurationSec,
           exitReason: exitVerdict.reason || 'Target Take-Profit / Stop Met',
           entryTimestamp: updatedPos.entryTimestamp,
           exitTimestamp: Date.now(),
@@ -1071,10 +1191,10 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       } else {
         setActivePosition(updatedPos);
       }
-    }, 3200);
+    }, 2500);
 
     return () => clearInterval(interval);
-  }, [activePosition, appendLog, telegramConfig, discordConfig, refreshWalletBalance]);
+  }, [activePosition, appendLog, telegramConfig, discordConfig, refreshWalletBalance, agentConfig, autoSnipeConfig]);
 
   const updateAgentConfig = useCallback((updates: Partial<AgentConfig>) => {
     setAgentConfig((prev) => ({ ...prev, ...updates }));

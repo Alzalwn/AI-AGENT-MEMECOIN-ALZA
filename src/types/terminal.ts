@@ -68,6 +68,17 @@ export interface ActivePosition {
   trailingStopPriceSol: number;
   entryTimestamp: number;
   status: 'OPEN' | 'CLOSING' | 'CLOSED';
+  // Quantitative Predictive Analytics
+  targetTpPct?: number; // e.g. 100 for +100%
+  targetTpPriceSol?: number; // entryPriceSol * (1 + targetTpPct/100)
+  stopLossPct?: number; // e.g. -25 for -25%
+  stopLossPriceSol?: number; // entryPriceSol * (1 + stopLossPct/100)
+  velocityPctPerSec?: number; // (% price change per second)
+  etaToTpSeconds?: number | null; // projected seconds to TP (null if dropping/stagnant)
+  momentumStatus?: 'ACCELERATING' | 'STEADY' | 'STAGNANT' | 'DROPPING';
+  maxHoldTimeSec?: number; // TTL (default: 180s)
+  holdDurationSec?: number; // hold duration in seconds
+  trailingDistancePct?: number; // trailing stop distance % (default: 15%)
 }
 
 export interface TerminalTelemetry {
@@ -141,4 +152,9 @@ export interface AutoSnipeConfig {
   dailyTradesExecuted: number;
   useKellySizing?: boolean;
   lastSnipeTimestamp?: number;
+  takeProfitPct?: number; // e.g. 100 (+100%)
+  stopLossPct?: number; // e.g. -25 (-25%)
+  trailingStopLossPct?: number; // e.g. 15 (15%)
+  maxHoldTimeSec?: number; // e.g. 180 (3m)
+  enableMomentumExit?: boolean;
 }

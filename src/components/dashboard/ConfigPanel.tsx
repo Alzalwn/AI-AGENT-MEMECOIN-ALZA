@@ -14,7 +14,12 @@ import {
   AlertTriangle,
   KeyRound,
   ChevronDown,
-  ChevronsUpDown
+  ChevronsUpDown,
+  Target,
+  Timer,
+  Flame,
+  TrendingUp,
+  TrendingDown
 } from 'lucide-react';
 import Badge from '../ui/Badge';
 import CollapsibleCard from '../ui/CollapsibleCard';
@@ -34,7 +39,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({ onOpenPasswordModal })
 
   // Accordion states for sub-sections
   const [openSections, setOpenSections] = useState<Set<string>>(
-    new Set(['execution', 'sizing', 'antirug', 'security'])
+    new Set(['execution', 'sizing', 'tp_sl', 'antirug', 'security'])
   );
 
   const toggleSection = (id: string) => {
@@ -242,6 +247,199 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({ onOpenPasswordModal })
                   }`}
                 >
                   {agentConfig.useKellySizing ? 'KELLY (6.2%)' : 'STATIC'}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Section: Take Profit, Stop Loss & Trailing Exit (Smart Arbiter) */}
+        <div className="border border-zinc-800/80 rounded-xl overflow-hidden bg-zinc-950/50">
+          <button
+            type="button"
+            onClick={() => toggleSection('tp_sl')}
+            className="w-full px-3 py-2 flex items-center justify-between text-[11px] font-bold text-zinc-300 hover:bg-zinc-800/30 transition-colors cursor-pointer"
+            aria-expanded={openSections.has('tp_sl')}
+          >
+            <span className="flex items-center gap-1.5 text-zinc-200">
+              <Target className="w-3.5 h-3.5 text-emerald-400" />
+              Take Profit, Stop Loss & Trailing
+            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                +{agentConfig.takeProfitPct ?? 100}% / {agentConfig.stopLossPct ?? -25}%
+              </span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-zinc-400 transition-transform duration-200 ${
+                  openSections.has('tp_sl') ? 'rotate-180' : ''
+                }`}
+              />
+            </div>
+          </button>
+
+          {openSections.has('tp_sl') && (
+            <div className="p-3 pt-1 border-t border-zinc-800/60 space-y-3">
+              {/* 1. Target Take Profit % */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-zinc-400 flex items-center gap-1">
+                    <TrendingUp className="w-3 h-3 text-emerald-400" />
+                    <span>Target Take Profit (TP)</span>
+                  </span>
+                  <span className="font-bold text-emerald-400">
+                    +{agentConfig.takeProfitPct ?? 100}%
+                  </span>
+                </div>
+                <div className="grid grid-cols-5 gap-1">
+                  {[25, 50, 100, 200, 500].map((tp) => (
+                    <button
+                      key={tp}
+                      type="button"
+                      onClick={() => {
+                        updateAgentConfig({ takeProfitPct: tp });
+                        appendLog('RISK', 'INFO', `Set Target Take Profit to +${tp}%`);
+                      }}
+                      className={`py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                        (agentConfig.takeProfitPct ?? 100) === tp
+                          ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400 font-black shadow-[0_0_8px_rgba(16,185,129,0.2)]'
+                          : 'bg-zinc-950/60 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+                      }`}
+                    >
+                      +{tp}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 2. Hard Stop Loss % */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-zinc-400 flex items-center gap-1">
+                    <TrendingDown className="w-3 h-3 text-rose-400" />
+                    <span>Hard Stop Loss (SL)</span>
+                  </span>
+                  <span className="font-bold text-rose-400">
+                    {agentConfig.stopLossPct ?? -25}%
+                  </span>
+                </div>
+                <div className="grid grid-cols-5 gap-1">
+                  {[-10, -15, -25, -35, -50].map((sl) => (
+                    <button
+                      key={sl}
+                      type="button"
+                      onClick={() => {
+                        updateAgentConfig({ stopLossPct: sl });
+                        appendLog('RISK', 'INFO', `Set Hard Stop Loss to ${sl}%`);
+                      }}
+                      className={`py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                        (agentConfig.stopLossPct ?? -25) === sl
+                          ? 'bg-rose-500/20 border-rose-500/50 text-rose-400 font-black shadow-[0_0_8px_rgba(244,63,94,0.2)]'
+                          : 'bg-zinc-950/60 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+                      }`}
+                    >
+                      {sl}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 3. Trailing Distance % */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-zinc-400 flex items-center gap-1">
+                    <Flame className="w-3 h-3 text-cyan-400" />
+                    <span>Trailing Stop Distance (from High)</span>
+                  </span>
+                  <span className="font-bold text-cyan-400">
+                    -{agentConfig.trailingStopLossPct ?? 15}%
+                  </span>
+                </div>
+                <div className="grid grid-cols-4 gap-1">
+                  {[10, 15, 20, 25].map((dist) => (
+                    <button
+                      key={dist}
+                      type="button"
+                      onClick={() => {
+                        updateAgentConfig({ trailingStopLossPct: dist });
+                        appendLog('RISK', 'INFO', `Set Trailing Stop Distance to ${dist}%`);
+                      }}
+                      className={`py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                        (agentConfig.trailingStopLossPct ?? 15) === dist
+                          ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400 font-black shadow-[0_0_8px_rgba(0,229,255,0.2)]'
+                          : 'bg-zinc-950/60 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+                      }`}
+                    >
+                      -{dist}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 4. Time-to-Live (TTL / Max Hold Time) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-zinc-400 flex items-center gap-1">
+                    <Timer className="w-3 h-3 text-amber-400" />
+                    <span>Time-to-Live (Max Hold Time)</span>
+                  </span>
+                  <span className="font-bold text-amber-400">
+                    {agentConfig.maxHoldTimeSec ?? 180}s ({Math.round((agentConfig.maxHoldTimeSec ?? 180) / 60)}m)
+                  </span>
+                </div>
+                <div className="grid grid-cols-4 gap-1">
+                  {[
+                    { sec: 60, label: '1 Menit' },
+                    { sec: 120, label: '2 Menit' },
+                    { sec: 180, label: '3 Menit' },
+                    { sec: 300, label: '5 Menit' }
+                  ].map((item) => (
+                    <button
+                      key={item.sec}
+                      type="button"
+                      onClick={() => {
+                        updateAgentConfig({ maxHoldTimeSec: item.sec });
+                        appendLog('RISK', 'INFO', `Set Max Hold Time (TTL) to ${item.sec}s`);
+                      }}
+                      className={`py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                        (agentConfig.maxHoldTimeSec ?? 180) === item.sec
+                          ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 font-black shadow-[0_0_8px_rgba(245,166,35,0.2)]'
+                          : 'bg-zinc-950/60 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 5. Momentum Flash-Dump Auto-Exit */}
+              <div
+                onClick={() => {
+                  const nextVal = !(agentConfig.enableMomentumExit ?? true);
+                  updateAgentConfig({ enableMomentumExit: nextVal });
+                  appendLog(
+                    'RISK',
+                    'INFO',
+                    `Momentum Anomaly Auto-Exit: ${nextVal ? 'ENABLED (Emergency flash dump exit)' : 'DISABLED'}`
+                  );
+                }}
+                className="flex items-center justify-between p-2 rounded-xl bg-zinc-950/80 border border-zinc-800 hover:border-zinc-700 transition-all cursor-pointer text-[10px]"
+              >
+                <div className="flex items-center gap-2 text-zinc-300">
+                  <Flame className="w-3.5 h-3.5 text-yellow-400" />
+                  <div>
+                    <span className="block font-bold">Smart Arbiter Momentum Exit</span>
+                    <span className="text-[9px] text-zinc-500 block">Auto-exit jika velocity anjlok &lt; -3%/dtk atau stagnan saat TTL habis</span>
+                  </div>
+                </div>
+                <span
+                  className={`text-[9px] px-2 py-0.5 rounded font-bold ${
+                    (agentConfig.enableMomentumExit ?? true)
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                      : 'bg-zinc-800 text-zinc-500'
+                  }`}
+                >
+                  {(agentConfig.enableMomentumExit ?? true) ? 'ACTIVE' : 'OFF'}
                 </span>
               </div>
             </div>

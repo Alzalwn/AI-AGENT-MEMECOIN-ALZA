@@ -41,6 +41,10 @@ export interface AgentConfig {
   jitoTipTier: 'ECONOMY' | 'STANDARD' | 'FAST' | 'TURBO' | 'ULTRA_DEGEN';
   takeProfitMultiplier: number;
   trailingStopLossPct: number;
+  takeProfitPct?: number; // e.g. 100 for +100%
+  stopLossPct?: number; // e.g. -25 for -25%
+  maxHoldTimeSec?: number; // e.g. 180s TTL
+  enableMomentumExit?: boolean; // emergency exit on velocity dump / stagnancy
   antiRugpull: {
     requireMintRevoked: boolean;
     requireFreezeRevoked: boolean;
