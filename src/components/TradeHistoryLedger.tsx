@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Download, History, TrendingUp, TrendingDown, Clock, ShieldCheck, FileSpreadsheet, FileCode, Check, Share2, BarChart3 } from 'lucide-react';
+import { Download, History, TrendingUp, TrendingDown, Clock, ShieldCheck, FileSpreadsheet, FileCode, Check, Share2, BarChart3, Trash2 } from 'lucide-react';
 import { ClosedTrade } from '../types/terminal';
 
 interface TradeHistoryLedgerProps {
@@ -127,6 +127,20 @@ export default function TradeHistoryLedger({
               title="Buka Quantitative Performance Analytics (PRD §6)"
             >
               <BarChart3 className="w-3.5 h-3.5" /> Analytics
+            </button>
+          )}
+          {onClearTrades && (
+            <button
+              onClick={() => {
+                if (window.confirm('Reset semua riwayat trade dan bersihkan metrik PnL?')) {
+                  onClearTrades();
+                }
+              }}
+              disabled={trades.length === 0}
+              className="px-2.5 py-1 rounded bg-terminal-red/10 hover:bg-terminal-red/20 border border-terminal-red/30 text-terminal-red text-[10px] font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Reset Riwayat Trade & Total PnL"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-terminal-red" /> Reset Riwayat
             </button>
           )}
         </div>

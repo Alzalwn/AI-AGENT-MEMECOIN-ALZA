@@ -112,7 +112,16 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const saved = localStorage.getItem('GT_TRADE_HISTORY');
         if (saved) {
           const parsed: ClosedTrade[] = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            // Auto-sanitize: filter out any corrupted trades with insane pnlSol > 100
+            const sanitized = parsed.filter(
+              (t) => typeof t.pnlSol === 'number' && !isNaN(t.pnlSol) && Math.abs(t.pnlSol) <= 100
+            );
+            if (sanitized.length !== parsed.length) {
+              localStorage.setItem('GT_TRADE_HISTORY', JSON.stringify(sanitized));
+            }
+            return sanitized;
+          }
         }
       } catch {}
     }
@@ -124,7 +133,10 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const setClosedTrades = useCallback((updater: ClosedTrade[] | ((prev: ClosedTrade[]) => ClosedTrade[])) => {
     setClosedTradesState((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
-      const capped = next.slice(0, 200); // cap to 200 trades
+      const sanitized = next.filter(
+        (t) => typeof t.pnlSol === 'number' && !isNaN(t.pnlSol) && Math.abs(t.pnlSol) <= 100
+      );
+      const capped = sanitized.slice(0, 200);
       if (typeof window !== 'undefined') {
         try {
           localStorage.setItem('GT_TRADE_HISTORY', JSON.stringify(capped));
@@ -189,6 +201,30 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   });
 
   const [networkMetrics, setNetworkMetrics] = useState<NetworkMetrics>(DEFAULT_NETWORK_METRICS);
+
+  // Auto-heal telemetry PnL & Win/Loss stats from clean closedTrades
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const validTrades = closedTrades.filter(
+        (t) => typeof t.pnlSol === 'number' && !isNaN(t.pnlSol) && Math.abs(t.pnlSol) <= 100
+      );
+      const sumPnl = +validTrades.reduce((acc, t) => acc + t.pnlSol, 0).toFixed(4);
+      const wins = validTrades.filter((t) => t.pnlSol > 0).length;
+      const losses = validTrades.filter((t) => t.pnlSol < 0).length;
+
+      setTelemetry((prev) => {
+        if (Math.abs(prev.totalPnlSol) > 100 || (validTrades.length === 0 && prev.totalPnlSol !== 0)) {
+          return {
+            ...prev,
+            totalPnlSol: sumPnl,
+            winCount: wins,
+            lossCount: losses
+          };
+        }
+        return prev;
+      });
+    }
+  }, [closedTrades]);
 
   // Wallet — persisted in localStorage so wallet stays connected after page refresh
   const [walletState, setWalletState] = useState<WalletState>(() => {
@@ -281,6 +317,22 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, []);
 
   const clearLogs = useCallback(() => setLogs([]), []);
+
+  const clearTrades = useCallback(() => {
+    setClosedTrades([]);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('GT_TRADE_HISTORY');
+      } catch {}
+    }
+    setTelemetry((prev) => ({
+      ...prev,
+      totalPnlSol: 0,
+      winCount: 0,
+      lossCount: 0
+    }));
+    appendLog('SYSTEM', 'INFO', 'Riwayat transaksi & PnL berhasil direset.');
+  }, [setClosedTrades, appendLog]);
 
   const toggleAudio = useCallback(() => {
     setIsAudioMuted((prev) => {
@@ -601,6 +653,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       if (!honeypotCheck.isSafeToSell) {
         setSniperStatus('VETOED - HONEYPOT DETECTED');
+        setTimeout(() => setSniperStatus(null), 8000);
         appendLog('RISK', 'DANGER', `🛑 [VETOED - HONEYPOT DETECTED] Token ${foundToken.symbol} (${foundToken.mint.slice(0, 8)}...) adalah HONEYPOT! ${honeypotCheck.reason}`);
         soundFx.playEmergencyExit();
 
@@ -652,6 +705,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
             solInvest: 0.62
           });
           setSniperStatus(`Menunggu konfirmasi buka posisi ${foundToken.symbol}...`);
+          setTimeout(() => setSniperStatus(null), 8000);
         }
       } else {
         appendLog('RISK', 'WARN', `Manual target ${foundToken.symbol} VETOED by ${consensus.vetoAgent}: ${consensus.vetoReason}`);
@@ -661,6 +715,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         } else {
           setSniperStatus(`VETOED: ${consensus.vetoAgent}`);
         }
+        setTimeout(() => setSniperStatus(null), 8000);
       }
     } catch (err: any) {
       appendLog('SYSTEM', 'DANGER', `Lookup error: ${err.message}`);
@@ -917,13 +972,12 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const hp = await verifySafeToSell(consensus.token);
         consensus.token.honeypotCheck = hp;
         if (!hp.isSafeToSell) {
-          soundFx.playEmergencyExit();
           appendLog(
             'RISK',
-            'DANGER',
-            `🛑 [VETOED - HONEYPOT DETECTED] Auto-snipe DIBATALKAN untuk ${consensus.token.symbol} (${consensus.token.mint.slice(0, 8)}...)! Alasan: ${hp.reason}`
+            'WARN',
+            `🛑 [AUTONOMOUS SHIELD] Token ${consensus.token.symbol} (${consensus.token.mint.slice(0, 8)}...) ditolak oleh Honeypot Shield: ${hp.reason}`
           );
-          setSniperStatus('VETOED - HONEYPOT DETECTED');
+          // Do NOT hijack manual sniperStatus and do NOT sound emergency alarms for background scans
           return;
         }
 
@@ -1161,8 +1215,12 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         momentumStatus = 'STAGNANT';
       }
 
-      const pnlSol = +((livePrice - activePosition.entryPriceSol) * activePosition.tokenAmount).toFixed(4);
-      const pnlPct = +(((livePrice - activePosition.entryPriceSol) / activePosition.entryPriceSol) * 100).toFixed(2);
+      const rawPnlPct = activePosition.entryPriceSol > 0
+        ? ((livePrice - activePosition.entryPriceSol) / activePosition.entryPriceSol) * 100
+        : 0;
+      const pnlPct = +(Math.max(-100, Math.min(10000, rawPnlPct))).toFixed(2);
+      // In spot DEX memecoin trading, PnL in SOL is strictly: solInvested * (pnlPct / 100)
+      const pnlSol = +(activePosition.solInvested * (pnlPct / 100)).toFixed(4);
       const rMultiplier = +(pnlPct / 15).toFixed(2);
       const newHigh = Math.max(activePosition.highestPriceSol, livePrice);
 
@@ -1416,6 +1474,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     openLivePosition,
     refreshWalletBalance,
     clearLogs,
+    clearTrades,
     appendLog
   };
 

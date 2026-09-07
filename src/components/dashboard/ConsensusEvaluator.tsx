@@ -85,6 +85,7 @@ export const ConsensusEvaluator: React.FC<ConsensusEvaluatorProps> = ({
     consensusFeed,
     selectResult,
     closedTrades,
+    clearTrades,
     telemetry
   } = useTradingAgent();
 
@@ -207,6 +208,7 @@ export const ConsensusEvaluator: React.FC<ConsensusEvaluatorProps> = ({
             {visualMode === 'ledger' && (
               <TradeHistoryLedger
                 trades={closedTrades}
+                onClearTrades={clearTrades}
                 onSelectTradeForShare={(trade) => onShareTrade && onShareTrade(trade)}
                 onOpenAnalytics={onOpenAnalytics}
               />

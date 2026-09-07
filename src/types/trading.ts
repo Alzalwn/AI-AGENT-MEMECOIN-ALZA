@@ -105,6 +105,7 @@ export interface TradingActions {
   openLivePosition: (result: import('../lib/jupiter').SwapExecutionResult, token?: TokenSignal | null) => Promise<void>;
   refreshWalletBalance: () => Promise<void>;
   clearLogs: () => void;
+  clearTrades: () => void;
   appendLog: (category: LogCategory, level: LogLevel, message: string, data?: any) => void;
 }
 

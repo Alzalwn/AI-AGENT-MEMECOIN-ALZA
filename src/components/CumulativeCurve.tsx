@@ -44,20 +44,25 @@ export default function CumulativeCurve({
 
   const [hoveredPoint, setHoveredPoint] = useState<DataPoint | null>(null);
 
-  // Append new points when currentBalanceSol changes
+  // Append new points when currentBalanceSol changes with outlier protection
   useEffect(() => {
     const nowStr = new Date().toLocaleTimeString('en-US', { hour12: false, minute: '2-digit', second: '2-digit' });
+    const clampedBal = Math.max(0, Math.min(100, currentBalanceSol));
+    const clampedPnl = Math.max(-100, Math.min(100, totalPnlSol));
+
     setHistory((prev) => {
-      const last = prev[prev.length - 1];
-      if (last && Math.abs(last.balanceSol - currentBalanceSol) < 0.001) return prev;
+      // First clean existing corrupted points from prev
+      const cleanPrev = prev.filter((d) => typeof d.balanceSol === 'number' && d.balanceSol < 100 && d.balanceSol >= 0);
+      const last = cleanPrev[cleanPrev.length - 1];
+      if (last && Math.abs(last.balanceSol - clampedBal) < 0.001) return cleanPrev;
 
       const newPoint: DataPoint = {
         time: nowStr,
-        balanceSol: currentBalanceSol,
+        balanceSol: clampedBal,
         volumeSol: +(Math.random() * 3.2 + 0.8).toFixed(2),
-        pnlSol: totalPnlSol,
+        pnlSol: clampedPnl,
       };
-      return [...prev.slice(1), newPoint];
+      return [...cleanPrev.slice(-19), newPoint];
     });
   }, [currentBalanceSol, totalPnlSol]);
 
@@ -69,14 +74,17 @@ export default function CumulativeCurve({
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
 
-  // Min and Max for scaling
+  // Min and Max for scaling (with strict outlier protection)
   const { minVal, maxVal, maxVol } = useMemo(() => {
-    const balances = history.map((d) => d.balanceSol);
-    const min = Math.min(...balances, initialBalanceSol) * 0.98;
-    const max = Math.max(...balances, initialBalanceSol) * 1.02;
-    const vol = Math.max(...history.map((d) => d.volumeSol), 1.0);
+    const cleanHistory = history.filter((d) => typeof d.balanceSol === 'number' && d.balanceSol < 100 && d.balanceSol >= 0);
+    const activePoints = cleanHistory.length > 0 ? cleanHistory : [{ time: '00:00:00', balanceSol: currentBalanceSol, volumeSol: 1, pnlSol: 0 }];
+    const balances = activePoints.map((d) => d.balanceSol);
+    const safeInit = initialBalanceSol < 100 ? initialBalanceSol : 0.15;
+    const min = Math.max(0, Math.min(...balances, safeInit) * 0.98);
+    const max = Math.max(0.01, Math.max(...balances, safeInit) * 1.02);
+    const vol = Math.max(...activePoints.map((d) => d.volumeSol), 1.0);
     return { minVal: min, maxVal: max, maxVol: vol };
-  }, [history, initialBalanceSol]);
+  }, [history, initialBalanceSol, currentBalanceSol]);
 
   // Convert point to SVG coordinates
   const getX = (index: number) => padding.left + (index / (history.length - 1 || 1)) * chartWidth;
