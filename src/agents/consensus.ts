@@ -3,9 +3,14 @@ import { evaluateScannerAgent } from './scanner';
 import { evaluateNarrativeAgent } from './narrative';
 import { evaluateRiskAgent } from './risk';
 import { evaluateTimingAgent } from './timing';
+import { MoonshotAnalyzer } from './moonshot';
 
 export function runAgentConsensus(token: TokenSignal, thresholds?: AgentThresholds): ConsensusResult {
   const startTime = performance.now();
+
+  // Evaluate Moonshot Predictor Engine (Pillar 1-4)
+  const moonshotVerdict = MoonshotAnalyzer.evaluate(token);
+  token.moonshot = moonshotVerdict;
 
   // Evaluate agents concurrently with custom thresholds support
   const scannerVerdict = evaluateScannerAgent(token, thresholds);
@@ -45,6 +50,21 @@ export function runAgentConsensus(token: TokenSignal, thresholds?: AgentThreshol
     }
   }
 
+  // Jika semua agen lolos tetapi Moonshot Analyzer mendeteksi bundling > 30% atau honeypot
+  if (!firstVetoAgent && !moonshotVerdict.isApproved && moonshotVerdict.vetoReason) {
+    firstVetoAgent = 'risk';
+    firstVetoReason = moonshotVerdict.vetoReason;
+    verdicts.risk = {
+      agentId: 'risk',
+      agentName: 'Risk Agent (Moonshot Guard)',
+      status: 'VETO',
+      reason: moonshotVerdict.vetoReason,
+      metricValue: `${token.top10HolderPct}% Top10`,
+      threshold: '<= 30% (Anti-Bundling)',
+      latencyMs: 0.2
+    };
+  }
+
   const consensusLatencyMs = +(performance.now() - startTime).toFixed(2);
 
   return {
@@ -54,6 +74,7 @@ export function runAgentConsensus(token: TokenSignal, thresholds?: AgentThreshol
     vetoReason: firstVetoReason,
     verdicts,
     consensusLatencyMs,
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    moonshot: moonshotVerdict
   };
 }

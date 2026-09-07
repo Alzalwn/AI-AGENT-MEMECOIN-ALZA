@@ -13,14 +13,17 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Activity,
-  RefreshCw
+  RefreshCw,
+  Rocket,
+  ChevronDown
 } from 'lucide-react';
 import CollapsibleCard from '../ui/CollapsibleCard';
 
 export const MetricCards: React.FC = () => {
-  const { telemetry, walletState, refreshWalletBalance } = useTradingAgent();
+  const { telemetry, walletState, refreshWalletBalance, consensusFeed, selectedResult } = useTradingAgent();
   const { rate, isLoading: isRateLoading } = useSolRate();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isMoonshotDetailsOpen, setIsMoonshotDetailsOpen] = useState(false);
 
   const handleManualRefresh = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -225,6 +228,127 @@ export const MetricCards: React.FC = () => {
                 {telemetry.scannedCount - telemetry.vetoCount} APPROVED
               </span>
             </div>
+
+            {/* Moonshot Predictor Indicator connected directly under Risk Defense Filter */}
+            {(() => {
+              const candidate =
+                selectedResult ||
+                consensusFeed.find((c) => c.verdict === 'APPROVED') ||
+                consensusFeed[0];
+              const moonshot = candidate?.moonshot;
+
+              return (
+                <div className="mt-2.5 pt-2 border-t border-zinc-800/80">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-zinc-400 font-bold flex items-center gap-1">
+                      <Rocket className="w-3 h-3 text-amber-400" />
+                      Moonshot Predictor:
+                    </span>
+                    {moonshot ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsMoonshotDetailsOpen((prev) => !prev)}
+                        className={`text-[9px] px-2 py-0.5 rounded font-black border transition-all cursor-pointer flex items-center gap-1 ${
+                          moonshot.tier === 'SUPERNOVA'
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/60 shadow-[0_0_8px_rgba(245,158,11,0.35)]'
+                            : moonshot.tier === 'HIGH_POTENTIAL'
+                            ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                            : moonshot.tier === 'MODERATE'
+                            ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40'
+                            : 'bg-rose-500/20 text-rose-400 border-rose-500/30'
+                        }`}
+                      >
+                        <span>{candidate.token.symbol}</span>
+                        <span className="font-mono">({moonshot.moonshotScore}%)</span>
+                        <ChevronDown
+                          className={`w-2.5 h-2.5 transition-transform duration-200 ${
+                            isMoonshotDetailsOpen ? 'rotate-180' : ''
+                          }`}
+                        />
+                      </button>
+                    ) : (
+                      <span className="text-[9px] text-zinc-500 font-mono">Scanning...</span>
+                    )}
+                  </div>
+
+                  {/* Collapsible Moonshot Pump Thesis Drawer */}
+                  {isMoonshotDetailsOpen && moonshot && (
+                    <div className="mt-2 p-2 rounded-lg bg-zinc-900/90 border border-zinc-700/60 text-[10px] space-y-1.5 animate-fadeIn">
+                      <div className="flex items-center justify-between font-bold">
+                        <span
+                          className={`text-[9px] px-1.5 py-0.2 rounded font-black ${
+                            moonshot.tier === 'SUPERNOVA'
+                              ? 'text-amber-300 bg-amber-500/20'
+                              : moonshot.tier === 'HIGH_POTENTIAL'
+                              ? 'text-emerald-400 bg-emerald-500/20'
+                              : moonshot.tier === 'MODERATE'
+                              ? 'text-cyan-400 bg-cyan-500/20'
+                              : 'text-rose-400 bg-rose-500/20'
+                          }`}
+                        >
+                          {moonshot.tier === 'SUPERNOVA' ? '🚀 1000x SUPERNOVA' : moonshot.tier}
+                        </span>
+                        <span className="font-mono text-zinc-300">
+                          Score: <strong className="text-emerald-400 font-bold">{moonshot.moonshotScore}%</strong>
+                        </span>
+                      </div>
+
+                      <p className="text-[9px] text-zinc-300 leading-relaxed italic border-l-2 border-amber-400/80 pl-1.5 bg-zinc-950/40 py-1 rounded-r">
+                        {moonshot.pumpThesis}
+                      </p>
+
+                      <div className="grid grid-cols-2 gap-1 text-[8px] font-mono pt-1 text-zinc-400">
+                        <div className="bg-zinc-950/80 p-1 rounded border border-zinc-800">
+                          <span>Order Flow: </span>
+                          <strong className="text-emerald-400">
+                            {moonshot.pillars.orderFlow.txVelocityPerSec} Tx/s ({moonshot.pillars.orderFlow.buySellRatio.toFixed(1)}x)
+                          </strong>
+                        </div>
+                        <div className="bg-zinc-950/80 p-1 rounded border border-zinc-800">
+                          <span>Top 10: </span>
+                          <strong
+                            className={
+                              moonshot.pillars.distribution.isBundlingDetected
+                                ? 'text-rose-400'
+                                : 'text-cyan-400'
+                            }
+                          >
+                            {moonshot.pillars.distribution.top10HolderPct}%{' '}
+                            {moonshot.pillars.distribution.isBundlingDetected ? 'BUNDLED' : 'Clean'}
+                          </strong>
+                        </div>
+                        <div className="bg-zinc-950/80 p-1 rounded border border-zinc-800">
+                          <span>Smart Money: </span>
+                          <strong
+                            className={
+                              moonshot.pillars.smartMoney.detectedCount > 0
+                                ? 'text-amber-400'
+                                : 'text-zinc-500'
+                            }
+                          >
+                            {moonshot.pillars.smartMoney.detectedCount} Wallets Active
+                          </strong>
+                        </div>
+                        <div className="bg-zinc-950/80 p-1 rounded border border-zinc-800">
+                          <span>Security Wall: </span>
+                          <strong
+                            className={
+                              moonshot.pillars.security.isAbsoluteSafe
+                                ? 'text-emerald-400'
+                                : 'text-rose-400'
+                            }
+                          >
+                            {moonshot.pillars.security.isAbsoluteSafe
+                              ? 'Mint/Freeze Revoked'
+                              : 'BREACH'}
+                          </strong>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
           <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-purple-500/40 via-purple-500/20 to-transparent" />
         </div>

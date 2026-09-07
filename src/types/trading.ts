@@ -8,6 +8,7 @@ import {
   AgentThresholds,
   AutoSnipeConfig
 } from './terminal';
+export type { ActivePosition };
 import { ExecutionConfig } from '../components/ExecutionSettingsModal';
 import type { WebhookTelegramConfig, WebhookDiscordConfig } from '../context/TradingContext';
 

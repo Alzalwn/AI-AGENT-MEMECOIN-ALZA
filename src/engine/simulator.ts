@@ -36,6 +36,15 @@ export function generateRandomTokenSignal(): TokenSignal {
     rugcheckScore = 'WARNING';
   }
 
+  const volumeDelta15s = isTrap ? +(Math.random() * 2 - 2.5).toFixed(2) : +(Math.random() * 8 + 1.2).toFixed(2);
+  const uniqueBuyersCount = isTrap ? Math.floor(Math.random() * 2) + 1 : Math.floor(Math.random() * 12) + 4;
+  const txVelocityPerSec = isTrap ? +(Math.random() * 2 + 0.3).toFixed(1) : +(Math.random() * 14 + 3.5).toFixed(1);
+  const buySellRatio = isTrap ? +(Math.random() * 0.8 + 0.3).toFixed(1) : +(Math.random() * 4.5 + 2.0).toFixed(1);
+  const smartMoneyCount = isTrap ? 0 : (Math.random() > 0.4 ? Math.floor(Math.random() * 3) + 1 : 0);
+  const smartMoneyWallets = smartMoneyCount > 0
+    ? ['Alpha Whale #1 (Ansem Clan)', 'Pump.fun 100x Early Sniper'].slice(0, smartMoneyCount)
+    : undefined;
+
   return {
     id: `SIG-${Date.now().toString().slice(-5)}`,
     mint,
@@ -47,8 +56,12 @@ export function generateRandomTokenSignal(): TokenSignal {
     mintAuthorityRevoked,
     freezeAuthorityRevoked,
     top10HolderPct,
-    volumeDelta15s: isTrap ? +(Math.random() * 2 - 2.5).toFixed(2) : +(Math.random() * 8 + 1.2).toFixed(2),
-    uniqueBuyersCount: isTrap ? Math.floor(Math.random() * 2) + 1 : Math.floor(Math.random() * 12) + 4,
+    volumeDelta15s,
+    uniqueBuyersCount,
+    txVelocityPerSec,
+    buySellRatio,
+    smartMoneyCount,
+    smartMoneyWallets,
     narrativeCosineSim: isTrap ? +(Math.random() * 0.4 + 0.3).toFixed(2) : +(Math.random() * 0.14 + 0.86).toFixed(2),
     narrativeTheme: meta.theme,
     priceSol: +(Math.random() * 0.0004 + 0.00001).toFixed(6),

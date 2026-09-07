@@ -20,7 +20,8 @@ import {
   Grid,
   ChevronDown,
   ChevronsUpDown,
-  Maximize2
+  Maximize2,
+  Rocket
 } from 'lucide-react';
 import { ClosedTrade } from '../../types/terminal';
 import StrategyRadar from '../StrategyRadar';
@@ -299,6 +300,178 @@ export const ConsensusEvaluator: React.FC<ConsensusEvaluatorProps> = ({
                 </span>
               </div>
             </div>
+
+            {/* Moonshot Predictor Engine (Pump Potential Matrix) */}
+            {targetResult.moonshot && (
+              <div className="bg-zinc-950/90 border border-zinc-800/90 rounded-xl p-3 space-y-2.5 shadow-md">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                      <Rocket className="w-4 h-4 animate-bounce" />
+                    </div>
+                    <div>
+                      <span className="text-[11px] font-black uppercase tracking-wider text-zinc-100 flex items-center gap-1.5">
+                        Moonshot Predictor Engine
+                        <span
+                          className={`text-[9px] px-2 py-0.5 rounded font-black tracking-normal ${
+                            targetResult.moonshot.tier === 'SUPERNOVA'
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 shadow-[0_0_10px_rgba(245,158,11,0.4)]'
+                              : targetResult.moonshot.tier === 'HIGH_POTENTIAL'
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                              : targetResult.moonshot.tier === 'MODERATE'
+                              ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40'
+                              : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                          }`}
+                        >
+                          {targetResult.moonshot.tier === 'SUPERNOVA' ? '🚀 SUPERNOVA (1000x)' : targetResult.moonshot.tier}
+                        </span>
+                      </span>
+                      <span className="text-[9px] text-zinc-500 block">
+                        Multi-Factor On-Chain Momentum & Anti-Rug Algorithmic Classifier
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <span className="text-[10px] text-zinc-500 block">Pump Probability</span>
+                    <span
+                      className={`text-xl font-black font-mono tracking-tight ${
+                        targetResult.moonshot.moonshotScore >= 80
+                          ? 'text-amber-400'
+                          : targetResult.moonshot.moonshotScore >= 60
+                          ? 'text-emerald-400'
+                          : targetResult.moonshot.moonshotScore >= 40
+                          ? 'text-cyan-400'
+                          : 'text-rose-400'
+                      }`}
+                    >
+                      {targetResult.moonshot.moonshotScore}%
+                    </span>
+                  </div>
+                </div>
+
+                {/* Animated Probability Progress Bar */}
+                <div className="w-full bg-zinc-900 rounded-full h-2 overflow-hidden border border-zinc-800 p-0.5">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      targetResult.moonshot.moonshotScore >= 80
+                        ? 'bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-400 shadow-[0_0_10px_rgba(245,158,11,0.5)]'
+                        : targetResult.moonshot.moonshotScore >= 60
+                        ? 'bg-gradient-to-r from-emerald-500 to-cyan-400'
+                        : targetResult.moonshot.moonshotScore >= 40
+                        ? 'bg-gradient-to-r from-cyan-500 to-blue-500'
+                        : 'bg-gradient-to-r from-rose-600 to-rose-400'
+                    }`}
+                    style={{ width: `${Math.max(4, targetResult.moonshot.moonshotScore)}%` }}
+                  />
+                </div>
+
+                {/* 4 Quantitative Pillar Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] pt-1">
+                  {/* Pillar 1: Order Flow */}
+                  <div className="bg-zinc-900/60 p-2 rounded-xl border border-zinc-800/80 flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-zinc-400 text-[9px]">
+                      <span>1. Order Flow</span>
+                      <span className="font-bold text-emerald-400">
+                        {targetResult.moonshot.pillars.orderFlow.score}/30
+                      </span>
+                    </div>
+                    <div className="mt-1">
+                      <span className="font-bold text-zinc-200 block text-[11px]">
+                        {targetResult.moonshot.pillars.orderFlow.txVelocityPerSec} Tx/s
+                      </span>
+                      <span className="text-[9px] text-zinc-500">
+                        Buy/Sell: <strong className="text-emerald-400">{targetResult.moonshot.pillars.orderFlow.buySellRatio.toFixed(1)}x</strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Pillar 2: Anti-Bundling */}
+                  <div className="bg-zinc-900/60 p-2 rounded-xl border border-zinc-800/80 flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-zinc-400 text-[9px]">
+                      <span>2. Anti-Bundling</span>
+                      <span
+                        className={`font-bold ${
+                          targetResult.moonshot.pillars.distribution.isBundlingDetected
+                            ? 'text-rose-400'
+                            : 'text-emerald-400'
+                        }`}
+                      >
+                        {targetResult.moonshot.pillars.distribution.score}/25
+                      </span>
+                    </div>
+                    <div className="mt-1">
+                      <span className="font-bold text-zinc-200 block text-[11px]">
+                        Top 10: {targetResult.moonshot.pillars.distribution.top10HolderPct}%
+                      </span>
+                      <span
+                        className={`text-[9px] font-bold ${
+                          targetResult.moonshot.pillars.distribution.isBundlingDetected
+                            ? 'text-rose-400'
+                            : 'text-cyan-400'
+                        }`}
+                      >
+                        {targetResult.moonshot.pillars.distribution.isBundlingDetected
+                          ? 'BUNDLING DUMP RISK'
+                          : 'Organic Distribution'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Pillar 3: Smart Money */}
+                  <div className="bg-zinc-900/60 p-2 rounded-xl border border-zinc-800/80 flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-zinc-400 text-[9px]">
+                      <span>3. Smart Money</span>
+                      <span className="font-bold text-amber-400">
+                        {targetResult.moonshot.pillars.smartMoney.score}/25
+                      </span>
+                    </div>
+                    <div className="mt-1">
+                      <span className="font-bold text-zinc-200 block text-[11px]">
+                        {targetResult.moonshot.pillars.smartMoney.detectedCount} Whales In
+                      </span>
+                      <span className="text-[9px] text-zinc-500 truncate block">
+                        {targetResult.moonshot.pillars.smartMoney.walletLabels[0] || 'Retail Organic'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Pillar 4: Absolute Security */}
+                  <div className="bg-zinc-900/60 p-2 rounded-xl border border-zinc-800/80 flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-zinc-400 text-[9px]">
+                      <span>4. Absolute Safety</span>
+                      <span
+                        className={`font-bold ${
+                          targetResult.moonshot.pillars.security.isAbsoluteSafe
+                            ? 'text-emerald-400'
+                            : 'text-rose-400'
+                        }`}
+                      >
+                        {targetResult.moonshot.pillars.security.score}/20
+                      </span>
+                    </div>
+                    <div className="mt-1">
+                      <span className="font-bold text-zinc-200 block text-[11px]">
+                        {targetResult.moonshot.pillars.security.isAbsoluteSafe ? 'CLEAN AUDIT' : 'BREACH'}
+                      </span>
+                      <span className="text-[9px] text-zinc-500">
+                        LP Burn: <strong className="text-emerald-400">{targetResult.moonshot.pillars.security.lpBurntPct}%</strong>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Algorithmic Pump Thesis Statement */}
+                <div className="p-2 rounded-lg bg-zinc-900/80 border border-zinc-800 text-[10px] space-y-1">
+                  <span className="text-zinc-500 font-bold block text-[9px] uppercase tracking-wider">
+                    Quantitative Pump Thesis:
+                  </span>
+                  <p className="text-zinc-300 leading-relaxed font-mono">
+                    {targetResult.moonshot.pumpThesis}
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Key Security Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">

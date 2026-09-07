@@ -1,5 +1,5 @@
 import { evaluateExitAgent } from '../src/agents/exit';
-import { ActivePosition } from '../src/types/trading';
+import { ActivePosition } from '../src/types/terminal';
 
 console.log('=================================================================');
 console.log('🧪 SIMULATION TEST: SMART ARBITER & DYNAMIC EXIT AGENT');
@@ -8,24 +8,22 @@ console.log('=================================================================\n
 const createBasePosition = (overrides: Partial<ActivePosition> = {}): ActivePosition => ({
   id: 'sim-pos-1',
   token: {
-    address: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+    id: 'sig-test-1',
+    mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
     symbol: 'BONK_SIM',
     name: 'Bonk Simulation',
-    decimals: 5,
-    priceSol: 0.0001,
-    liquidityUsd: 150000,
-    volume24h: 800000,
-    fdv: 5000000,
-    createdAt: Date.now() - 30000,
-    hasSocials: true,
-    freezeAuthorityRevoked: true,
+    platform: 'Pump.fun',
+    initialLpUsd: 150000,
+    burntLiquidityPct: 100,
     mintAuthorityRevoked: true,
-    top10HoldersPct: 18,
-    isHoneypot: false,
-    buyTax: 0,
-    sellTax: 0,
+    freezeAuthorityRevoked: true,
+    top10HolderPct: 18,
+    volumeDelta15s: 5.5,
+    uniqueBuyersCount: 12,
     narrativeCosineSim: 0.92,
-    smartMoneyCount: 5
+    narrativeTheme: 'ai agent',
+    priceSol: 0.0001,
+    detectedAt: Date.now() - 30000
   },
   entryPriceSol: 0.0001,
   currentPriceSol: 0.0001,
@@ -37,6 +35,7 @@ const createBasePosition = (overrides: Partial<ActivePosition> = {}): ActivePosi
   pnlPct: 0,
   rMultiplier: 0,
   entryTimestamp: Date.now() - 30000, // 30s ago
+  status: 'OPEN',
   targetTpPct: 100,
   stopLossPct: -25,
   trailingDistancePct: 15,

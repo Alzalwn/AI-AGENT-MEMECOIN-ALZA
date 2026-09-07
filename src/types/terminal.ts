@@ -32,6 +32,55 @@ export interface TokenSignal {
   rugcheckReportUrl?: string;
   creatorAddress?: string;
   creatorBalancePct?: number;
+  // Moonshot Predictor & Order Flow Metrics
+  txVelocityPerSec?: number;
+  buySellRatio?: number;
+  smartMoneyCount?: number;
+  smartMoneyWallets?: string[];
+  moonshot?: MoonshotVerdict;
+}
+
+export interface MoonshotPillars {
+  orderFlow: {
+    score: number; // max 30
+    txVelocityPerSec: number;
+    buySellRatio: number;
+    uniqueBuyersCount: number;
+    status: 'EXPLOSIVE' | 'HEALTHY' | 'WEAK';
+  };
+  distribution: {
+    score: number; // max 25
+    top10HolderPct: number;
+    creatorBalancePct?: number;
+    isBundlingDetected: boolean;
+    status: 'ORGANIC' | 'ACCEPTABLE' | 'BUNDLED_RISK';
+  };
+  smartMoney: {
+    score: number; // max 25
+    detectedCount: number;
+    walletLabels: string[];
+    status: 'ALPHA_WHALE_IN' | 'INSIDER_DETECTED' | 'RETAIL_ONLY';
+  };
+  security: {
+    score: number; // max 20
+    mintRevoked: boolean;
+    freezeRevoked: boolean;
+    lpBurntPct: number;
+    isHoneypot: boolean;
+    isAbsoluteSafe: boolean;
+  };
+}
+
+export interface MoonshotVerdict {
+  tokenMint: string;
+  symbol: string;
+  moonshotScore: number; // 0 - 100%
+  tier: 'SUPERNOVA' | 'HIGH_POTENTIAL' | 'MODERATE' | 'VETOED';
+  isApproved: boolean;
+  vetoReason?: string;
+  pumpThesis: string;
+  pillars: MoonshotPillars;
+  timestamp: number;
 }
 
 export interface AgentVerdict {
@@ -52,6 +101,7 @@ export interface ConsensusResult {
   verdicts: Record<AgentId, AgentVerdict>;
   consensusLatencyMs: number;
   timestamp: number;
+  moonshot?: MoonshotVerdict;
 }
 
 export interface ActivePosition {
