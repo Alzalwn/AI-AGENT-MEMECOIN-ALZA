@@ -46,6 +46,8 @@ import { rpcFailoverInstance } from '../lib/rpcFailover';
 import { fetchJupiterQuote, executeJupiterSwap, SwapExecutionResult } from '../lib/jupiter';
 import { HeliusBlockchainStream } from '../lib/heliusStream';
 import { verifySafeToSell } from '../lib/honeypot';
+import { positionMutex } from '../engine/mutex';
+import { calculateSolanaPnl, parseRawTokenUnits, lamportsToSol } from '../lib/solanaMath';
 
 // Extended configs with minGrokScore (not part of base lib type)
 export interface WebhookTelegramConfig extends TelegramConfig {
@@ -105,7 +107,52 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isAudioMuted, setIsAudioMuted] = useState<boolean>(() => soundFx.getIsMuted());
 
   // Positions & Trades — persisted in localStorage (max 200 entries)
-  const [activePosition, setActivePosition] = useState<ActivePosition | null>(null);
+  const [activePosition, setActivePositionState] = useState<ActivePosition | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('GT_ACTIVE_POSITION');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.token && parsed.token.mint) {
+            positionMutex.acquireLock(parsed.token.mint);
+            return parsed;
+          }
+        }
+      } catch {}
+    }
+    return null;
+  });
+
+  const activePositionRef = useRef<ActivePosition | null>(activePosition);
+  const isPositionOpenRef = useRef<boolean>(activePosition !== null);
+
+  const setActivePosition = useCallback((pos: ActivePosition | null | ((prev: ActivePosition | null) => ActivePosition | null)) => {
+    setActivePositionState((prev) => {
+      const next = typeof pos === 'function' ? pos(prev) : pos;
+      activePositionRef.current = next;
+      isPositionOpenRef.current = next !== null;
+      if (typeof window !== 'undefined') {
+        try {
+          if (next) {
+            localStorage.setItem('GT_ACTIVE_POSITION', JSON.stringify(next));
+          } else {
+            localStorage.removeItem('GT_ACTIVE_POSITION');
+          }
+        } catch {}
+      }
+      return next;
+    });
+  }, []);
+
+  // Synchronize telemetry activePositionLocked with PositionMutex
+  useEffect(() => {
+    return positionMutex.subscribe((isLocked) => {
+      setTelemetry((prev) => ({
+        ...prev,
+        activePositionLocked: isLocked
+      }));
+    });
+  }, []);
   const [closedTrades, setClosedTradesState] = useState<ClosedTrade[]>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -399,19 +446,25 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const openLivePosition = useCallback(
     async (result: SwapExecutionResult, tokenSignal?: TokenSignal | null) => {
       // 1. Single Position Mutex Guard check
-      if (activePosition) {
+      if (activePositionRef.current) {
         appendLog(
           'EXECUTION',
           'WARN',
-          `[MUTEX GUARD] Blocked: Posisi aktif ${activePosition.token.symbol} sedang berjalan. Mutex mencegah pembukaan posisi ganda.`
+          `[MUTEX GUARD] Blocked: Posisi aktif ${activePositionRef.current.token.symbol} sedang berjalan. Mutex mencegah pembukaan posisi ganda.`
         );
         return;
       }
 
       const solInvest = result.inAmountSol || 0.1;
-      const cleanOutStr = (result.outAmountFormatted || '1').replace(/,/g, '');
-      const tokenAmt = parseFloat(cleanOutStr) || 1;
-      const entryPrice = +(solInvest / tokenAmt).toFixed(8);
+      // Parse token amount with true decimal support
+      const tokenAmt = typeof result.tokenAmountUi === 'number' && result.tokenAmountUi > 0
+        ? result.tokenAmountUi
+        : (parseFloat((result.outAmountFormatted || '1').replace(/,/g, '')) || 1);
+      
+      let entryPrice = +(solInvest / tokenAmt).toFixed(8);
+      if (tokenSignal && tokenSignal.priceSol > 0 && (entryPrice <= 0 || entryPrice > 1000)) {
+        entryPrice = tokenSignal.priceSol;
+      }
 
       // 2. Resolve token metadata
       let token: TokenSignal;
@@ -481,8 +534,12 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       priceSamplesRef.current = [{ price: entryPrice, timestamp: Date.now() }];
 
-      // 3. Update state immediately (Requirement 1 & 4)
+      // 3. Mark Mutex buy completed & update active position state & refs synchronously
+      positionMutex.markBuyCompleted(token.mint);
+      activePositionRef.current = newPos;
+      isPositionOpenRef.current = true;
       setActivePosition(newPos);
+
       setTelemetry((prev) => ({
         ...prev,
         activePositionLocked: true, // SINGLE POSITION MUTEX GUARD ACTIVE!
@@ -501,7 +558,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         `🎯 [ON-CHAIN CONFIRMED] Posisi aktif dibuka: ${token.symbol} (${tokenAmt.toLocaleString()} token) @ ${entryPrice.toFixed(8)} SOL [Tx: ${shortSig}] • MUTEX GUARD LOCKED`
       );
 
-      // 4. Refresh live on-chain balance immediately (Requirement 2)
+      // 4. Refresh live on-chain balance immediately
       await refreshWalletBalance();
 
       // 5. Omnichannel webhooks
@@ -512,122 +569,200 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         sendDiscordBuyAlert(token, discordConfig, solInvest, result.signature, result.jitoTipSol);
       }
     },
-    [activePosition, consensusFeed, agentConfig, appendLog, refreshWalletBalance, telegramConfig, discordConfig]
+    [consensusFeed, agentConfig, autoSnipeConfig, appendLog, setActivePosition, refreshWalletBalance, telegramConfig, discordConfig]
+  );
+
+  // Core On-Chain & Paper Sell Executor (Requirement 1 & 3)
+  const executeSell = useCallback(
+    async (pos: ActivePosition, reason: string, percentage: number = 100) => {
+      if (!pos || pos.status === 'CLOSING' || pos.status === 'CLOSED') return;
+      const isFull = percentage >= 100;
+      appendLog('EXECUTION', 'INFO', `⚡ [AUTO-SELL] Mengeksekusi sell ${percentage}% untuk ${pos.token.symbol} (${reason})...`);
+
+      // 1. Mark CLOSING state immediately in UI & ref
+      setActivePosition((prev) => (prev ? { ...prev, status: 'CLOSING' } : null));
+      positionMutex.markSelling(pos.token.mint);
+
+      let exitPriceSol = pos.currentPriceSol;
+      let isSoldOnChain = false;
+
+      if (walletState.mode === 'LIVE_ON_CHAIN') {
+        try {
+          // Jalur A: Server Hot Wallet via /api/bot/execute-sell
+          const sellRes = await fetch('/api/bot/execute-sell', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mint: pos.token.mint,
+              percentage,
+              slippageBps: 250,
+              jitoTipSol: 0.0001
+            })
+          });
+
+          const sellData = await sellRes.json();
+          if (sellData.success && sellData.signature) {
+            appendLog('JITO', 'SUCCESS', `⚡ [ON-CHAIN SELL CONFIRMED] Tx: https://solscan.io/tx/${sellData.signature}`);
+            if (sellData.solReceived && pos.tokenAmount > 0) {
+              exitPriceSol = +(sellData.solReceived / (pos.tokenAmount * (percentage / 100))).toFixed(8);
+            }
+            isSoldOnChain = true;
+          } else if (sellData.requiresClientSign) {
+            // Jalur B: Client-side Phantom wallet sell via Jupiter
+            let provider = typeof window !== 'undefined'
+              ? ((window as any).phantom?.solana || (window as any).solana || (window as any).solflare || (window as any).backpack)
+              : null;
+            const pubKey = walletState.fullPublicKey || provider?.publicKey?.toString();
+            if (provider && pubKey) {
+              appendLog('EXECUTION', 'INFO', `🟡 [PHANTOM SELL] Meminta tanda tangan transaksi jual di dompet untuk ${pos.token.symbol}...`);
+              const quote = await fetchJupiterQuote(
+                'So11111111111111111111111111111111111111112',
+                pos.solInvested * (percentage / 100),
+                250
+              );
+              const swapRes = await executeJupiterSwap(
+                quote,
+                'SOL',
+                0.0001,
+                networkMetrics.currentSlot,
+                pubKey,
+                provider
+              );
+              if (swapRes.signature) {
+                appendLog('JITO', 'SUCCESS', `⚡ [PHANTOM SELL CONFIRMED] Tx: https://solscan.io/tx/${swapRes.signature}`);
+                isSoldOnChain = true;
+              }
+            } else {
+              appendLog('EXECUTION', 'WARN', `⚠️ Dompet tidak terhubung untuk sign sell on-chain. Menutup posisi secara lokal.`);
+              isSoldOnChain = true;
+            }
+          } else {
+            appendLog('EXECUTION', 'WARN', `Sell on-chain gagal: ${sellData.error || 'Unknown error'}. Menutup posisi secara lokal.`);
+            isSoldOnChain = true;
+          }
+        } catch (sellErr: any) {
+          appendLog('EXECUTION', 'DANGER', `Error saat executeSell: ${sellErr.message}. Menutup posisi secara lokal.`);
+          isSoldOnChain = true;
+        }
+      } else {
+        // Paper trading mode
+        isSoldOnChain = true;
+      }
+
+      if (isSoldOnChain) {
+        const { pnlPct, pnlSol, rMultiplier } = calculateSolanaPnl(pos.solInvested, pos.entryPriceSol, exitPriceSol);
+        if (pnlSol >= 0) {
+          soundFx.playTakeProfit();
+        } else {
+          soundFx.playEmergencyExit();
+        }
+
+        const closed: ClosedTrade = {
+          id: pos.id,
+          token: pos.token,
+          entryPriceSol: pos.entryPriceSol,
+          exitPriceSol,
+          solInvested: pos.solInvested,
+          pnlSol,
+          pnlPct,
+          rMultiplier,
+          holdDurationSec: Math.round((Date.now() - pos.entryTimestamp) / 1000),
+          exitReason: reason,
+          entryTimestamp: pos.entryTimestamp,
+          exitTimestamp: Date.now(),
+          jitoTipSol: 0.00005
+        };
+
+        if (isFull) {
+          setClosedTrades((prev) => [closed, ...prev]);
+          setActivePosition(null);
+          priceSamplesRef.current = [];
+
+          // MUTEX RELEASE WITH 10-MINUTE ANTI-SPAM COOLDOWN
+          positionMutex.releaseLock(pos.token.mint, 600000);
+          isPositionOpenRef.current = false;
+          activePositionRef.current = null;
+
+          setTelemetry((prev) => ({
+            ...prev,
+            activePositionLocked: false,
+            totalPnlSol: +(prev.totalPnlSol + pnlSol).toFixed(3),
+            currentBalanceSol: +(prev.currentBalanceSol + pos.solInvested + pnlSol).toFixed(3),
+            winCount: pnlSol >= 0 ? prev.winCount + 1 : prev.winCount,
+            lossCount: pnlSol < 0 ? prev.lossCount + 1 : prev.lossCount
+          }));
+
+          await refreshWalletBalance();
+
+          if (telegramConfig.isEnabled) {
+            sendTelegramExitAlert(closed, telegramConfig);
+          }
+          if (discordConfig.isEnabled) {
+            sendDiscordExitAlert(closed, discordConfig);
+          }
+
+          appendLog(
+            'EXECUTION',
+            pnlSol >= 0 ? 'SUCCESS' : 'DANGER',
+            `🎯 [POSITION FULLY CLOSED] ${pos.token.symbol} (${pnlPct >= 0 ? '+' : ''}${pnlPct}%, ${pnlSol >= 0 ? '+' : ''}${pnlSol} SOL) • Alasan: ${reason} • MUTEX RELEASED`
+          );
+        } else {
+          // Partial sell (e.g. 50%)
+          const portion = percentage / 100;
+          const freedInvest = +(pos.solInvested * portion).toFixed(4);
+          const freedPnlSol = +(pnlSol * portion).toFixed(4);
+
+          setTelemetry((prev) => ({
+            ...prev,
+            totalPnlSol: +(prev.totalPnlSol + freedPnlSol).toFixed(3),
+            currentBalanceSol: +(prev.currentBalanceSol + freedInvest + freedPnlSol).toFixed(3)
+          }));
+
+          setActivePosition((prev) => {
+            if (!prev) return null;
+            const updated = {
+              ...prev,
+              status: 'OPEN' as const,
+              solInvested: +(prev.solInvested * (1 - portion)).toFixed(4),
+              tokenAmount: Math.round(prev.tokenAmount * (1 - portion)),
+              pnlSol: +(prev.pnlSol * (1 - portion)).toFixed(4)
+            };
+            activePositionRef.current = updated;
+            return updated;
+          });
+
+          await refreshWalletBalance();
+          appendLog('EXECUTION', 'SUCCESS', `🎯 [PARTIAL PROFIT] Sold ${percentage}% ${pos.token.symbol} (+${freedPnlSol} SOL)`);
+        }
+      }
+    },
+    [walletState.mode, walletState.fullPublicKey, networkMetrics.currentSlot, appendLog, setActivePosition, setClosedTrades, refreshWalletBalance, telegramConfig, discordConfig]
   );
 
   // EMERGENCY KILL-SWITCH
   const emergencyKillSwitch = useCallback(() => {
     setEngineStatus('PAUSED');
     soundFx.playEmergencyExit();
-
-    if (activePosition) {
-      const closed: ClosedTrade = {
-        id: activePosition.id,
-        token: activePosition.token,
-        entryPriceSol: activePosition.entryPriceSol,
-        exitPriceSol: activePosition.currentPriceSol,
-        solInvested: activePosition.solInvested,
-        pnlSol: activePosition.pnlSol,
-        pnlPct: activePosition.pnlPct,
-        rMultiplier: activePosition.rMultiplier,
-        holdDurationSec: Math.round((Date.now() - activePosition.entryTimestamp) / 1000),
-        exitReason: 'EMERGENCY KILL-SWITCH DUMP (Manual Override)',
-        entryTimestamp: activePosition.entryTimestamp,
-        exitTimestamp: Date.now(),
-        jitoTipSol: 0.00005
-      };
-
-      setClosedTrades((prev) => [closed, ...prev]);
-      setActivePosition(null);
-      priceSamplesRef.current = [];
-      setTelemetry((prev) => ({
-        ...prev,
-        activePositionLocked: false,
-        totalPnlSol: +(prev.totalPnlSol + activePosition.pnlSol).toFixed(3),
-        currentBalanceSol: +(prev.currentBalanceSol + activePosition.solInvested + activePosition.pnlSol).toFixed(3)
-      }));
-      refreshWalletBalance();
-
-      appendLog('EXECUTION', 'DANGER', `KILL-SWITCH ACTIVATED: Liquidated ${activePosition.token.symbol} (${activePosition.pnlPct}%)`);
+    if (activePositionRef.current) {
+      executeSell(activePositionRef.current, 'EMERGENCY KILL-SWITCH DUMP (Manual Override)', 100);
     } else {
       appendLog('SYSTEM', 'WARN', 'KILL-SWITCH ACTIVATED: All autonomous trading halted immediately');
     }
-  }, [activePosition, appendLog, refreshWalletBalance]);
+  }, [executeSell, appendLog]);
 
   // Quick Sell Position (50% or 100%)
-  const quickSellPosition = useCallback((percentage: number) => {
-    if (!activePosition) return;
-    const isFull = percentage >= 100;
+  const quickSellPosition = useCallback(
+    (percentage: number) => {
+      if (!activePositionRef.current) return;
+      executeSell(activePositionRef.current, `Manual Quick Sell (${percentage}%)`, percentage);
+    },
+    [executeSell]
+  );
 
-    if (isFull) {
-      if (activePosition.pnlSol >= 0) {
-        soundFx.playTakeProfit();
-      } else {
-        soundFx.playEmergencyExit();
-      }
-      const closed: ClosedTrade = {
-        id: activePosition.id,
-        token: activePosition.token,
-        entryPriceSol: activePosition.entryPriceSol,
-        exitPriceSol: activePosition.currentPriceSol,
-        solInvested: activePosition.solInvested,
-        pnlSol: activePosition.pnlSol,
-        pnlPct: activePosition.pnlPct,
-        rMultiplier: activePosition.rMultiplier,
-        holdDurationSec: Math.round((Date.now() - activePosition.entryTimestamp) / 1000),
-        exitReason: `Manual Full Dump (100% Position)`,
-        entryTimestamp: activePosition.entryTimestamp,
-        exitTimestamp: Date.now(),
-        jitoTipSol: 0.00005
-      };
-
-      setClosedTrades((prev) => [closed, ...prev]);
-      setActivePosition(null);
-      priceSamplesRef.current = [];
-      setTelemetry((prev) => ({
-        ...prev,
-        activePositionLocked: false,
-        totalPnlSol: +(prev.totalPnlSol + activePosition.pnlSol).toFixed(3),
-        currentBalanceSol: +(prev.currentBalanceSol + activePosition.solInvested + activePosition.pnlSol).toFixed(3)
-      }));
-      refreshWalletBalance();
-
-      // Omnichannel Exit Alerts
-      if (telegramConfig.isEnabled) {
-        sendTelegramExitAlert(closed, telegramConfig);
-      }
-      if (discordConfig.isEnabled) {
-        sendDiscordExitAlert(closed, discordConfig);
-      }
-
-      appendLog('EXECUTION', 'SUCCESS', `Sold 100% ${activePosition.token.symbol} for ${activePosition.pnlSol} SOL PnL`);
-    } else {
-      // 50% partial take-profit
-      const portion = percentage / 100;
-      const realizedSol = +(activePosition.pnlSol * portion).toFixed(4);
-      const freedInvestment = +(activePosition.solInvested * portion).toFixed(4);
-
-      setTelemetry((prev) => ({
-        ...prev,
-        totalPnlSol: +(prev.totalPnlSol + realizedSol).toFixed(3),
-        currentBalanceSol: +(prev.currentBalanceSol + freedInvestment + realizedSol).toFixed(3)
-      }));
-
-      setActivePosition((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          solInvested: +(prev.solInvested * (1 - portion)).toFixed(4),
-          tokenAmount: Math.round(prev.tokenAmount * (1 - portion)),
-          pnlSol: +(prev.pnlSol * (1 - portion)).toFixed(4)
-        };
-      });
-
-      appendLog('EXECUTION', 'SUCCESS', `Took Partial Profit (${percentage}%) on ${activePosition.token.symbol} (+${realizedSol} SOL)`);
-    }
-  }, [activePosition, appendLog, telegramConfig, discordConfig, refreshWalletBalance]);
-
-  const manualExitPosition = useCallback(() => quickSellPosition(100), [quickSellPosition]);
+  const manualExitPosition = useCallback(() => {
+    if (!activePositionRef.current) return;
+    executeSell(activePositionRef.current, 'Manual Full Dump (100%)', 100);
+  }, [executeSell]);
 
   // Snipe Manual Mint CA
   const snipeManualMint = useCallback(async (mint: string) => {
@@ -729,10 +864,29 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (!pendingSnipeConfirmation) return;
     const { token, solInvest } = pendingSnipeConfirmation;
 
+    // Mutex check
+    if (positionMutex.isPositionOpen() || isPositionOpenRef.current || activePositionRef.current !== null) {
+      appendLog('RISK', 'WARN', `[MUTEX GUARD] Tidak dapat membuka posisi ${token.symbol}: Posisi aktif sedang berjalan.`);
+      setPendingSnipeConfirmation(null);
+      return;
+    }
+
+    const locked = positionMutex.acquireLock(token.mint);
+    if (!locked) {
+      appendLog('RISK', 'WARN', `[MUTEX BLOCKED] Pembelian ${token.symbol} ditolak oleh Mutex Guard.`);
+      setPendingSnipeConfirmation(null);
+      return;
+    }
+    isPositionOpenRef.current = true;
+    setTelemetry((prev) => ({ ...prev, activePositionLocked: true }));
+
     // Last-Second Pre-flight Honeypot Guard Check
     const hp = token.honeypotCheck || await verifySafeToSell(token);
     token.honeypotCheck = hp;
     if (!hp.isSafeToSell) {
+      positionMutex.releaseLock(token.mint, 60000);
+      isPositionOpenRef.current = false;
+      setTelemetry((prev) => ({ ...prev, activePositionLocked: false }));
       setSniperStatus('VETOED - HONEYPOT DETECTED');
       appendLog('RISK', 'DANGER', `🛑 [EXECUTION BLOCKED] Token ${token.symbol} terdeteksi sebagai HONEYPOT saat pre-flight final! Transaksi dibatalkan.`);
       soundFx.playEmergencyExit();
@@ -775,6 +929,9 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       holdDurationSec: 0
     };
     priceSamplesRef.current = [{ price: entryPrice, timestamp: Date.now() }];
+    positionMutex.markBuyCompleted(token.mint);
+    activePositionRef.current = newPos;
+    isPositionOpenRef.current = true;
     setActivePosition(newPos);
     setTelemetry((prev) => ({
       ...prev,
@@ -936,11 +1093,16 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   }, [appendLog]);
 
-  // Autonomous Ingestion Loop
+  // Autonomous Ingestion Loop with Synchronous Mutex Guard (Requirement 1 & Anti-Spam)
   useEffect(() => {
     if (engineStatus !== 'AUTONOMOUS') return;
 
     const interval = setInterval(async () => {
+      // 0. STRICT MUTEX CHECK: If a position is open, acquiring, or in-flight, immediately skip
+      if (positionMutex.isPositionOpen() || isPositionOpenRef.current || activePositionRef.current !== null || isAutoSnipingRef.current) {
+        return;
+      }
+
       // Slot increment
       setNetworkMetrics((m) => ({
         ...m,
@@ -977,19 +1139,27 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
             'WARN',
             `🛑 [AUTONOMOUS SHIELD] Token ${consensus.token.symbol} (${consensus.token.mint.slice(0, 8)}...) ditolak oleh Honeypot Shield: ${hp.reason}`
           );
-          // Do NOT hijack manual sniperStatus and do NOT sound emergency alarms for background scans
           return;
         }
 
         soundFx.playApproval();
         appendLog('SCAN', 'SUCCESS', `Signal APPROVED: ${consensus.token.symbol} (Score: ${consensus.token.narrativeCosineSim})`);
 
-        // 1. Single Position Mutex Guard (Requirement 4)
-        if (activePosition !== null || telemetry.activePositionLocked || isAutoSnipingRef.current) {
+        // 1. Synchronous Mutex Guard Check & Anti-Spam Repeat Buy Cooldown
+        if (positionMutex.isPositionOpen() || isPositionOpenRef.current || activePositionRef.current !== null || isAutoSnipingRef.current) {
           appendLog(
             'RISK',
             'WARN',
-            `[MUTEX GUARD ACTIVE] Token ${consensus.token.symbol} lolos 5/5 konsensus, namun Single Position Mutex Guard sedang MENGUNCI slot. Pembelian otomatis ditahan hingga posisi saat ini ditutup.`
+            `[MUTEX GUARD ACTIVE] Token ${consensus.token.symbol} lolos 5/5 konsensus, namun Single Position Mutex Guard sedang MENGUNCI slot. Pembelian otomatis ditahan.`
+          );
+          return;
+        }
+
+        if (positionMutex.isCooldownActive(consensus.token.mint)) {
+          appendLog(
+            'RISK',
+            'WARN',
+            `[ANTI-SPAM COOLDOWN] Token ${consensus.token.symbol} baru saja dibeli/dijual. Mencegah infinite buy loop.`
           );
           return;
         }
@@ -1036,16 +1206,26 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
           }
         }
 
-        // 5. Automated Execution Decision Engine (Requirement 3)
+        // 5. Automated Execution Decision Engine with Synchronous Mutex Lock
         if (walletState.mode === 'LIVE_ON_CHAIN') {
+          // SYNCHRONOUS MUTEX LOCK ACQUISITION
+          const lockAcquired = positionMutex.acquireLock(consensus.token.mint);
+          if (!lockAcquired) {
+            appendLog('RISK', 'WARN', `[MUTEX BLOCKED] Pembelian ${consensus.token.symbol} ditahan: Posisi lain aktif atau token dalam cooldown.`);
+            return;
+          }
+          isPositionOpenRef.current = true;
           isAutoSnipingRef.current = true;
+          setTelemetry((prev) => ({ ...prev, activePositionLocked: true }));
+
           appendLog(
             'EXECUTION',
             'INFO',
-            `⚡ [DECISION ENGINE] Auto-snipe terpicu on-chain untuk ${consensus.token.symbol} (${solInvest} SOL). Memeriksa jalur eksekusi...`
+            `⚡ [DECISION ENGINE] Auto-snipe on-chain ${consensus.token.symbol} (${solInvest} SOL) • MUTEX LOCKED`
           );
 
           (async () => {
+            let buySucceeded = false;
             try {
               // Jalur A: Server-Side Autonomous Hot Wallet (jika private key terpasang di VPS)
               const snipeRes = await fetch('/api/bot/execute-snipe', {
@@ -1063,8 +1243,10 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
               const snipeData = await snipeRes.json();
               if (snipeData.success && snipeData.signature) {
                 appendLog('JITO', 'SUCCESS', `⚡ [SERVER KEYPAIR AUTO-SNIPED] Tx: https://solscan.io/tx/${snipeData.signature}`);
+                positionMutex.markBuyCompleted(consensus.token.mint);
                 await openLivePosition(snipeData, consensus.token);
                 setAutoSnipeConfig((prev) => ({ ...prev, dailyTradesExecuted: prev.dailyTradesExecuted + 1 }));
+                buySucceeded = true;
                 return;
               }
 
@@ -1093,8 +1275,12 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
                   pubKey,
                   provider
                 );
-                await openLivePosition(swapResult, consensus.token);
-                setAutoSnipeConfig((prev) => ({ ...prev, dailyTradesExecuted: prev.dailyTradesExecuted + 1 }));
+                if (swapResult.signature) {
+                  positionMutex.markBuyCompleted(consensus.token.mint);
+                  await openLivePosition(swapResult, consensus.token);
+                  setAutoSnipeConfig((prev) => ({ ...prev, dailyTradesExecuted: prev.dailyTradesExecuted + 1 }));
+                  buySucceeded = true;
+                }
               } else {
                 appendLog(
                   'EXECUTION',
@@ -1106,12 +1292,23 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
               appendLog('EXECUTION', 'DANGER', `Auto-snipe gagal untuk ${consensus.token.symbol}: ${err.message}`);
             } finally {
               isAutoSnipingRef.current = false;
+              if (!buySucceeded) {
+                // If buy failed or aborted, release mutex with cooldown
+                positionMutex.releaseLock(consensus.token.mint, 60000);
+                isPositionOpenRef.current = false;
+                setTelemetry((prev) => ({ ...prev, activePositionLocked: false }));
+              }
             }
           })();
           return;
         }
 
         // PAPER TRADING MODE: Eksekusi simulasi instan
+        const locked = positionMutex.acquireLock(consensus.token.mint);
+        if (!locked) return;
+        isPositionOpenRef.current = true;
+        setTelemetry((prev) => ({ ...prev, activePositionLocked: true }));
+
         const bundleReceipt = createJitoBundleReceipt(
           consensus.token,
           tipSol,
@@ -1125,10 +1322,15 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
           `⚡ JITO TOKYO BUNDLE LANDED: ${bundleReceipt.bundleId} (${bundleReceipt.latencyMs}ms) • Tip: ${tipSol} SOL [Slot #${bundleReceipt.targetSlot}]${isBoosted ? ' 🚀 [BOOSTED]' : ''}`
         );
 
+        const tokenPrice = consensus.token.priceSol > 0 ? consensus.token.priceSol : 0.0001;
+        const simulatedTokens = +(solInvest / tokenPrice).toFixed(4);
+
         const simulatedResult: SwapExecutionResult = {
           signature: bundleReceipt.txHash,
           inAmountSol: solInvest,
-          outAmountFormatted: (solInvest / consensus.token.priceSol).toFixed(2),
+          outAmountFormatted: simulatedTokens.toLocaleString('en-US', { maximumFractionDigits: 4 }),
+          tokenAmountUi: simulatedTokens,
+          decimals: 6,
           outputMint: consensus.token.mint,
           symbol: consensus.token.symbol,
           routeSummary: 'Raydium CPMM + Jito Tokyo Bundle',
@@ -1139,6 +1341,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
           timestamp: Date.now()
         };
 
+        positionMutex.markBuyCompleted(consensus.token.mint);
         openLivePosition(simulatedResult, consensus.token);
       }
     }, 2800);
@@ -1215,13 +1418,11 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         momentumStatus = 'STAGNANT';
       }
 
-      const rawPnlPct = activePosition.entryPriceSol > 0
-        ? ((livePrice - activePosition.entryPriceSol) / activePosition.entryPriceSol) * 100
-        : 0;
-      const pnlPct = +(Math.max(-100, Math.min(10000, rawPnlPct))).toFixed(2);
-      // In spot DEX memecoin trading, PnL in SOL is strictly: solInvested * (pnlPct / 100)
-      const pnlSol = +(activePosition.solInvested * (pnlPct / 100)).toFixed(4);
-      const rMultiplier = +(pnlPct / 15).toFixed(2);
+      const { pnlPct, pnlSol, rMultiplier } = calculateSolanaPnl(
+        activePosition.solInvested,
+        activePosition.entryPriceSol,
+        livePrice
+      );
       const newHigh = Math.max(activePosition.highestPriceSol, livePrice);
 
       const targetTpPct = agentConfig.takeProfitPct ?? activePosition.targetTpPct ?? autoSnipeConfig.takeProfitPct ?? 100;
@@ -1276,56 +1477,15 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       if (exitVerdict.shouldExit) {
         priceSamplesRef.current = [];
-        // Trigger Exit
-        if (exitVerdict.exitType === 'TAKE_PROFIT') {
-          soundFx.playTakeProfit();
-        } else {
-          soundFx.playEmergencyExit();
-        }
-        const closed: ClosedTrade = {
-          id: updatedPos.id,
-          token: updatedPos.token,
-          entryPriceSol: updatedPos.entryPriceSol,
-          exitPriceSol: livePrice,
-          solInvested: updatedPos.solInvested,
-          pnlSol,
-          pnlPct,
-          rMultiplier,
-          holdDurationSec,
-          exitReason: exitVerdict.reason || 'Target Take-Profit / Stop Met',
-          entryTimestamp: updatedPos.entryTimestamp,
-          exitTimestamp: Date.now(),
-          jitoTipSol: 0.00005
-        };
-
-        setClosedTrades((prev) => [closed, ...prev]);
-        setActivePosition(null);
-        setTelemetry((prev) => ({
-          ...prev,
-          activePositionLocked: false,
-          totalPnlSol: +(prev.totalPnlSol + pnlSol).toFixed(3),
-          currentBalanceSol: +(prev.currentBalanceSol + updatedPos.solInvested + pnlSol).toFixed(3),
-          winCount: pnlSol >= 0 ? prev.winCount + 1 : prev.winCount,
-          lossCount: pnlSol < 0 ? prev.lossCount + 1 : prev.lossCount
-        }));
-        refreshWalletBalance();
-
-        // Omnichannel Exit Alerts (Take Profit / Stop Loss)
-        if (telegramConfig.isEnabled) {
-          sendTelegramExitAlert(closed, telegramConfig);
-        }
-        if (discordConfig.isEnabled) {
-          sendDiscordExitAlert(closed, discordConfig);
-        }
-
-        appendLog('EXECUTION', pnlSol >= 0 ? 'SUCCESS' : 'DANGER', `Exit Agent closed ${updatedPos.token.symbol}: ${exitVerdict.reason}`);
+        // Pemicu Auto-Sell On-Chain / Paper
+        executeSell(updatedPos, exitVerdict.reason || 'Target Take-Profit / Stop Loss Met', 100);
       } else {
         setActivePosition(updatedPos);
       }
     }, 2500);
 
     return () => clearInterval(interval);
-  }, [activePosition, appendLog, telegramConfig, discordConfig, refreshWalletBalance, agentConfig, autoSnipeConfig]);
+  }, [activePosition, appendLog, executeSell, agentConfig, autoSnipeConfig]);
 
   const updateAgentConfig = useCallback((updates: Partial<AgentConfig>) => {
     setAgentConfig((prev) => ({ ...prev, ...updates }));
@@ -1457,6 +1617,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setEngineStatus,
     toggleEngine,
     emergencyKillSwitch,
+    executeSell,
     quickSellPosition,
     manualExitPosition,
     snipeManualMint,

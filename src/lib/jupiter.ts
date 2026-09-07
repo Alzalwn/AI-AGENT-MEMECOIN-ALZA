@@ -6,6 +6,8 @@ export interface SwapExecutionResult {
   signature: string;
   inAmountSol: number;
   outAmountFormatted: string;
+  tokenAmountUi?: number;
+  decimals?: number;
   outputMint: string;
   symbol: string;
   routeSummary: string;
@@ -142,6 +144,8 @@ export async function executeJupiterSwap(
     signature,
     inAmountSol: quote.inAmountSol,
     outAmountFormatted: quote.outAmountFormatted,
+    tokenAmountUi: quote.tokenAmountUi,
+    decimals: quote.decimals,
     outputMint: quote.outputMint,
     symbol,
     routeSummary,

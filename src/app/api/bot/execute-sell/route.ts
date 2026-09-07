@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Connection, Keypair, VersionedTransaction } from '@solana/web3.js';
+import { Connection, Keypair, PublicKey, VersionedTransaction } from '@solana/web3.js';
 // @ts-ignore
 import bs58 from 'bs58';
-import { parseRawTokenUnits, fetchMintDecimals } from '@/lib/solanaMath';
+import { lamportsToSol } from '@/lib/solanaMath';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,16 +45,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: false,
         requiresClientSign: true,
-        reason: 'AUTONOMOUS_SNIPER_PRIVATE_KEY tidak disetel di server. Menggunakan dompet Phantom client-side.'
+        reason: 'AUTONOMOUS_SNIPER_PRIVATE_KEY tidak disetel di server. Memerlukan sign via dompet Phantom di browser.'
       });
     }
 
     const body = await req.json();
     const {
       mint,
-      symbol = '$TOKEN',
-      amountSol = 0.05,
-      slippageBps = 200,
+      percentage = 100,
+      slippageBps = 250,
       jitoTipSol = 0.0001
     } = body;
 
@@ -79,10 +78,44 @@ export async function POST(req: NextRequest) {
 
     const userPublicKey = keypair.publicKey.toBase58();
     const WSOL = 'So11111111111111111111111111111111111111112';
-    const lamportsIn = Math.floor(amountSol * 1_000_000_000);
+    const rpcUrl = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://solana-rpc.publicnode.com';
+    const connection = new Connection(rpcUrl, 'confirmed');
 
-    // 2. Ambil Quote Jupiter
-    const quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${WSOL}&outputMint=${mint}&amount=${lamportsIn}&slippageBps=${slippageBps}`;
+    // 2. Ambil token account on-chain untuk mendapatkan saldo token riil
+    const tokenAccounts = await connection.getParsedTokenAccountsByOwner(keypair.publicKey, {
+      mint: new PublicKey(mint)
+    });
+
+    if (!tokenAccounts.value || tokenAccounts.value.length === 0) {
+      return NextResponse.json(
+        { success: false, error: `Dompet tidak memiliki token account untuk mint: ${mint}` },
+        { status: 404 }
+      );
+    }
+
+    const tokenAccountInfo = tokenAccounts.value[0].account.data.parsed.info;
+    const rawBalanceStr = tokenAccountInfo.tokenAmount.amount; // raw base units
+    const decimals = tokenAccountInfo.tokenAmount.decimals;
+    const uiBalance = tokenAccountInfo.tokenAmount.uiAmount || 0;
+
+    if (BigInt(rawBalanceStr) <= BigInt(0)) {
+      return NextResponse.json(
+        { success: false, error: 'Saldo token di dompet 0 atau sudah terjual.' },
+        { status: 400 }
+      );
+    }
+
+    // Hitung porsi token yang akan dijual
+    const portion = Math.max(0.01, Math.min(1.0, (percentage || 100) / 100));
+    let rawUnitsToSell = (BigInt(rawBalanceStr) * BigInt(Math.round(portion * 1000))) / BigInt(1000);
+    if (rawUnitsToSell <= BigInt(0)) {
+      rawUnitsToSell = BigInt(rawBalanceStr);
+    }
+
+    const uiTokensSold = uiBalance * portion;
+
+    // 3. Ambil Quote Jupiter (Token -> WSOL)
+    const quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${mint}&outputMint=${WSOL}&amount=${rawUnitsToSell.toString()}&slippageBps=${slippageBps}`;
     const quoteRes = await fetch(quoteUrl, {
       headers: { 'Accept': 'application/json', 'User-Agent': 'GrokTrencher-Sniper/2.0' },
       signal: AbortSignal.timeout(6000)
@@ -90,7 +123,7 @@ export async function POST(req: NextRequest) {
 
     if (!quoteRes.ok) {
       return NextResponse.json(
-        { success: false, error: `Quote Jupiter gagal: HTTP ${quoteRes.status}` },
+        { success: false, error: `Quote Jupiter Sell gagal: HTTP ${quoteRes.status}` },
         { status: 502 }
       );
     }
@@ -98,12 +131,14 @@ export async function POST(req: NextRequest) {
     const quoteData = await quoteRes.json();
     if (!quoteData || !quoteData.outAmount) {
       return NextResponse.json(
-        { success: false, error: 'Quote Jupiter tidak memiliki rute likuiditas' },
+        { success: false, error: 'Tidak ada rute likuiditas untuk menjual token ini ke SOL' },
         { status: 502 }
       );
     }
 
-    // 3. Build Swap Transaction
+    const solReceived = lamportsToSol(quoteData.outAmount);
+
+    // 4. Build Swap Transaction (Sell)
     const swapRes = await fetch('https://api.jup.ag/swap/v1/swap', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'User-Agent': 'GrokTrencher-Sniper/2.0' },
@@ -119,7 +154,7 @@ export async function POST(req: NextRequest) {
 
     if (!swapRes.ok) {
       return NextResponse.json(
-        { success: false, error: 'Penyusunan swap transaction gagal' },
+        { success: false, error: 'Penyusunan sell swap transaction gagal' },
         { status: 502 }
       );
     }
@@ -127,26 +162,21 @@ export async function POST(req: NextRequest) {
     const { swapTransaction } = await swapRes.json();
     if (!swapTransaction) {
       return NextResponse.json(
-        { success: false, error: 'Jupiter tidak mengembalikan swapTransaction' },
+        { success: false, error: 'Jupiter tidak mengembalikan swapTransaction untuk sell' },
         { status: 502 }
       );
     }
 
-    // 4. Tanda tangani transaksi dengan Hot Wallet Keypair Server
+    // 5. Tanda tangani transaksi dengan Keypair
     const txBuffer = Buffer.from(swapTransaction, 'base64');
     const versionedTx = VersionedTransaction.deserialize(txBuffer);
     versionedTx.sign([keypair]);
 
-    // 5. Kirim via Jito MEV Private Engine
+    // 6. Kirim via Jito atau Fallback RPC
     const signedBase64 = Buffer.from(versionedTx.serialize()).toString('base64');
-    const jitoSig = await submitToJito(signedBase64);
+    let txSignature = await submitToJito(signedBase64);
 
-    const rpcUrl = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://solana-rpc.publicnode.com';
-    const connection = new Connection(rpcUrl, 'confirmed');
-
-    let txSignature = jitoSig;
     if (!txSignature) {
-      // Fallback submit via dedicated RPC
       try {
         txSignature = await connection.sendRawTransaction(versionedTx.serialize(), {
           skipPreflight: true,
@@ -160,35 +190,27 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 6. Verifikasi konfirmasi on-chain
+    // 7. Tunggu konfirmasi on-chain singkat
     try {
       await connection.confirmTransaction(txSignature, 'confirmed');
     } catch (confErr: any) {
-      console.warn('[Auto-Snipe Server] Konfirmasi timeout (tx sudah broadcast):', confErr.message);
+      console.warn('[Auto-Sell Server] Konfirmasi timeout (tx sudah broadcast):', confErr.message);
     }
-
-    const decimals = await fetchMintDecimals(connection, mint, mint.toLowerCase().endsWith('pump') ? 6 : 6);
-    const tokenAmountUi = parseRawTokenUnits(quoteData.outAmount, decimals);
-    const outAmountFormatted = tokenAmountUi.toLocaleString('en-US', { maximumFractionDigits: 4 });
 
     return NextResponse.json({
       success: true,
       signature: txSignature,
       txHash: txSignature,
-      inAmountSol: amountSol,
-      tokenAmountUi,
-      decimals,
-      outAmountFormatted,
-      outputMint: mint,
-      symbol,
-      isSimulated: false,
+      tokensSold: uiTokensSold,
+      solReceived,
+      mint,
       signer: userPublicKey,
       timestamp: Date.now()
     });
   } catch (err: any) {
-    console.error('API /api/bot/execute-snipe error:', err);
+    console.error('API /api/bot/execute-sell error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Auto-snipe server-side gagal' },
+      { success: false, error: err.message || 'Auto-sell server-side gagal' },
       { status: 500 }
     );
   }

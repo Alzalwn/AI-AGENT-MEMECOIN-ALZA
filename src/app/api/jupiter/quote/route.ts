@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Connection } from '@solana/web3.js';
+import { parseRawTokenUnits, fetchMintDecimals } from '@/lib/solanaMath';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +13,8 @@ export interface JupiterQuoteResponse {
   inAmountLamports: string;
   outAmountRaw: string;
   outAmountFormatted: string;
+  tokenAmountUi: number;
+  decimals: number;
   priceImpactPct: number;
   slippageBps: number;
   routes: Array<{
@@ -41,6 +45,14 @@ export async function GET(req: NextRequest) {
     const amountSol = Math.max(0.001, parseFloat(amountSolStr) || 0.1);
     const slippageBps = parseInt(slippageBpsStr, 10) || 100;
     const lamports = Math.floor(amountSol * 1_000_000_000);
+
+    const rpcUrl = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://solana-rpc.publicnode.com';
+    const connection = new Connection(rpcUrl, 'confirmed');
+    const tokenDecimals = await fetchMintDecimals(
+      connection,
+      cleanOutputMint,
+      cleanOutputMint.toLowerCase().endsWith('pump') ? 6 : 6
+    );
 
     const jupEndpoints = [
       `https://api.jup.ag/swap/v1/quote?inputMint=${WSOL_MINT}&outputMint=${cleanOutputMint}&amount=${lamports}&slippageBps=${slippageBps}`,
@@ -84,17 +96,23 @@ export async function GET(req: NextRequest) {
 
           const priceImpact = quote.priceImpactPct ? parseFloat(quote.priceImpactPct) * 100 : 0.05;
 
+          // Parse raw units into human UI token units using correct token decimals (NOT raw lamports)
+          const tokenAmountUi = parseRawTokenUnits(outRaw, tokenDecimals);
+          const minReceivedUi = parseRawTokenUnits(quote.otherAmountThreshold || outRaw, tokenDecimals);
+
           const responsePayload: JupiterQuoteResponse = {
             inputMint: WSOL_MINT,
             outputMint: cleanOutputMint,
             inAmountSol: amountSol,
             inAmountLamports: lamports.toString(),
             outAmountRaw: outRaw,
-            outAmountFormatted: Number(outRaw).toLocaleString(),
+            outAmountFormatted: tokenAmountUi.toLocaleString('en-US', { maximumFractionDigits: 4 }),
+            tokenAmountUi,
+            decimals: tokenDecimals,
             priceImpactPct: +priceImpact.toFixed(3),
             slippageBps,
             routes: routes.length > 0 ? routes : [{ label: 'Raydium CPMM', percent: 100 }],
-            minimumReceivedFormatted: Number(quote.otherAmountThreshold || outRaw).toLocaleString(),
+            minimumReceivedFormatted: minReceivedUi.toLocaleString('en-US', { maximumFractionDigits: 4 }),
             isFallback: false,
             jupiterRawQuote: quote
           };
@@ -119,8 +137,10 @@ export async function GET(req: NextRequest) {
       outputMint: cleanOutputMint,
       inAmountSol: amountSol,
       inAmountLamports: lamports.toString(),
-      outAmountRaw: estimatedTokens.toString(),
-      outAmountFormatted: estimatedTokens.toLocaleString(),
+      outAmountRaw: (estimatedTokens * 10 ** 6).toString(),
+      outAmountFormatted: estimatedTokens.toLocaleString('en-US', { maximumFractionDigits: 4 }),
+      tokenAmountUi: estimatedTokens,
+      decimals: 6,
       priceImpactPct: +(0.08 + Math.random() * 0.12).toFixed(2),
       slippageBps,
       routes: isPump
@@ -131,7 +151,7 @@ export async function GET(req: NextRequest) {
             { label: 'Raydium Concentrated Liquidity', percent: 70 },
             { label: 'Meteora DLMM', percent: 30 }
           ],
-      minimumReceivedFormatted: minTokens.toLocaleString(),
+      minimumReceivedFormatted: minTokens.toLocaleString('en-US', { maximumFractionDigits: 4 }),
       isFallback: true
     };
 
