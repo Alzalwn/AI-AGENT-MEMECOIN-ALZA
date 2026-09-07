@@ -60,6 +60,8 @@ function TerminalAppInner() {
     setVisualMode,
     toggleAudio,
     isAudioMuted,
+    openLivePosition,
+    refreshWalletBalance,
     appendLog
   } = useTradingAgent();
 
@@ -319,15 +321,8 @@ function TerminalAppInner() {
         currentSlot={telemetry.currentSlot}
         defaultSlippageBps={Math.round(executionConfig.slippagePct * 100)}
         walletState={walletState}
-        onSwapSuccess={(result) => {
-          const spent = result.inAmountSol || 0.1;
-          if (walletState.isConnected) {
-            updateWalletState({
-              ...walletState,
-              balanceSol: Math.max(0, +(walletState.balanceSol - spent).toFixed(4))
-            });
-          }
-          appendLog('EXECUTION', 'SUCCESS', `Jupiter Swap Berhasil: Beli ${result.outAmountFormatted} ${result.symbol} seharga ${spent} SOL (-${spent} SOL)`);
+        onSwapSuccess={async (result) => {
+          await openLivePosition(result, targetToken);
           setIsJupiterModalOpen(false);
           setCustomSwapMint(undefined);
         }}

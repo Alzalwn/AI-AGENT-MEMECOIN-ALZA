@@ -44,14 +44,12 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
       subtitle={activePosition ? activePosition.token.name : undefined}
       badge={
         activePosition
-          ? `${activePosition.token.symbol} (${activePosition.pnlPct >= 0 ? '+' : ''}${activePosition.pnlPct}%)`
+          ? `MUTEX ACTIVE • ${activePosition.token.symbol} (${activePosition.pnlPct >= 0 ? '+' : ''}${activePosition.pnlPct}%)`
           : 'MUTEX READY'
       }
       badgeVariant={
         activePosition
-          ? activePosition.pnlPct >= 0
-            ? 'emerald'
-            : 'rose'
+          ? 'amber'
           : 'zinc'
       }
       icon={<Target className="w-4 h-4 text-emerald-400" />}
@@ -88,7 +86,7 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
                 </div>
               )}
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-black text-base text-zinc-100">
                     {activePosition.token.symbol}
                   </span>
@@ -97,6 +95,9 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
                   </span>
                   <Badge variant="cyan" size="xs">
                     {activePosition.token.platform}
+                  </Badge>
+                  <Badge variant="amber" size="xs">
+                    MUTEX ACTIVE
                   </Badge>
                 </div>
                 <div className="flex items-center gap-2 text-[10px] text-zinc-500 mt-0.5">

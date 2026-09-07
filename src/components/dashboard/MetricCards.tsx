@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useTradingAgent } from '../../hooks/useTradingAgent';
 import { useSolRate } from '../../hooks/useSolRate';
 import {
@@ -12,13 +12,26 @@ import {
   Target,
   ArrowUpRight,
   ArrowDownRight,
-  Activity
+  Activity,
+  RefreshCw
 } from 'lucide-react';
 import CollapsibleCard from '../ui/CollapsibleCard';
 
 export const MetricCards: React.FC = () => {
-  const { telemetry, walletState } = useTradingAgent();
+  const { telemetry, walletState, refreshWalletBalance } = useTradingAgent();
   const { rate, isLoading: isRateLoading } = useSolRate();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleManualRefresh = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await refreshWalletBalance?.();
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 800);
+    }
+  };
 
   const totalTrades = telemetry.winCount + telemetry.lossCount || 1;
   const winRatePct = +((telemetry.winCount / totalTrades) * 100).toFixed(1);
@@ -31,11 +44,16 @@ export const MetricCards: React.FC = () => {
     100
   ).toFixed(1);
 
+  const formattedBalance =
+    telemetry.currentBalanceSol < 1 && telemetry.currentBalanceSol > 0
+      ? telemetry.currentBalanceSol.toFixed(4)
+      : telemetry.currentBalanceSol.toFixed(2);
+
   return (
     <CollapsibleCard
       title="Trading Performance & Hot Wallet"
       subtitle={`${walletState.mode === 'LIVE_ON_CHAIN' ? 'Mainnet Live' : 'Paper Trading'} • ${telemetry.scannedCount} Tokens Evaluated`}
-      badge={`${telemetry.currentBalanceSol.toFixed(2)} SOL (${isPnlPositive ? '+' : ''}${telemetry.totalPnlSol.toFixed(2)})`}
+      badge={`${formattedBalance} SOL (${isPnlPositive ? '+' : ''}${telemetry.totalPnlSol.toFixed(2)})`}
       badgeVariant={isPnlPositive ? 'emerald' : 'rose'}
       icon={<Activity className="w-4 h-4 text-emerald-400" />}
       storageKey="card_kpi_metrics"
@@ -48,14 +66,24 @@ export const MetricCards: React.FC = () => {
             <span className="font-bold tracking-wider text-[11px] uppercase">
               Hot Wallet Balance
             </span>
-            <div className="p-1.5 rounded-lg bg-zinc-900 text-emerald-400 border border-zinc-700/60">
-              <Wallet className="w-3.5 h-3.5" />
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={handleManualRefresh}
+                className="p-1 rounded-lg bg-zinc-900/80 hover:bg-zinc-800 text-zinc-400 hover:text-emerald-400 border border-zinc-700/60 transition-all cursor-pointer"
+                title="Sinkronkan saldo on-chain sekarang"
+              >
+                <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin text-emerald-400' : ''}`} />
+              </button>
+              <div className="p-1.5 rounded-lg bg-zinc-900 text-emerald-400 border border-zinc-700/60">
+                <Wallet className="w-3.5 h-3.5" />
+              </div>
             </div>
           </div>
           <div className="mt-2.5">
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-zinc-100 tracking-tight">
-                {telemetry.currentBalanceSol.toFixed(2)}
+                {formattedBalance}
               </span>
               <span className="text-xs font-bold text-zinc-400">SOL</span>
             </div>

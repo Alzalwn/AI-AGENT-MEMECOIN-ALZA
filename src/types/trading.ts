@@ -97,6 +97,8 @@ export interface TradingActions {
   updateDiscordConfig: (updates: Partial<WebhookDiscordConfig>) => void;
   updateWalletState: (wallet: WalletState) => void;
   toggleAudio: () => void;
+  openLivePosition: (result: import('../lib/jupiter').SwapExecutionResult, token?: TokenSignal | null) => Promise<void>;
+  refreshWalletBalance: () => Promise<void>;
   clearLogs: () => void;
   appendLog: (category: LogCategory, level: LogLevel, message: string, data?: any) => void;
 }

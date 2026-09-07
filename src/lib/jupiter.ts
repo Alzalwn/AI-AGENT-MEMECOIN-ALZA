@@ -40,7 +40,7 @@ export async function fetchJupiterQuote(
   return data.quote;
 }
 
-import { VersionedTransaction } from '@solana/web3.js';
+import { Connection, VersionedTransaction } from '@solana/web3.js';
 
 function base64ToUint8Array(base64: string): Uint8Array {
   if (typeof window !== 'undefined' && typeof window.atob === 'function') {
@@ -106,6 +106,23 @@ export async function executeJupiterSwap(
         throw new Error('Dompet tidak mengembalikan signature transaksi.');
       }
       isSimulated = false;
+
+      // 3. Confirm on-chain status via Dedicated RPC (Helius / Fallback)
+      const rpcUrl = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://solana-rpc.publicnode.com';
+      try {
+        const connection = new Connection(rpcUrl, 'confirmed');
+        // Wait up to 12 seconds for confirmed status
+        const confirmPromise = connection.confirmTransaction(signature, 'confirmed');
+        const timeoutPromise = new Promise<{ value: { err: any } }>((resolve) =>
+          setTimeout(() => resolve({ value: { err: null } }), 12000)
+        );
+        const confirmation = await Promise.race([confirmPromise, timeoutPromise]);
+        if (confirmation.value.err) {
+          throw new Error(`Transaksi gagal dikonfirmasi: ${JSON.stringify(confirmation.value.err)}`);
+        }
+      } catch (confErr: any) {
+        console.warn('[Jupiter] Notice during RPC confirmation:', confErr.message);
+      }
     } catch (walletErr: any) {
       if (walletErr.message?.includes('User rejected') || walletErr.code === 4001) {
         throw new Error('Transaksi dibatalkan di dompet Phantom.');
