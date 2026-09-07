@@ -10,9 +10,7 @@ import {
   Sliders,
   Bell,
   BarChart3,
-  SlidersHorizontal,
   Wallet,
-  AlertOctagon,
   Play,
   Pause,
   Layers,
@@ -25,16 +23,15 @@ import {
   Menu,
   X as CloseIcon,
   Users,
-  ShieldCheck,
   Server,
-  Database
+  Database,
+  Send
 } from 'lucide-react';
 import Link from 'next/link';
 import { rpcFailoverInstance } from '../../lib/rpcFailover';
 import { useSolRate } from '../../hooks/useSolRate';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
-import ConfirmModal from '../ui/ConfirmModal';
 
 interface HeaderProps {
   onOpenWallet: () => void;
@@ -70,21 +67,16 @@ export const Header: React.FC<HeaderProps> = ({
   const {
     engineStatus,
     toggleEngine,
-    emergencyKillSwitch,
     networkMetrics,
     walletState,
     isAudioMuted,
     toggleAudio,
-    activePosition,
-    executionConfig,
     autoSnipeConfig,
-    isSimulationMode,
-    toggleSimulationMode
+    telegramConfig
   } = useTradingAgent();
 
   const { rate, formatIdrShort, formatUsd } = useSolRate();
 
-  const [isKillModalOpen, setIsKillModalOpen] = useState<boolean>(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
   const isAutonomous = engineStatus === 'AUTONOMOUS';
@@ -317,70 +309,31 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="w-1.5 h-1.5 rounded-full bg-[#3ecf8e] animate-pulse" />
           </Link>
 
-          {/* Execution Settings (Desktop) */}
+          {/* Telegram Live Broadcast Status Pill */}
           <button
-            onClick={onOpenExecution}
-            className="hidden lg:flex p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer items-center gap-1.5 text-xs"
-            title="Slippage & Priority Fee Settings"
-            aria-label="Buka Execution Settings"
-          >
-            <SlidersHorizontal className="w-4 h-4 text-cyan-400" />
-            <span className="hidden xl:inline text-[11px] font-bold">Slip: {executionConfig.slippagePct}%</span>
-          </button>
-
-          {/* Dry-Run / Simulation Mode Toggle (Anti-Loss Guarantee) */}
-          <button
-            type="button"
-            onClick={toggleSimulationMode}
+            onClick={onOpenAlerts}
             title={
-              isSimulationMode
-                ? '🧪 Dry-Run Mode AKTIF: Transaksi Phantom dicegat, 0 SOL berkurang. Klik untuk beralih ke Mode Riil.'
-                : '⚠️ Mode Riil AKTIF: Transaksi akan memotong saldo SOL asli! Klik untuk beralih ke Dry-Run.'
+              telegramConfig?.isEnabled && telegramConfig?.botToken && telegramConfig?.chatId
+                ? 'Telegram Webhook Aktif: Sinyal otomatis disiarkan ke channel/chat Telegram'
+                : 'Klik untuk menghubungkan Bot Telegram (Auto-Broadcast)'
             }
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[10px] font-mono font-bold border transition-all cursor-pointer ${
-              isSimulationMode
-                ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300 shadow-[0_0_10px_rgba(6,182,212,0.25)]'
-                : 'bg-amber-500/15 border-amber-500/40 text-amber-400'
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-mono font-bold border transition-all cursor-pointer ${
+              telegramConfig?.isEnabled && telegramConfig?.botToken && telegramConfig?.chatId
+                ? 'bg-blue-500/15 border-blue-500/40 text-blue-300 shadow-[0_0_10px_rgba(59,130,246,0.25)]'
+                : 'bg-zinc-900/90 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
             }`}
           >
-            <span className="text-xs">🧪</span>
-            <span>{isSimulationMode ? 'DRY-RUN (SIMULASI)' : 'LIVE REAL DANA'}</span>
-            <span className={`w-2 h-2 rounded-full ${isSimulationMode ? 'bg-cyan-400 animate-pulse' : 'bg-amber-400'}`} />
+            <Send className={`w-3.5 h-3.5 ${telegramConfig?.isEnabled && telegramConfig?.botToken && telegramConfig?.chatId ? 'text-blue-400 animate-pulse' : 'text-zinc-500'}`} />
+            <span className="hidden sm:inline text-zinc-400">TG:</span>
+            <span>{telegramConfig?.isEnabled && telegramConfig?.botToken && telegramConfig?.chatId ? 'Aktif ✅' : 'Setup'}</span>
           </button>
 
-          {/* Mode Indicator: LIVE ON-CHAIN vs PAPER TRADING */}
-          <button
-            onClick={onOpenWallet}
-            title="Klik untuk mengubah Mode Trading (Live On-Chain vs Paper Trading)"
-            aria-label="Ubah Mode Trading"
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[10px] font-mono font-bold border transition-all cursor-pointer ${
-              walletState.mode === 'LIVE_ON_CHAIN'
-                ? 'bg-red-500/15 border-red-500/40 text-red-400 shadow-[0_0_8px_rgba(239,68,68,0.25)] animate-pulse'
-                : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
-            }`}
-          >
-            {walletState.mode === 'LIVE_ON_CHAIN' ? (
-              <>
-                <Zap className="w-3 h-3 text-red-400 fill-red-400/30" />
-                <span>LIVE</span>
-              </>
-            ) : (
-              <>
-                <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                <span>PAPER</span>
-              </>
-            )}
-          </button>
-
-          {/* Direct Jupiter Swap Button */}
-          <button
-            onClick={onOpenJupiter}
-            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-400 via-cyan-400 to-terminal-cyan text-zinc-950 font-black text-xs flex items-center gap-1.5 shadow-[0_0_15px_rgba(16,185,129,0.35)] hover:brightness-110 transition-all cursor-pointer animate-pulse"
-            title="Buka Modal Beli / Swap Jupiter dengan SOL"
-          >
-            <Zap className="w-3.5 h-3.5 fill-current" />
-            <span>BELI / SWAP</span>
-          </button>
+          {/* AI Consensus Live Scanner Indicator */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-mono font-bold">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="hidden sm:inline">CONSENSUS</span>
+            <span>LIVE</span>
+          </div>
 
           {/* Web3 Wallet Button */}
           <Button
@@ -405,18 +358,6 @@ export const Header: React.FC<HeaderProps> = ({
             ) : (
               <span>Connect Wallet</span>
             )}
-          </Button>
-
-          {/* EMERGENCY KILL-SWITCH */}
-          <Button
-            variant="danger"
-            size="sm"
-            onClick={() => setIsKillModalOpen(true)}
-            aria-label="Emergency Kill-Switch: Liquidate positions and halt autonomous engine"
-            leftIcon={<AlertOctagon className="w-3.5 h-3.5 animate-pulse" />}
-            glow
-          >
-            KILL-SWITCH
           </Button>
 
           {/* GANTI PASSWORD / SECURITY (Desktop) */}
@@ -486,14 +427,14 @@ export const Header: React.FC<HeaderProps> = ({
               <span>Analytics</span>
             </button>
 
-            {/* Smart Money Copy-Trade */}
+            {/* Smart Money Whale Tracker */}
             {onOpenSmartMoney && (
               <button
                 onClick={() => { onOpenSmartMoney(); setIsMobileMenuOpen(false); }}
                 className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-300 flex items-center gap-2 transition-all cursor-pointer"
               >
                 <Users className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Smart Money (Copy-Trade)</span>
+                <span>Smart Money Whale</span>
               </button>
             )}
 
@@ -507,15 +448,6 @@ export const Header: React.FC<HeaderProps> = ({
                 <span>VPS Bot (24/7)</span>
               </button>
             )}
-
-            {/* Execution / Slippage */}
-            <button
-              onClick={() => { onOpenExecution(); setIsMobileMenuOpen(false); }}
-              className="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800 hover:border-cyan-500/50 flex items-center gap-2 text-zinc-300 hover:text-cyan-300 transition-all cursor-pointer"
-            >
-              <SlidersHorizontal className="w-4 h-4 text-cyan-400 shrink-0" />
-              <span>Slip: {executionConfig.slippagePct}%</span>
-            </button>
 
             {/* Shortcuts */}
             {onOpenShortcuts && (
@@ -568,22 +500,6 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         )}
       </header>
-
-      {/* Confirmation Modal for Kill Switch */}
-      <ConfirmModal
-        isOpen={isKillModalOpen}
-        onClose={() => setIsKillModalOpen(false)}
-        onConfirm={() => emergencyKillSwitch()}
-        title="AKTIFKAN EMERGENCY KILL-SWITCH?"
-        description={
-          activePosition
-            ? `Peringatan: Posisi aktif pada ${activePosition.token.symbol} (${activePosition.pnlPct}%) akan langsung dilikuidasi ke SOL via private mempool Jito dan seluruh bot autonomous akan dihentikan seketika.`
-            : 'Seluruh bot autonomous akan dihentikan seketika dan status bot diubah ke PAUSED/IDLE.'
-        }
-        confirmText="YA, DUMP & HALT SEMUA"
-        cancelText="BATAL"
-        variant="danger"
-      />
     </>
   );
 };

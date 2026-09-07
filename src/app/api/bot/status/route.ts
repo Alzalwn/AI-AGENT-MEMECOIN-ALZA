@@ -18,31 +18,33 @@ export async function GET() {
     }
 
     // Default fallback if daemon hasn't started yet
-    const hasPrivateKey = Boolean(process.env.AUTONOMOUS_SNIPER_PRIVATE_KEY);
+    const hasTelegram = Boolean(
+      process.env.TELEGRAM_BOT_TOKEN ||
+      process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN
+    );
     return NextResponse.json({
       success: true,
       data: {
-        status: hasPrivateKey ? 'STANDBY' : 'NOT_CONFIGURED',
-        mode: hasPrivateKey ? 'READY_TO_START' : 'NEEDS_HOT_WALLET',
-        walletPublicKey: null,
-        balanceSol: 0,
+        status: hasTelegram ? 'STANDBY' : 'NOT_CONFIGURED',
+        mode: hasTelegram ? 'READY_TO_START_PM2' : 'NEEDS_TELEGRAM_TOKEN',
+        service: 'PM2 Headless Background Worker',
+        telegramConnected: hasTelegram,
+        telegramChatId: process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID || 'Belum diisi',
         lastScannedAt: Date.now(),
-        activePositions: [],
-        recentTrades: [],
-        totalPnLSol: 0,
         scannedCount: 0,
         signalsApproved: 0,
+        recentSignals: [],
+        uptimeSec: 0,
         settings: {
-          buyAmountSol: parseFloat(process.env.AUTONOMOUS_SNIPER_BUY_AMOUNT_SOL || '0.02'),
-          minViralityScore: parseInt(process.env.AUTONOMOUS_SNIPER_MIN_SCORE || '80', 10),
-          takeProfitPct: 50,
-          stopLossPct: 20
+          minScore: 82,
+          minLiquidityUsd: 8000,
+          scanIntervalSec: 15
         }
       }
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     return NextResponse.json(
-      { success: false, error: err.message },
+      { success: false, error: err instanceof Error ? err.message : 'Unknown error' },
       { status: 500 }
     );
   }

@@ -10,18 +10,21 @@ import {
   ShieldCheck,
   Clock,
   Sparkles,
-  Award
+  Award,
+  Server
 } from 'lucide-react';
 
 interface SignalHeroStatsProps {
   stats: SignalStatsType;
   onOpenTelegramModal?: () => void;
+  onOpenVpsBot?: () => void;
   isTelegramConnected?: boolean;
 }
 
 export function SignalHeroStats({
   stats,
   onOpenTelegramModal,
+  onOpenVpsBot,
   isTelegramConnected = false
 }: SignalHeroStatsProps) {
   const winRate = stats.winRate > 0 ? stats.winRate.toFixed(1) : '85.7';
@@ -146,13 +149,17 @@ export function SignalHeroStats({
               <Send className="w-4 h-4 text-blue-400" />
               Telegram Sinyal Bot
             </span>
-            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/30">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-              AUTO BROADCAST
+            <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+              isTelegramConnected
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                : 'bg-blue-500/10 text-blue-400 border-blue-500/30'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${isTelegramConnected ? 'bg-emerald-400 animate-pulse' : 'bg-blue-400'}`} />
+              {isTelegramConnected ? 'TERHUBUNG ✅' : 'AUTO BROADCAST'}
             </span>
           </div>
           <p className="text-[11px] text-zinc-300 mt-1 leading-relaxed">
-            Format sinyal profesional (Entry, TP1/2/3, SL, ETA, & 1-Klik Beli) otomatis dikirim ke channel Telegram saat 5/5 AI konsensus terpenuhi.
+            Format sinyal profesional (Entry, TP1/2/3, SL, ETA, & 1-Klik Beli) otomatis disiarkan ke channel Telegram saat 5/5 AI konsensus terpenuhi.
           </p>
         </div>
 
@@ -164,6 +171,17 @@ export function SignalHeroStats({
             <Send className="w-3.5 h-3.5" />
             <span>Pengaturan Telegram</span>
           </button>
+          {onOpenVpsBot && (
+            <button
+              onClick={onOpenVpsBot}
+              className="px-3 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
+              title="Cek Status Daemon 24/7 di VPS (Kirim sinyal tanpa buka web)"
+            >
+              <Server className="w-3.5 h-3.5 text-purple-400" />
+              <span className="hidden sm:inline">Daemon 24/7</span>
+              <span className="sm:hidden">VPS</span>
+            </button>
+          )}
         </div>
       </div>
     </div>

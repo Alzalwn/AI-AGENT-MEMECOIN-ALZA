@@ -4,17 +4,17 @@ import React, { useState, useEffect } from 'react';
 import {
   Server,
   Zap,
-  ShieldAlert,
-  Smartphone,
+  Send,
   CheckCircle2,
   RefreshCw,
-  ExternalLink,
   Copy,
   X,
   Layers,
-  ArrowUpRight,
-  TrendingUp,
-  AlertTriangle
+  Terminal,
+  Clock,
+  ExternalLink,
+  ShieldCheck,
+  AlertCircle
 } from 'lucide-react';
 
 interface VpsBotModalProps {
@@ -25,46 +25,32 @@ interface VpsBotModalProps {
 interface BotData {
   status: 'ONLINE' | 'STANDBY' | 'NOT_CONFIGURED' | 'OFFLINE';
   mode: string;
-  walletPublicKey: string | null;
-  balanceSol: number;
+  service?: string;
+  telegramConnected?: boolean;
+  telegramChatId?: string;
   lastScannedAt: number;
-  activePositions: Array<{
-    id: string;
-    mint: string;
-    symbol: string;
-    name: string;
-    investedSol: number;
-    entryPriceUsd: number;
-    currentPriceUsd: number;
-    pnlPct: number;
-    openedAt: number;
-    txSignature?: string;
-  }>;
-  recentTrades: Array<{
-    type: 'BUY' | 'SELL';
-    symbol: string;
-    mint: string;
-    amountSol: number;
-    pnlPct?: number;
-    txSignature: string;
-    timestamp: number;
-  }>;
-  totalPnLSol: number;
   scannedCount: number;
   signalsApproved: number;
-  settings: {
-    buyAmountSol: number;
-    minViralityScore: number;
-    takeProfitPct: number;
-    stopLossPct: number;
-    jitoTipSol: number;
+  uptimeSec?: number;
+  recentSignals?: Array<{
+    symbol: string;
+    mint: string;
+    tier: string;
+    score: number;
+    priceSol: number;
+    timestamp: number;
+  }>;
+  settings?: {
+    minScore: number;
+    minLiquidityUsd: number;
+    scanIntervalSec: number;
   };
 }
 
 export const VpsBotModal: React.FC<VpsBotModalProps> = ({ isOpen, onClose }) => {
   const [botData, setBotData] = useState<BotData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [copiedKey, setCopiedKey] = useState<boolean>(false);
+  const [copiedCmd, setCopiedCmd] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'monitor' | 'guide'>('monitor');
 
   const fetchBotStatus = async () => {
@@ -96,26 +82,32 @@ export const VpsBotModal: React.FC<VpsBotModalProps> = ({ isOpen, onClose }) => 
 
   const isOnline = botData?.status === 'ONLINE';
 
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedCmd(true);
+    setTimeout(() => setCopiedCmd(false), 2000);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-terminal-panel border border-terminal-border rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col font-mono text-xs max-h-[92vh]">
+      <div className="bg-zinc-950 border border-zinc-800 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col font-mono text-xs max-h-[92vh]">
         {/* Header */}
-        <div className="p-4 border-b border-terminal-border flex items-center justify-between bg-terminal-card/80">
+        <div className="p-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/80">
           <div className="flex items-center gap-2.5">
-            <div className={`p-2 rounded-xl border ${isOnline ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400 animate-pulse' : 'bg-amber-500/15 border-amber-500/30 text-amber-400'}`}>
+            <div className={`p-2 rounded-xl border ${isOnline ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400 animate-pulse' : 'bg-purple-500/15 border-purple-500/30 text-purple-400'}`}>
               <Server className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-black text-sm tracking-wider text-terminal-text">
-                  VPS 24/7 AUTONOMOUS SIGNAL BOT
+                <span className="font-black text-sm tracking-wider text-zinc-100">
+                  VPS 24/7 SIGNAL DAEMON (BACKGROUND RUNNER)
                 </span>
-                <span className={`text-[10px] px-2 py-0.5 rounded font-bold border ${isOnline ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-amber-500/20 text-amber-400 border-amber-500/40'}`}>
+                <span className={`text-[10px] px-2 py-0.5 rounded font-bold border ${isOnline ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-zinc-800 text-zinc-400 border-zinc-700'}`}>
                   {isOnline ? 'ONLINE (PM2)' : 'STANDBY'}
                 </span>
               </div>
-              <p className="text-[10px] text-terminal-muted">
-                Background service on-chain scanner & broadcaster di AlmaLinux VPS • Jito Tokyo MEV Sub-Slot
+              <p className="text-[10px] text-zinc-400">
+                Memindai Solana & mengirim sinyal ke Telegram 24 jam nonstop tanpa perlu browser dibuka
               </p>
             </div>
           </div>
@@ -123,14 +115,14 @@ export const VpsBotModal: React.FC<VpsBotModalProps> = ({ isOpen, onClose }) => 
             <button
               onClick={fetchBotStatus}
               disabled={isLoading}
-              title="Refresh Status Bot"
-              className="p-1.5 rounded-lg bg-terminal-card hover:bg-zinc-800 text-terminal-muted hover:text-terminal-text transition-colors cursor-pointer"
+              title="Refresh Status Daemon"
+              className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors cursor-pointer"
             >
-              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-terminal-cyan' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-cyan-400' : ''}`} />
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg bg-terminal-card hover:bg-zinc-800 text-terminal-muted hover:text-terminal-text transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -138,13 +130,13 @@ export const VpsBotModal: React.FC<VpsBotModalProps> = ({ isOpen, onClose }) => 
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex border-b border-terminal-border bg-terminal-panel/50 px-4 pt-2 gap-2">
+        <div className="flex border-b border-zinc-800 bg-zinc-900/50 px-4 pt-2 gap-2">
           <button
             onClick={() => setActiveTab('monitor')}
             className={`pb-2 px-3 text-xs font-bold transition-all border-b-2 cursor-pointer flex items-center gap-1.5 ${
               activeTab === 'monitor'
-                ? 'border-terminal-cyan text-terminal-cyan'
-                : 'border-transparent text-terminal-muted hover:text-zinc-300'
+                ? 'border-cyan-400 text-cyan-400'
+                : 'border-transparent text-zinc-400 hover:text-zinc-200'
             }`}
           >
             <Zap className="w-3.5 h-3.5" />
@@ -155,11 +147,11 @@ export const VpsBotModal: React.FC<VpsBotModalProps> = ({ isOpen, onClose }) => 
             className={`pb-2 px-3 text-xs font-bold transition-all border-b-2 cursor-pointer flex items-center gap-1.5 ${
               activeTab === 'guide'
                 ? 'border-purple-400 text-purple-400'
-                : 'border-transparent text-terminal-muted hover:text-zinc-300'
+                : 'border-transparent text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            <Smartphone className="w-3.5 h-3.5" />
-            <span>Panduan Koneksi Phantom HP</span>
+            <Terminal className="w-3.5 h-3.5" />
+            <span>Panduan Jalankan 24/7 Tanpa Buka Web</span>
           </button>
         </div>
 
@@ -167,234 +159,188 @@ export const VpsBotModal: React.FC<VpsBotModalProps> = ({ isOpen, onClose }) => 
         <div className="p-4 overflow-y-auto space-y-4 flex-1">
           {activeTab === 'monitor' ? (
             <>
-              {/* Dual-Mode Architecture Summary */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div className="p-3 rounded-xl bg-terminal-card/80 border border-terminal-border space-y-1">
-                  <div className="flex items-center gap-1.5 text-terminal-cyan font-bold text-[11px]">
-                    <Layers className="w-3.5 h-3.5" />
-                    <span>OPSI A: Web-Client Trading</span>
-                  </div>
-                  <p className="text-[10px] text-zinc-400 leading-relaxed">
-                    Trading via browser di HP/Laptop. Memerlukan konfirmasi klik <strong>Approve</strong> di Phantom extension demi keamanan maksimal.
-                  </p>
+              {/* Architecture Summary Banner */}
+              <div className="p-3 rounded-xl bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-emerald-500/10 border border-blue-500/30 space-y-1">
+                <div className="flex items-center gap-2 text-blue-400 font-bold text-xs">
+                  <Send className="w-4 h-4" />
+                  <span>Cloud Daemon: Kirim Sinyal Tanpa Perlu Buka Web</span>
                 </div>
-                <div className="p-3 rounded-xl bg-terminal-card/80 border border-purple-500/30 space-y-1">
-                  <div className="flex items-center gap-1.5 text-purple-300 font-bold text-[11px]">
-                    <Zap className="w-3.5 h-3.5" />
-                    <span>OPSI B: VPS 24/7 Autonomous</span>
-                  </div>
-                  <p className="text-[10px] text-zinc-400 leading-relaxed">
-                    Bot berjalan 24 jam di VPS. Menggunakan <strong>Hot Wallet Khusus</strong>, pemindaian sinyal otomatis tanpa perlu buka website.
-                  </p>
-                </div>
+                <p className="text-[11px] text-zinc-300 leading-relaxed">
+                  Daemon berjalan sebagai background service (PM2) di VPS Linux. Engine memindai pool Solana detik demi detik, menyaring honeypot & volume, lalu langsung mengirim sinyal terformat lengkap ke Telegram Channel/Grup Anda.
+                </p>
               </div>
 
-              {/* Bot Wallet & Metrics Card */}
-              <div className="p-3.5 rounded-xl bg-terminal-card border border-terminal-border space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-terminal-muted font-bold uppercase tracking-wider">
-                    DEDICATED BOT HOT WALLET (VPS)
-                  </span>
-                  <span className="text-[10px] text-terminal-cyan">
-                    Jito Tokyo Block Engine: Online
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <div className="p-2.5 rounded-lg bg-zinc-900/90 border border-zinc-800">
-                    <span className="text-[9px] text-terminal-muted block">PUBLIC ADDRESS</span>
-                    {botData?.walletPublicKey ? (
-                      <div className="flex items-center justify-between gap-1 mt-0.5">
-                        <span className="font-mono text-terminal-cyan truncate text-[11px]" title={botData.walletPublicKey}>
-                          {botData.walletPublicKey.slice(0, 4)}...{botData.walletPublicKey.slice(-4)}
-                        </span>
-                        <button
-                          onClick={() => {
-                            if (botData.walletPublicKey) {
-                              navigator.clipboard.writeText(botData.walletPublicKey);
-                              setCopiedKey(true);
-                              setTimeout(() => setCopiedKey(false), 2000);
-                            }
-                          }}
-                          className="text-zinc-500 hover:text-white transition-colors cursor-pointer"
-                        >
-                          <Copy className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="text-[10px] text-amber-400 font-bold mt-0.5 block">
-                        Belum Diisi di .env.local
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="p-2.5 rounded-lg bg-zinc-900/90 border border-zinc-800">
-                    <span className="text-[9px] text-terminal-muted block">SALDO SOL REAL-TIME</span>
-                    <span className="text-sm font-bold text-terminal-green mt-0.5 block">
-                      {botData?.balanceSol ? `${botData.balanceSol.toFixed(4)} SOL` : '0.0000 SOL'}
+              {/* Bot Metrics Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="p-3 rounded-xl bg-zinc-900/90 border border-zinc-800 space-y-1">
+                  <span className="text-[10px] text-zinc-500 uppercase font-bold block">STATUS TELEGRAM</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${botData?.telegramConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                    <span className={`text-xs font-bold ${botData?.telegramConnected ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      {botData?.telegramConnected ? 'Terhubung & Aktif' : 'Belum Dikonfigurasi'}
                     </span>
                   </div>
-
-                  <div className="p-2.5 rounded-lg bg-zinc-900/90 border border-zinc-800">
-                    <span className="text-[9px] text-terminal-muted block">PENGATURAN TRADING</span>
-                    <span className="text-[11px] font-bold text-terminal-text mt-0.5 block">
-                      {botData?.settings?.buyAmountSol || 0.02} SOL / Trade (Min Score: {botData?.settings?.minViralityScore || 80})
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Active Positions */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase text-terminal-muted">
-                    POSISI AKTIF AUTONOMOUS VPS ({botData?.activePositions?.length || 0})
-                  </span>
-                  <span className="text-[9px] text-terminal-muted">
-                    TP: +50% | SL: -20% Trailing
+                  <span className="text-[10px] text-zinc-400 block truncate">
+                    Chat: {botData?.telegramChatId || 'Belum diisi'}
                   </span>
                 </div>
 
-                {botData?.activePositions && botData.activePositions.length > 0 ? (
-                  <div className="space-y-1.5">
-                    {botData.activePositions.map((pos) => (
-                      <div key={pos.id} className="p-2.5 rounded-xl bg-terminal-card border border-terminal-border flex items-center justify-between">
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-bold text-terminal-cyan">{pos.symbol}</span>
-                            <span className="text-[10px] text-zinc-500 font-mono">({pos.name})</span>
-                          </div>
-                          <div className="text-[10px] text-terminal-muted mt-0.5">
-                            Investasi: {pos.investedSol} SOL • Dibuka: {new Date(pos.openedAt).toLocaleTimeString()}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <span className={`font-bold text-xs ${pos.pnlPct >= 0 ? 'text-terminal-green' : 'text-terminal-red'}`}>
-                            {pos.pnlPct >= 0 ? `+${pos.pnlPct.toFixed(2)}%` : `${pos.pnlPct.toFixed(2)}%`}
-                          </span>
-                          {pos.txSignature && (
-                            <a
-                              href={`https://solscan.io/tx/${pos.txSignature}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-[9px] text-purple-400 hover:underline flex items-center justify-end gap-0.5 mt-0.5"
-                            >
-                              <span>Solscan</span>
-                              <ExternalLink className="w-2.5 h-2.5" />
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="p-3 rounded-xl bg-terminal-card/50 border border-dashed border-zinc-800 text-center text-[11px] text-zinc-500">
-                    Tidak ada posisi aktif saat ini. Bot akan membuka posisi secara otomatis ketika koin lolos scoring multi-agent.
-                  </div>
-                )}
+                <div className="p-3 rounded-xl bg-zinc-900/90 border border-zinc-800 space-y-1">
+                  <span className="text-[10px] text-zinc-500 uppercase font-bold block">TOKEN DIPINDAI</span>
+                  <span className="text-base font-black text-cyan-400 block">
+                    {botData?.scannedCount || 0} Token
+                  </span>
+                  <span className="text-[10px] text-zinc-400 block">
+                    Interval: {botData?.settings?.scanIntervalSec || 15}s
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-zinc-900/90 border border-zinc-800 space-y-1">
+                  <span className="text-[10px] text-zinc-500 uppercase font-bold block">SINYAL LOLOS & DISIARKAN</span>
+                  <span className="text-base font-black text-emerald-400 block">
+                    {botData?.signalsApproved || 0} Sinyal
+                  </span>
+                  <span className="text-[10px] text-zinc-400 block">
+                    Min Skor: {botData?.settings?.minScore || 82}%
+                  </span>
+                </div>
               </div>
 
-              {/* Recent Trades */}
-              <div className="space-y-2">
-                <span className="text-[10px] font-bold uppercase text-terminal-muted">
-                  RIWAYAT TRADE ON-CHAIN TERAKHIR
+              {/* Anti-Spam Safeguards */}
+              <div className="p-3 rounded-xl bg-zinc-900/80 border border-zinc-800 space-y-2">
+                <span className="text-[10px] text-zinc-400 uppercase font-bold flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Fitur Anti-Spam Gatekeeper Aktif</span>
                 </span>
-                {botData?.recentTrades && botData.recentTrades.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] text-zinc-300">
+                  <div className="p-2 rounded bg-black/40 border border-white/5 flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Deduplikasi CA 24 Jam (1 Token hanya 1x / hari)</span>
+                  </div>
+                  <div className="p-2 rounded bg-black/40 border border-white/5 flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Dual Rate-Limiter (Maks 3/5m & 10/1h)</span>
+                  </div>
+                  <div className="p-2 rounded bg-black/40 border border-white/5 flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Filter Likuiditas Minimum ($8,000 USD)</span>
+                  </div>
+                  <div className="p-2 rounded bg-black/40 border border-white/5 flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Honeypot Shield (Mint & Freeze Revoked)</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recent Dispatched Signals */}
+              <div className="space-y-2">
+                <span className="text-[10px] font-bold uppercase text-zinc-400">
+                  SINYAL DAEMON TERAKHIR YANG DISIARKAN ({botData?.recentSignals?.length || 0})
+                </span>
+                {botData?.recentSignals && botData.recentSignals.length > 0 ? (
                   <div className="space-y-1.5">
-                    {botData.recentTrades.slice(0, 5).map((t, idx) => (
-                      <div key={idx} className="p-2 rounded-lg bg-zinc-900/80 border border-zinc-800 flex items-center justify-between text-[11px]">
-                        <div className="flex items-center gap-2">
-                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${t.type === 'BUY' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-purple-500/20 text-purple-400'}`}>
-                            {t.type}
-                          </span>
-                          <span className="font-bold text-zinc-200">{t.symbol}</span>
-                          <span className="text-zinc-500 font-mono text-[10px]">{t.amountSol} SOL</span>
+                    {botData.recentSignals.slice(0, 5).map((sig, idx) => (
+                      <div key={idx} className="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800 flex items-center justify-between text-[11px]">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-zinc-100">${sig.symbol}</span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-bold">
+                              {sig.tier}
+                            </span>
+                            <span className="text-[10px] text-cyan-400 font-bold">
+                              Skor: {sig.score}%
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-zinc-500 mt-0.5 font-mono">
+                            CA: {sig.mint.slice(0, 6)}...{sig.mint.slice(-6)} • {new Date(sig.timestamp).toLocaleTimeString()}
+                          </div>
                         </div>
                         <a
-                          href={`https://solscan.io/tx/${t.txSignature}`}
+                          href={`https://dexscreener.com/solana/${sig.mint}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-[10px] text-terminal-cyan hover:underline flex items-center gap-1"
+                          className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold flex items-center gap-1 transition-all"
                         >
-                          <span>{t.txSignature.slice(0, 6)}...</span>
+                          <span>Chart</span>
                           <ExternalLink className="w-2.5 h-2.5" />
                         </a>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="p-3 rounded-xl bg-terminal-card/50 border border-zinc-800 text-center text-[10px] text-zinc-500">
-                    Belum ada riwayat transaksi on-chain.
+                  <div className="p-3 rounded-xl bg-zinc-900/50 border border-dashed border-zinc-800 text-center text-[11px] text-zinc-500">
+                    Belum ada sinyal yang disiarkan oleh daemon. Jalankan daemon di VPS untuk mulai mengirim otomatis.
                   </div>
                 )}
               </div>
             </>
           ) : (
-            /* Guide Tab: How to connect & view in Phantom HP */
+            /* Guide Tab: How to run 24/7 without opening website */
             <div className="space-y-3 text-zinc-300">
               <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/30 space-y-1.5">
                 <div className="flex items-center gap-1.5 text-purple-300 font-bold text-xs">
-                  <Smartphone className="w-4 h-4" />
-                  <span>Cara Kerja: Koin Otomatis Muncul di Phantom HP Anda</span>
+                  <Terminal className="w-4 h-4" />
+                  <span>Cara Menjalankan Bot 24/7 di VPS Tanpa Perlu Buka Web</span>
                 </div>
                 <p className="text-[11px] text-zinc-300 leading-relaxed">
-                  Dengan mengimpor <strong>Private Key Hot Wallet VPS</strong> yang sama ke aplikasi Phantom di HP Anda, Anda bisa memantau pergerakan saldo dan menerima koin meme secara live tanpa perlu menyalakan laptop.
+                  Cukup 3 perintah sederhana di terminal server VPS Linux (Ubuntu / AlmaLinux / Debian) Anda, bot akan hidup mandiri di cloud dan mengirim sinyal terus menerus ke Telegram Anda.
                 </p>
               </div>
 
               <div className="space-y-2">
-                <h4 className="font-bold text-terminal-text text-xs uppercase tracking-wider">
-                  Langkah-Langkah Setup (Hanya 3 Menit):
-                </h4>
-
-                <div className="p-3 rounded-xl bg-terminal-card border border-terminal-border space-y-1">
-                  <span className="text-[10px] text-terminal-cyan font-bold block">LANGKAH 1: Buat Akun Khusus di Phantom</span>
+                <div className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 space-y-1">
+                  <span className="text-[10px] text-cyan-400 font-bold block">LANGKAH 1: Pastikan Telegram Token Sudah Diisi</span>
                   <p className="text-[10px] text-zinc-400">
-                    Buka Phantom di HP atau browser &gt; Tambah Wallet &gt; Buat Akun Baru (beri nama misalnya <strong>&quot;Grok Signal VPS&quot;</strong>).
-                  </p>
-                </div>
-
-                <div className="p-3 rounded-xl bg-terminal-card border border-terminal-border space-y-1">
-                  <span className="text-[10px] text-terminal-cyan font-bold block">LANGKAH 2: Isi Saldo Uji Coba</span>
-                  <p className="text-[10px] text-zinc-400">
-                    Transfer <strong>0.05 - 0.1 SOL</strong> ke wallet tersebut untuk modal awal bot atau gas fee.
-                  </p>
-                </div>
-
-                <div className="p-3 rounded-xl bg-terminal-card border border-terminal-border space-y-1">
-                  <span className="text-[10px] text-terminal-cyan font-bold block">LANGKAH 3: Salin Private Key ke VPS</span>
-                  <p className="text-[10px] text-zinc-400">
-                    Di Phantom: Buka Settings &gt; Security &amp; Privacy &gt; <strong>Export Private Key</strong>. Salin string Base58 tersebut, lalu buka terminal VPS:
+                    Buka file <code>.env.local</code> di folder project VPS:
                   </p>
                   <pre className="p-2 rounded bg-black/60 border border-zinc-800 text-[10px] text-emerald-400 overflow-x-auto mt-1">
                     nano ~/AI-AGENT-MEMECOIN-ALZA/.env.local
                   </pre>
                   <p className="text-[10px] text-zinc-400 mt-1">
-                    Tambahkan baris berikut di baris paling bawah:
+                    Isi token bot dan chat ID channel Anda:
                   </p>
                   <pre className="p-2 rounded bg-black/60 border border-zinc-800 text-[10px] text-cyan-300 overflow-x-auto mt-1">
-                    AUTONOMOUS_BOT_PRIVATE_KEY=PASTE_PRIVATE_KEY_KAMU_DISINI
+                    TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ<br />
+                    TELEGRAM_CHAT_ID=-1001234567890
                   </pre>
                 </div>
 
-                <div className="p-3 rounded-xl bg-terminal-card border border-terminal-border space-y-1">
-                  <span className="text-[10px] text-terminal-cyan font-bold block">LANGKAH 4: Jalankan Service PM2 di VPS</span>
+                <div className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 space-y-1">
+                  <span className="text-[10px] text-cyan-400 font-bold block">LANGKAH 2: Jalankan Daemon dengan PM2 (1-Klik)</span>
                   <p className="text-[10px] text-zinc-400">
-                    Jalankan daemon agar bot bekerja otomatis 24 jam nonstop:
+                    Jalankan perintah berikut di terminal VPS untuk menyalakan background service:
                   </p>
-                  <pre className="p-2 rounded bg-black/60 border border-zinc-800 text-[10px] text-purple-300 overflow-x-auto mt-1">
-                    pm2 start scripts/signal-daemon.mjs --name &quot;grok-signal&quot;
-                  </pre>
-                  <pre className="p-2 rounded bg-black/60 border border-zinc-800 text-[10px] text-zinc-400 overflow-x-auto mt-1">
-                    pm2 save
+                  <div className="relative mt-1">
+                    <pre className="p-2.5 rounded bg-black/60 border border-zinc-800 text-[10px] text-purple-300 overflow-x-auto">
+                      pm2 start scripts/signal-daemon.mjs --name &quot;alpha-signal-bot&quot;<br />
+                      pm2 save<br />
+                      pm2 startup
+                    </pre>
+                    <button
+                      onClick={() => copyToClipboard('pm2 start scripts/signal-daemon.mjs --name "alpha-signal-bot" && pm2 save')}
+                      className="absolute right-2 top-2 px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[9px] flex items-center gap-1 cursor-pointer font-bold"
+                    >
+                      <Copy className="w-3 h-3" />
+                      <span>{copiedCmd ? 'Disalin!' : 'Salin Perintah'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 space-y-1">
+                  <span className="text-[10px] text-cyan-400 font-bold block">LANGKAH 3: Cek Log Live</span>
+                  <p className="text-[10px] text-zinc-400">
+                    Untuk melihat log koin yang sedang dianalisis secara live di terminal VPS:
+                  </p>
+                  <pre className="p-2 rounded bg-black/60 border border-zinc-800 text-[10px] text-emerald-400 overflow-x-auto mt-1">
+                    pm2 logs alpha-signal-bot
                   </pre>
                 </div>
               </div>
 
-              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2 text-[10px] text-amber-300">
-                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-start gap-2 text-[10px] text-emerald-300">
+                <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-400" />
                 <p>
-                  <strong>Tips Keamanan:</strong> Jangan gunakan private key dari dompet utama Anda yang berisi aset besar. Selalu gunakan dompet cadangan (burner wallet) dengan saldo yang cukup untuk testing strategi sinyal.
+                  <strong>Selesai!</strong> Setelah langkah ini, Anda bisa menutup laptop, mematikan browser, atau bepergian. Server VPS akan memindai pasar 24 jam nonstop dan menembakkan sinyal secara instan ke Telegram Anda!
                 </p>
               </div>
             </div>
@@ -402,9 +348,9 @@ export const VpsBotModal: React.FC<VpsBotModalProps> = ({ isOpen, onClose }) => 
         </div>
 
         {/* Footer */}
-        <div className="p-3 border-t border-terminal-border bg-terminal-card/80 flex items-center justify-between">
-          <span className="text-[10px] text-terminal-muted">
-            {copiedKey ? '✅ Alamat disalin ke clipboard!' : 'Dual-Mode Engine: Web Client (Manual) & VPS Daemon (24/7 Auto)'}
+        <div className="p-3 border-t border-zinc-800 bg-zinc-900/80 flex items-center justify-between">
+          <span className="text-[10px] text-zinc-400">
+            {copiedCmd ? '✅ Perintah disalin ke clipboard!' : 'Arsitektur: Headless Node.js Worker + PM2 Background Service'}
           </span>
           <button
             onClick={onClose}

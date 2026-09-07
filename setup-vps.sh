@@ -81,10 +81,11 @@ echo "⚡ Menjalankan Grok Trencher Web Terminal dengan PM2..."
 pm2 stop grok-trencher 2>/dev/null || true
 pm2 start npm --name "grok-trencher" -- start
 
-# Jalankan 24/7 Autonomous Sniper Bot Daemon
-echo "🤖 Menjalankan Grok Autonomous Sniper Daemon 24/7..."
+# Jalankan 24/7 Autonomous Telegram Signal Daemon
+echo "🤖 Menjalankan 24/7 Autonomous Telegram Signal Daemon (Headless Worker)..."
+pm2 stop alpha-signal-bot 2>/dev/null || true
 pm2 stop grok-sniper 2>/dev/null || true
-pm2 start scripts/sniper-daemon.mjs --name "grok-sniper"
+pm2 start scripts/signal-daemon.mjs --name "alpha-signal-bot"
 pm2 save
 pm2 startup || true
 

@@ -147,15 +147,6 @@ export function QuickSignalScanner({ onOpenJupiterSwap }: QuickSignalScannerProp
             </>
           )}
         </button>
-
-        {onOpenJupiterSwap && (
-          <button
-            onClick={() => onOpenJupiterSwap(mintInput.trim() || undefined)}
-            className="px-3 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap self-end md:self-center"
-          >
-            <span>DEX SWAP</span>
-          </button>
-        )}
       </div>
 
       {lastGenerated && (

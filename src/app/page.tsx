@@ -213,7 +213,8 @@ function TerminalAppInner() {
           <SignalHeroStats
             stats={signalStats}
             onOpenTelegramModal={() => setIsTelegramModalOpen(true)}
-            isTelegramConnected={telegramConfig?.isEnabled}
+            onOpenVpsBot={() => setIsVpsBotOpen(true)}
+            isTelegramConnected={telegramConfig?.isEnabled && Boolean(telegramConfig?.botToken && telegramConfig?.chatId)}
           />
         ) : (
           <MetricCards />
