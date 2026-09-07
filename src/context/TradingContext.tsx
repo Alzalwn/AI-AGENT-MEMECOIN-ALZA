@@ -49,7 +49,9 @@ import { HeliusBlockchainStream } from '../lib/heliusStream';
 import { verifySafeToSell } from '../lib/honeypot';
 import { positionMutex } from '../engine/mutex';
 import { calculateSolanaPnl, parseRawTokenUnits, lamportsToSol } from '../lib/solanaMath';
-import { VersionedTransaction } from '@solana/web3.js';
+import { VersionedTransaction, Connection, PublicKey } from '@solana/web3.js';
+import { ExecutionManager } from '../engine/executionManager';
+import { enqueueSniffedPoolEvent } from '../engine/realIngestion';
 
 // Extended configs with minGrokScore (not part of base lib type)
 export interface WebhookTelegramConfig extends TelegramConfig {
@@ -216,6 +218,11 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
   }, []);
 
+  // ExecutionManager Instance for Autonomous Lifecycle
+  const executionManagerRef = useRef<ExecutionManager | null>(null);
+  if (!executionManagerRef.current) {
+    executionManagerRef.current = new ExecutionManager();
+  }
 
   // Feed & Selection (Pre-populate with 24 initial signals for Scan Grid throughput)
   const [consensusFeed, setConsensusFeed] = useState<ConsensusResult[]>(() => {
@@ -411,6 +418,61 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       data
     };
     setLogs((prev) => [newLog, ...prev.slice(0, 199)]);
+  }, []);
+
+  // Hook up ExecutionManager Callbacks
+  useEffect(() => {
+    if (!executionManagerRef.current) return;
+    executionManagerRef.current.setCallbacks({
+      onPositionOpened: (pos) => {
+        setActivePosition(pos);
+        soundFx.playApproval();
+        if (telegramConfig.isEnabled) {
+          sendTelegramBuyAlert(pos.token, telegramConfig, pos.solInvested, pos.id, 0.000015);
+        }
+        if (discordConfig.isEnabled) {
+          sendDiscordBuyAlert(pos.token, discordConfig, pos.solInvested, pos.id, 0.000015);
+        }
+      },
+      onPositionUpdated: (pos) => {
+        setActivePosition({ ...pos });
+      },
+      onPositionClosed: (trade) => {
+        setActivePosition(null);
+        setClosedTrades((prev) => [trade, ...prev].slice(0, 200));
+        setTelemetry((prev) => ({
+          ...prev,
+          totalPnlSol: +(prev.totalPnlSol + trade.pnlSol).toFixed(4),
+          winCount: trade.pnlSol > 0 ? prev.winCount + 1 : prev.winCount,
+          lossCount: trade.pnlSol <= 0 ? prev.lossCount + 1 : prev.lossCount,
+          activePositionLocked: false
+        }));
+        if (trade.pnlSol > 0) {
+          soundFx.playTakeProfit();
+        } else {
+          soundFx.playEmergencyExit();
+        }
+        if (telegramConfig.isEnabled) {
+          sendTelegramExitAlert(trade, telegramConfig);
+        }
+        if (discordConfig.isEnabled) {
+          sendDiscordExitAlert(trade, discordConfig);
+        }
+      },
+      onLog: (category, level, message) => {
+        appendLog(category as any, level as any, message);
+      },
+      onError: (err, stage) => {
+        appendLog('EXECUTION', 'DANGER', `Execution error di tahap [${stage}]: ${err.message}`);
+      }
+    });
+  }, [setActivePosition, setClosedTrades, appendLog, telegramConfig, discordConfig]);
+
+  // Restore live tracker if active position exists on initial mount
+  useEffect(() => {
+    if (activePosition && activePosition.status === 'OPEN' && executionManagerRef.current) {
+      executionManagerRef.current.startPositionTracker(activePosition);
+    }
   }, []);
 
   const clearLogs = useCallback(() => setLogs([]), []);
@@ -1423,13 +1485,22 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   }, []);
 
-  // Real-Time Helius WebSocket Event Stream (Requirement 3: Blockchain Event Streaming)
+  // Real-Time Helius WebSocket Event Stream (Block 0/1 Sniffer for Pump.fun & Raydium)
   useEffect(() => {
     const stream = new HeliusBlockchainStream();
     stream.connect({
       onSlot: (slot) => {
         setNetworkMetrics((m) => ({ ...m, currentSlot: slot }));
         setTelemetry((t) => ({ ...t, currentSlot: slot }));
+      },
+      onPoolCreated: (event) => {
+        appendLog(
+          'SCAN',
+          'INFO',
+          `⚡ [BLOCK 0/1 SNIFFER] Terdeteksi pool baru di ${event.platform} (${event.instruction}) | Sig: ${event.signature.slice(0, 12)}...`
+        );
+        const sniffedToken = enqueueSniffedPoolEvent(event);
+        realTokensQueueRef.current = [sniffedToken, ...realTokensQueueRef.current];
       },
       onNewTokenEvent: () => {
         // Trigger immediate real token ingestion on Raydium/Pump pool log detection
@@ -1444,7 +1515,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       },
       onStatusChange: (status) => {
         if (status === 'CONNECTED') {
-          appendLog('SYSTEM', 'INFO', '⚡ Helius WebSocket on-chain streaming: TERHUBUNG (Sub-slot & pool logs active)');
+          appendLog('SYSTEM', 'INFO', '⚡ Helius WebSocket on-chain streaming: TERHUBUNG (Pump.fun & Raydium Block 0/1 Sniffer AKTIF)');
         }
       }
     });
@@ -1569,6 +1640,47 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const tipSol = Math.min(0.000025, JITO_TIP_TIERS[baseTier] || 0.000010);
 
         // 5. Automated Execution Decision Engine with Synchronous Mutex Lock
+        const consensusScore = consensus.moonshot?.moonshotScore || Math.round(consensus.token.narrativeCosineSim * 100);
+
+        // Autonomous Pipeline: Begitu skor koin mencapai >85%, picu triggerBuy() ExecutionManager langsung
+        if (consensusScore >= 85 && consensus.verdict === 'APPROVED' && executionManagerRef.current) {
+          appendLog(
+            'EXECUTION',
+            'SUCCESS',
+            `🚀 [AUTONOMOUS PIPELINE] Skor peluncuran ${consensusScore}% (>=85%) terdeteksi untuk ${consensus.token.symbol}! Memicu ExecutionManager.triggerBuy() otomatis tanpa interaksi UI.`
+          );
+
+          if (walletState.mode === 'LIVE_ON_CHAIN' || isSimulationMode) {
+            isPositionOpenRef.current = true;
+            isAutoSnipingRef.current = true;
+            setTelemetry((prev) => ({ ...prev, activePositionLocked: true }));
+
+            executionManagerRef.current
+              .triggerBuy(consensus.token, solInvest, {
+                isSimulation: isSimulationMode,
+                slippageBps: Math.round((agentConfig.slippagePct || 1.5) * 100),
+                jitoTipSol: tipSol,
+                targetTpPct: agentConfig.takeProfitPct || 100,
+                stopLossPct: agentConfig.stopLossPct || -25,
+                trailingStopLossPct: agentConfig.trailingStopLossPct || 15,
+                maxHoldTimeSec: agentConfig.maxHoldTimeSec || 180
+              })
+              .then((result) => {
+                if (result.success && result.position) {
+                  setAutoSnipeConfig((prev) => ({ ...prev, dailyTradesExecuted: prev.dailyTradesExecuted + 1 }));
+                }
+              })
+              .catch((err) => {
+                appendLog('EXECUTION', 'DANGER', `Auto-buy gagal untuk ${consensus.token.symbol}: ${err.message}`);
+              })
+              .finally(() => {
+                isAutoSnipingRef.current = false;
+              });
+
+            return;
+          }
+        }
+
         if (walletState.mode === 'LIVE_ON_CHAIN') {
           // SYNCHRONOUS MUTEX LOCK ACQUISITION
           const lockAcquired = positionMutex.acquireLock(consensus.token.mint);
@@ -1957,7 +2069,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [walletState.isConnected, walletState.balanceSol]);
 
-  // Periodic background refresh of connected wallet balance
+  // Real-Time Hot Wallet Balance Synchronization via Solana WebSocket connection.onAccountChange
   useEffect(() => {
     if (!walletState.isConnected) return;
 
@@ -1971,38 +2083,78 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     if (!fullKey) return;
 
-    const syncBalance = async () => {
-      try {
-        const res = await fetch(`/api/wallet/balance?address=${encodeURIComponent(fullKey)}`, {
-          signal: AbortSignal.timeout(6000)
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && typeof data.balanceSol === 'number') {
-            setWalletState((prev) => {
-              const updated = {
-                ...prev,
-                fullPublicKey: fullKey,
-                balanceSol: data.balanceSol
-              };
-              if (typeof window !== 'undefined') {
-                localStorage.setItem('GT_WALLET_STATE', JSON.stringify(updated));
-              }
-              return updated;
-            });
-          }
-        }
-      } catch {}
-    };
+    let subId: number | null = null;
+    let rpcConnection: Connection | null = null;
 
-    syncBalance();
+    try {
+      const rpcUrl =
+        process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
+        'https://mainnet.helius-rpc.com/?api-key=b1346052-9ac3-47b8-89ec-2ce7e88fa91b';
+      rpcConnection = new Connection(rpcUrl, 'processed');
+      const pubkey = new PublicKey(fullKey);
+
+      // 1. Initial fast on-chain balance query
+      rpcConnection
+        .getBalance(pubkey)
+        .then((lamports) => {
+          const liveBal = +(lamports / 1_000_000_000).toFixed(4);
+          setWalletState((prev) => {
+            const updated = {
+              ...prev,
+              fullPublicKey: fullKey,
+              balanceSol: liveBal
+            };
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('GT_WALLET_STATE', JSON.stringify(updated));
+            }
+            return updated;
+          });
+          setTelemetry((prev) => ({ ...prev, currentBalanceSol: liveBal }));
+        })
+        .catch(() => {});
+
+      // 2. Sub-second WebSocket Listener via connection.onAccountChange
+      subId = rpcConnection.onAccountChange(
+        pubkey,
+        (accountInfo) => {
+          const liveBal = +(accountInfo.lamports / 1_000_000_000).toFixed(4);
+          setWalletState((prev) => {
+            const updated = {
+              ...prev,
+              fullPublicKey: fullKey,
+              balanceSol: liveBal
+            };
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('GT_WALLET_STATE', JSON.stringify(updated));
+            }
+            return updated;
+          });
+          setTelemetry((prev) => ({
+            ...prev,
+            currentBalanceSol: liveBal
+          }));
+          appendLog(
+            'SYSTEM',
+            'INFO',
+            `⚡ [WEBSOCKET BALANCE SYNC] Saldo hot wallet diperbarui instan: ${liveBal} SOL`
+          );
+        },
+        'processed'
+      );
+    } catch (err: any) {
+      console.warn('Gagal mengaktifkan onAccountChange WebSocket:', err.message);
+    }
+
     refreshHoldings();
-    const interval = setInterval(() => {
-      syncBalance();
-      refreshHoldings();
-    }, 25000);
-    return () => clearInterval(interval);
-  }, [walletState.isConnected, walletState.fullPublicKey, refreshHoldings]);
+
+    return () => {
+      if (subId !== null && rpcConnection) {
+        try {
+          rpcConnection.removeAccountChangeListener(subId);
+        } catch {}
+      }
+    };
+  }, [walletState.isConnected, walletState.fullPublicKey, refreshHoldings, appendLog]);
 
   const value: TradingContextType = {
     engineStatus,

@@ -1,19 +1,35 @@
-'use client';
-
 /**
  * Helius / Solana WebSocket Streamer
  * Menghubungkan WebSocket on-chain secara langsung ke Helius RPC untuk streaming sub-slot,
  * deteksi program Raydium / Pump.fun, dan pembaruan slot instan.
  */
 
+export interface PoolCreationEvent {
+  platform: 'Pump.fun' | 'Raydium';
+  programId: string;
+  signature: string;
+  slot?: number;
+  detectedAt: number; // Date.now()
+  instruction: string;
+  rawLogs: string[];
+}
+
 export interface BlockchainStreamCallbacks {
   onSlot?: (slot: number) => void;
-  onNewTokenEvent?: (mint: string) => void;
+  onNewTokenEvent?: (mintOrSig: string) => void;
+  onPoolCreated?: (event: PoolCreationEvent) => void;
   onStatusChange?: (status: 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING') => void;
 }
 
+// Program IDs untuk Sniping Detik ke-0 (Block 0/1 Sniffer)
+export const SOLANA_DEX_PROGRAMS = {
+  PUMP_FUN: '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
+  RAYDIUM_V4: '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8',
+  RAYDIUM_CPMM: 'CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C'
+};
+
 export class HeliusBlockchainStream {
-  private ws: WebSocket | null = null;
+  private ws: any = null;
   private rpcUrl: string;
   private wsUrl: string;
   private callbacks: BlockchainStreamCallbacks = {};
@@ -21,7 +37,10 @@ export class HeliusBlockchainStream {
   private isDestroyed = false;
 
   constructor(rpcHttpUrl?: string) {
-    this.rpcUrl = rpcHttpUrl || process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=b1346052-9ac3-47b8-89ec-2ce7e88fa91b';
+    this.rpcUrl =
+      rpcHttpUrl ||
+      process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
+      'https://mainnet.helius-rpc.com/?api-key=b1346052-9ac3-47b8-89ec-2ce7e88fa91b';
     this.wsUrl = this.rpcUrl.replace(/^http/, 'ws');
   }
 
@@ -31,12 +50,23 @@ export class HeliusBlockchainStream {
     this.initWebSocket();
   }
 
+  private getWebSocketConstructor(): any {
+    if (typeof window !== 'undefined' && window.WebSocket) {
+      return window.WebSocket;
+    }
+    if (typeof global !== 'undefined' && (global as any).WebSocket) {
+      return (global as any).WebSocket;
+    }
+    return null;
+  }
+
   private initWebSocket() {
-    if (typeof window === 'undefined' || this.isDestroyed) return;
+    const WsClass = this.getWebSocketConstructor();
+    if (!WsClass || this.isDestroyed) return;
 
     try {
       this.callbacks.onStatusChange?.('CONNECTING');
-      this.ws = new WebSocket(this.wsUrl);
+      this.ws = new WsClass(this.wsUrl);
 
       this.ws.onopen = () => {
         this.callbacks.onStatusChange?.('CONNECTED');
@@ -50,32 +80,100 @@ export class HeliusBlockchainStream {
           })
         );
 
-        // 2. Subscribe ke Raydium Liquidity Pool v4 mint logs
+        // 2. Subscribe ke Pump.fun Creation & Bonding Curve events
         this.ws?.send(
           JSON.stringify({
             jsonrpc: '2.0',
             id: 102,
             method: 'logsSubscribe',
             params: [
-              { mentions: ['675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8'] },
+              { mentions: [SOLANA_DEX_PROGRAMS.PUMP_FUN] },
+              { commitment: 'processed' }
+            ]
+          })
+        );
+
+        // 3. Subscribe ke Raydium Liquidity Pool v4 mint logs (initialize2)
+        this.ws?.send(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: 103,
+            method: 'logsSubscribe',
+            params: [
+              { mentions: [SOLANA_DEX_PROGRAMS.RAYDIUM_V4] },
+              { commitment: 'processed' }
+            ]
+          })
+        );
+
+        // 4. Subscribe ke Raydium CPMM pool initialization logs
+        this.ws?.send(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: 104,
+            method: 'logsSubscribe',
+            params: [
+              { mentions: [SOLANA_DEX_PROGRAMS.RAYDIUM_CPMM] },
               { commitment: 'processed' }
             ]
           })
         );
       };
 
-      this.ws.onmessage = (event) => {
+      this.ws.onmessage = (event: any) => {
         try {
-          const data = JSON.parse(event.data);
+          const rawText = typeof event.data === 'string' ? event.data : event.data.toString();
+          const data = JSON.parse(rawText);
+
           if (data.method === 'slotNotification' && data.params?.result?.slot) {
             this.callbacks.onSlot?.(data.params.result.slot);
           } else if (data.method === 'logsNotification') {
-            const logs: string[] = data.params?.result?.value?.logs || [];
-            // Deteksi mint instruction atau initialize2
+            const value = data.params?.result?.value;
+            if (!value) return;
+
+            // Jika transaksi gagal on-chain, abaikan (anti-failed tx snipe)
+            if (value.err) return;
+
+            const logs: string[] = value.logs || [];
+            const signature: string = value.signature || '';
+
+            // Deteksi Block 0/1 Creation Events:
             for (const log of logs) {
-              if (log.includes('initialize2') || log.includes('InitializeInstruction2')) {
-                // Trigger token ingest signal
-                this.callbacks.onNewTokenEvent?.('MINT_EVENT_DETECTED');
+              // A. Pump.fun: Creation event / bonding curve initialization
+              if (
+                log.includes('Instruction: Create') ||
+                log.includes('Program log: Instruction: Create') ||
+                log.includes('initialize_mint')
+              ) {
+                const poolEvent: PoolCreationEvent = {
+                  platform: 'Pump.fun',
+                  programId: SOLANA_DEX_PROGRAMS.PUMP_FUN,
+                  signature,
+                  detectedAt: Date.now(),
+                  instruction: 'Create',
+                  rawLogs: logs
+                };
+                this.callbacks.onPoolCreated?.(poolEvent);
+                this.callbacks.onNewTokenEvent?.(signature);
+                break;
+              }
+
+              // B. Raydium V4 / CPMM: Initialize pool
+              if (
+                log.includes('initialize2') ||
+                log.includes('InitializeInstruction2') ||
+                log.includes('Instruction: Initialize')
+              ) {
+                const poolEvent: PoolCreationEvent = {
+                  platform: 'Raydium',
+                  programId: SOLANA_DEX_PROGRAMS.RAYDIUM_V4,
+                  signature,
+                  detectedAt: Date.now(),
+                  instruction: 'initialize2',
+                  rawLogs: logs
+                };
+                this.callbacks.onPoolCreated?.(poolEvent);
+                this.callbacks.onNewTokenEvent?.(signature);
                 break;
               }
             }
@@ -84,7 +182,7 @@ export class HeliusBlockchainStream {
       };
 
       this.ws.onerror = () => {
-        // Fallback silently handled on onclose
+        // Handled in onclose
       };
 
       this.ws.onclose = () => {
@@ -104,7 +202,7 @@ export class HeliusBlockchainStream {
       if (!this.isDestroyed) {
         this.initWebSocket();
       }
-    }, 8000);
+    }, 6000);
   }
 
   public disconnect() {
