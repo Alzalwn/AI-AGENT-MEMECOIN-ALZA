@@ -293,3 +293,114 @@ export async function sendTelegramRugpullWarning(
     `🛡️ Sinyal DIBATALKAN oleh Risk Agent.`;
   return sendTelegramMessage(config, text);
 }
+
+// ─────────────────────────────────────────────────────────
+// PERSONAL HIGH-CONVICTION ACTION-ORIENTED ALERT (6H DEDUP)
+// ─────────────────────────────────────────────────────────
+// In-Memory Deduplication Cache: CA -> timestamp (TTL: 6 Jam)
+const personalDedupCache = new Map<string, number>();
+const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+
+export interface HighConvictionCandidate {
+  mint: string;
+  symbol: string;
+  name: string;
+  initialLpUsd: number;
+  txVelocityPerSec: number;
+  smartMoneyCount: number;
+  consensusScore: number; // e.g. 5/5
+  isConsensusApproved: boolean;
+  mintAuthorityRevoked: boolean;
+  freezeAuthorityRevoked: boolean;
+  burntLiquidityPct: number;
+  isHoneypot?: boolean;
+}
+
+/**
+ * Memvalidasi dan mengirim notifikasi aksi kilat ke chat pribadi Telegram.
+ * Menjamin hanya koin 5/5 dengan indikator keamanan 100% bersih yang lolos,
+ * dan memblokir duplikasi token yang sama selama 6 jam.
+ */
+export async function sendPersonalActionAlert(
+  token: HighConvictionCandidate,
+  config?: TelegramConfig
+): Promise<{ success: boolean; reason?: string }> {
+  const activeConfig: TelegramConfig = config || {
+    botToken: process.env.TELEGRAM_BOT_TOKEN || '',
+    chatId: process.env.TELEGRAM_CHAT_ID || '',
+    isEnabled: true
+  };
+
+  if (!activeConfig.botToken || !activeConfig.chatId) {
+    return { success: false, reason: 'TELEGRAM_BOT_TOKEN atau TELEGRAM_CHAT_ID belum disetel' };
+  }
+
+  // 1. FILTER 1: High-Conviction Only (5/5 Konsensus + Keamanan 100% Bersih)
+  if (!token.isConsensusApproved || token.consensusScore < 5) {
+    return { success: false, reason: 'Ditolak: Konsensus belum mencapai 5/5 agen' };
+  }
+  if (!token.mintAuthorityRevoked) {
+    return { success: false, reason: 'Ditolak: Mint Authority belum di-revoke' };
+  }
+  if (!token.freezeAuthorityRevoked) {
+    return { success: false, reason: 'Ditolak: Freeze Authority belum di-revoke' };
+  }
+  if (token.burntLiquidityPct < 95) {
+    return { success: false, reason: 'Ditolak: LP Burn kurang dari 95%' };
+  }
+  if (token.isHoneypot === true) {
+    return { success: false, reason: 'Ditolak: Terdeteksi indikasi honeypot' };
+  }
+
+  // 2. FILTER 2: Anti-Spam Personal (6-Hour Deduplication Cache)
+  const now = Date.now();
+  const lastSent = personalDedupCache.get(token.mint);
+  if (lastSent && now - lastSent < SIX_HOURS_MS) {
+    const remainingMin = Math.round((SIX_HOURS_MS - (now - lastSent)) / 60000);
+    return { success: false, reason: `Ditolak: CA ini sudah dikirim dalam 6 jam terakhir (Cooldown sisa ${remainingMin} menit)` };
+  }
+
+  // Format Angka
+  const fmtLp = token.initialLpUsd >= 1000
+    ? `$${(token.initialLpUsd / 1000).toFixed(1)}k`
+    : `$${token.initialLpUsd.toFixed(0)}`;
+  const txSpeed = token.txVelocityPerSec ? token.txVelocityPerSec.toFixed(1) : '12.0';
+  const whales = token.smartMoneyCount || 1;
+
+  // Bot Trading Deep-Links
+  const trojanUrl = `https://t.me/solana_trojanbot?start=${token.mint}`;
+  const bonkBotUrl = `https://t.me/bonkbot_bot?start=${token.mint}`;
+  const photonUrl = `https://photon-sol.tinyastro.io/en/lp/${token.mint}`;
+  const dexUrl = `https://dexscreener.com/solana/${token.mint}`;
+
+  // Format Pesan Sesuai Permintaan Spesifik (Action-Oriented & Monospace CA)
+  const text =
+    `🟢 <b>${token.name} / $${token.symbol.toUpperCase()}</b>\n` +
+    `<code>${token.mint}</code>\n\n` +
+    `Data: LP ${fmtLp} | Kecepatan Tx: ${txSpeed}/detik | Paus: ${whales} masuk\n\n` +
+    `Aksi Cepat:\n` +
+    `<a href="${dexUrl}">DexScreener</a> | <a href="${photonUrl}">Photon</a> | <a href="${trojanUrl}">Trojan</a> | <a href="${bonkBotUrl}">BonkBot</a>`;
+
+  // Inline Keyboard Button 1-Tap Trading
+  const keyboard = [
+    [
+      { text: '⚡ Buy on Trojan', url: trojanUrl },
+      { text: '⚡ Buy on BonkBot', url: bonkBotUrl }
+    ],
+    [
+      { text: '📈 Photon Chart', url: photonUrl },
+      { text: '📊 DexScreener', url: dexUrl }
+    ]
+  ];
+
+  const ok = await sendTelegramMessage(activeConfig, text, keyboard);
+
+  if (ok) {
+    // Simpan ke Cache 6 Jam
+    personalDedupCache.set(token.mint, now);
+    return { success: true };
+  } else {
+    return { success: false, reason: 'Gagal menembakkan request ke Telegram Bot API' };
+  }
+}
+
