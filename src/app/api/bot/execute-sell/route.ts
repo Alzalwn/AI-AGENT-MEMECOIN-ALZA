@@ -82,14 +82,33 @@ export async function POST(req: NextRequest) {
     const connection = new Connection(rpcUrl, 'confirmed');
 
     // 2. Ambil token account on-chain untuk mendapatkan saldo token riil
-    const tokenAccounts = await connection.getParsedTokenAccountsByOwner(keypair.publicKey, {
+    let tokenAccounts = await connection.getParsedTokenAccountsByOwner(keypair.publicKey, {
       mint: new PublicKey(mint)
     });
 
+    // Fallback ke Token-2022 program jika tidak ditemukan di SPL standar
+    if (!tokenAccounts.value || tokenAccounts.value.length === 0) {
+      try {
+        const token2022Accounts = await connection.getParsedTokenAccountsByOwner(keypair.publicKey, {
+          programId: new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb')
+        });
+        const matched = token2022Accounts.value.filter(
+          (a) => a.account.data.parsed.info.mint === mint
+        );
+        if (matched.length > 0) {
+          tokenAccounts = { value: matched } as any;
+        }
+      } catch {}
+    }
+
     if (!tokenAccounts.value || tokenAccounts.value.length === 0) {
       return NextResponse.json(
-        { success: false, error: `Dompet tidak memiliki token account untuk mint: ${mint}` },
-        { status: 404 }
+        {
+          success: false,
+          requiresClientSign: true,
+          error: `Dompet server tidak memiliki token account untuk mint: ${mint}. Memerlukan eksekusi via dompet Phantom di browser.`
+        },
+        { status: 200 }
       );
     }
 
@@ -100,8 +119,12 @@ export async function POST(req: NextRequest) {
 
     if (BigInt(rawBalanceStr) <= BigInt(0)) {
       return NextResponse.json(
-        { success: false, error: 'Saldo token di dompet 0 atau sudah terjual.' },
-        { status: 400 }
+        {
+          success: false,
+          requiresClientSign: true,
+          error: 'Saldo token di dompet server 0 atau sudah terjual. Memerlukan sign via Phantom di browser jika ada saldo.'
+        },
+        { status: 200 }
       );
     }
 

@@ -327,7 +327,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       publicKey: null,
       balanceSol: 0,
       walletName: null,
-      mode: 'PAPER_TRADING'
+      mode: 'LIVE_ON_CHAIN'
     };
   });
 
@@ -535,7 +535,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return saved === 'true';
       }
     }
-    return true; // Default TRUE: Zero financial risk guarantee!
+    return false; // Default FALSE: Mode Riil On-Chain langsung aktif!
   });
 
   const setIsSimulationMode = useCallback((enabled: boolean) => {
@@ -898,17 +898,6 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
           `🟡 [PHANTOM POPUP] Menunggu persetujuan swap di dompet untuk ${holding.symbol} -> SOL...`
         );
 
-        if (isSimulationMode) {
-          const mockSig = `SIM_SELL_${Math.random().toString(36).slice(2, 10).toUpperCase()}_${Date.now().toString().slice(-6)}`;
-          appendLog(
-            'EXECUTION',
-            'SUCCESS',
-            `🧪 [DRY-RUN SIMULATION] Penjualan token ${holding.symbol} dicegat! Disimulasikan terjual ke SOL [SimTx: ${mockSig}]. 0 SOL riil dikeluarkan.`
-          );
-          soundFx.playTakeProfit();
-          return true;
-        }
-
         const swapRes = await executeJupiterSwap(
           quote,
           'SOL',
@@ -916,7 +905,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
           networkMetrics.currentSlot,
           pubKey,
           provider,
-          isSimulationMode
+          false
         );
 
         if (swapRes.signature) {
@@ -1210,28 +1199,37 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       let exitPriceSol = pos.currentPriceSol;
       let isSoldOnChain = false;
 
-      if (walletState.mode === 'LIVE_ON_CHAIN') {
-        if (isSimulationMode) {
-          // DRY-RUN SIMULATION INTERCEPTOR
-          const mockSig = `SIM_SELL_${Math.random().toString(36).slice(2, 10).toUpperCase()}_${Date.now().toString().slice(-6)}`;
-          appendLog(
-            'EXECUTION',
-            'SUCCESS',
-            `🧪 [DRY-RUN SIMULATION] Transaksi jual Phantom dicegat! Posisi ${pos.token.symbol} disimulasikan terjual @ ${exitPriceSol.toFixed(8)} SOL [SimTx: ${mockSig}] tanpa memotong SOL riil.`
-          );
-          isSoldOnChain = true;
-        } else {
-          try {
-            // Jalur A: Server Hot Wallet via /api/bot/execute-sell
+      const isExplicitPaper = walletState.mode === 'PAPER_TRADING' && !pos.token.isRealData && isSimulationMode;
+
+      if (isExplicitPaper) {
+        // DRY-RUN SIMULATION INTERCEPTOR (Hanya jika benar-benar testing paper)
+        const mockSig = `SIM_SELL_${Math.random().toString(36).slice(2, 10).toUpperCase()}_${Date.now().toString().slice(-6)}`;
+        appendLog(
+          'EXECUTION',
+          'SUCCESS',
+          `🧪 [PAPER TRADING] Posisi ${pos.token.symbol} disimulasikan terjual @ ${exitPriceSol.toFixed(8)} SOL [SimTx: ${mockSig}].`
+        );
+        isSoldOnChain = true;
+      } else {
+        const rpcUrl = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://solana-rpc.publicnode.com';
+        const connection = new Connection(rpcUrl, 'confirmed');
+
+        // Jalur 1: Coba eksekusi otomatis via Server Hot Wallet (/api/bot/execute-sell)
+        let serverSuccess = false;
+        let serverErrorMsg = '';
+
+        try {
+          appendLog('EXECUTION', 'INFO', `📡 Mengirim transaksi jual on-chain untuk ${pos.token.symbol} via Jito / RPC...`);
           const sellRes = await fetch('/api/bot/execute-sell', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               mint: pos.token.mint,
               percentage,
-              slippageBps: 250,
-              jitoTipSol: 0.0001
-            })
+              slippageBps: 300,
+              jitoTipSol: 0.00015
+            }),
+            signal: AbortSignal.timeout(32000)
           });
 
           const sellData = await sellRes.json();
@@ -1241,87 +1239,102 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
               exitPriceSol = +(sellData.solReceived / (pos.tokenAmount * (percentage / 100))).toFixed(8);
             }
             isSoldOnChain = true;
-          } else if (sellData.requiresClientSign) {
-            // Jalur B: Client-side Phantom wallet sell via Jupiter
-            let provider = typeof window !== 'undefined'
-              ? ((window as any).phantom?.solana || (window as any).solana || (window as any).solflare || (window as any).backpack)
-              : null;
-            const pubKey = walletState.fullPublicKey || provider?.publicKey?.toString();
-            if (provider && pubKey) {
-              appendLog('EXECUTION', 'INFO', `🟡 [PHANTOM SELL] Meminta tanda tangan transaksi jual di dompet untuk ${pos.token.symbol}...`);
-              
-              const decimals = pos.token.decimals || 6;
-              const portion = Math.min(1.0, Math.max(0.01, percentage / 100));
-              let rawUnitsToSell: string;
-              if (pos.tokenAmount && pos.tokenAmount > 0) {
-                rawUnitsToSell = Math.floor(pos.tokenAmount * portion * 10 ** decimals).toString();
-              } else {
-                rawUnitsToSell = Math.floor(1000 * 10 ** decimals).toString();
-              }
-
-              const quote = await fetchJupiterSellQuote(pos.token.mint, rawUnitsToSell, 250);
-              const swapRes = await executeJupiterSwap(
-                quote,
-                'SOL',
-                0.0001,
-                networkMetrics.currentSlot,
-                pubKey,
-                provider
-              );
-              if (swapRes.signature) {
-                appendLog('JITO', 'SUCCESS', `⚡ [PHANTOM SELL CONFIRMED] Tx: https://solscan.io/tx/${swapRes.signature}`);
-                if (quote.tokenAmountUi && pos.tokenAmount > 0) {
-                  exitPriceSol = +(quote.tokenAmountUi / (pos.tokenAmount * portion)).toFixed(8);
-                }
-                isSoldOnChain = true;
-              }
-            } else {
-              appendLog('EXECUTION', 'WARN', `⚠️ Dompet tidak terhubung untuk sign sell on-chain. Posisi tetap berstatus OPEN.`);
-              isSoldOnChain = false;
-            }
+            serverSuccess = true;
           } else {
-            const errStr = sellData?.error || '';
-            const isOrphan =
-              errStr.includes('tidak memiliki token account') ||
-              errStr.includes('Saldo token di dompet 0') ||
-              errStr.includes('sudah terjual');
-
-            if (isOrphan) {
-              appendLog(
-                'EXECUTION',
-                'WARN',
-                `ℹ️ [ORPHAN POSITION AUTO-CLEARED] Token ${pos.token.symbol} tidak ditemukan di dompet on-chain (saldo 0). Posisi ditutup & Mutex slot dibebaskan.`
-              );
-              isSoldOnChain = true;
-            } else {
-              appendLog('EXECUTION', 'WARN', `Sell on-chain gagal: ${errStr || 'Unknown error'}. Posisi tetap berstatus OPEN.`);
-              isSoldOnChain = false;
-            }
+            serverErrorMsg = sellData?.error || 'Server tidak memiliki token account';
           }
-        } catch (sellErr: any) {
-          const errStr = sellErr?.message || '';
-          const isOrphan =
-            errStr.includes('tidak memiliki token account') ||
-            errStr.includes('Saldo token di dompet 0') ||
-            errStr.includes('sudah terjual');
+        } catch (sErr: any) {
+          serverErrorMsg = sErr.message || 'Gagal menghubungi server sell';
+        }
 
-          if (isOrphan) {
-            appendLog(
-              'EXECUTION',
-              'WARN',
-              `ℹ️ [ORPHAN POSITION AUTO-CLEARED] Token ${pos.token.symbol} tidak ada di dompet on-chain. Posisi ditutup & Mutex dibebaskan.`
-            );
-            isSoldOnChain = true;
+        // Jalur 2: Jika server gagal (misal token tersimpan di browser Phantom), langsung eksekusi via Phantom browser
+        if (!serverSuccess) {
+          appendLog('EXECUTION', 'INFO', `🟡 [FALLBACK KE PHANTOM] Server: ${serverErrorMsg}. Mengecek dan mengeksekusi langsung via dompet Phantom di browser...`);
+
+          const provider = typeof window !== 'undefined'
+            ? ((window as any).phantom?.solana || (window as any).solana || (window as any).solflare || (window as any).backpack)
+            : null;
+
+          if (provider && (provider.isConnected || provider.isPhantom)) {
+            const pubKey = provider.publicKey || (walletState.fullPublicKey ? new PublicKey(walletState.fullPublicKey) : null);
+
+            if (pubKey) {
+              try {
+                // Ambil token account riil dari Phantom untuk mendapatkan jumlah presisi
+                let tokenAccounts = await connection.getParsedTokenAccountsByOwner(pubKey, {
+                  mint: new PublicKey(pos.token.mint)
+                });
+
+                // Cek Token-2022 jika di SPL standar kosong
+                if (!tokenAccounts.value || tokenAccounts.value.length === 0) {
+                  try {
+                    const t22 = await connection.getParsedTokenAccountsByOwner(pubKey, {
+                      programId: new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb')
+                    });
+                    tokenAccounts.value = t22.value.filter((a) => a.account.data.parsed.info.mint === pos.token.mint);
+                  } catch {}
+                }
+
+                if (tokenAccounts.value && tokenAccounts.value.length > 0) {
+                  const info = tokenAccounts.value[0].account.data.parsed.info;
+                  const rawBal = BigInt(info.tokenAmount.amount);
+                  const portion = Math.min(1.0, Math.max(0.01, percentage / 100));
+                  let rawUnitsToSell = (rawBal * BigInt(Math.round(portion * 1000))) / BigInt(1000);
+                  if (rawUnitsToSell <= BigInt(0)) rawUnitsToSell = rawBal;
+
+                  if (rawUnitsToSell > BigInt(0)) {
+                    appendLog('EXECUTION', 'INFO', `🔑 [PHANTOM SIGN] Membuka popup persetujuan transaksi di Phantom untuk menjual ${info.tokenAmount.uiAmount} ${pos.token.symbol}...`);
+                    const quote = await fetchJupiterSellQuote(pos.token.mint, rawUnitsToSell.toString(), 300);
+                    const swapRes = await executeJupiterSwap(
+                      quote,
+                      pos.token.symbol,
+                      0.00015,
+                      networkMetrics.currentSlot,
+                      pubKey.toString(),
+                      provider,
+                      false
+                    );
+
+                    if (swapRes.signature && !swapRes.isSimulated) {
+                      appendLog('JITO', 'SUCCESS', `⚡ [PHANTOM SELL CONFIRMED] Tx: https://solscan.io/tx/${swapRes.signature}`);
+                      const solRec = quote.tokenAmountUi || lamportsToSol(quote.outAmountRaw) || 0;
+                      if (solRec > 0 && pos.tokenAmount > 0) {
+                        exitPriceSol = +(solRec / (pos.tokenAmount * portion)).toFixed(8);
+                      }
+                      isSoldOnChain = true;
+                    } else {
+                      appendLog('EXECUTION', 'DANGER', `❌ Transaksi jual dibatalkan di dompet Phantom.`);
+                      isSoldOnChain = false;
+                    }
+                  } else {
+                    appendLog('EXECUTION', 'WARN', `ℹ️ Saldo token ${pos.token.symbol} di Phantom sudah 0.`);
+                    isSoldOnChain = true;
+                  }
+                } else {
+                  // Token tidak ada di Phantom maupun server
+                  const holdSec = (Date.now() - pos.entryTimestamp) / 1000;
+                  if (holdSec > 35) {
+                    appendLog('EXECUTION', 'WARN', `ℹ️ [ORPHAN CLEARED] Token ${pos.token.symbol} tidak ditemukan di dompet on-chain mana pun (saldo 0). Slot dibebaskan.`);
+                    isSoldOnChain = true;
+                  } else {
+                    appendLog('EXECUTION', 'WARN', `⚠️ Token ${pos.token.symbol} belum terdeteksi di RPC. Menunggu konfirmasi slot...`);
+                    isSoldOnChain = false;
+                  }
+                }
+              } catch (clientErr: any) {
+                appendLog('EXECUTION', 'DANGER', `❌ Gagal eksekusi jual via Phantom: ${clientErr.message}`);
+                isSoldOnChain = false;
+              }
+            } else {
+              appendLog('EXECUTION', 'DANGER', `❌ Public key Phantom tidak valid.`);
+              isSoldOnChain = false;
+            }
           } else {
-            appendLog('EXECUTION', 'DANGER', `❌ Error saat executeSell: ${errStr}. Posisi tetap berstatus OPEN.`);
+            appendLog('EXECUTION', 'DANGER', `❌ Dompet Phantom browser tidak terhubung dan server hot wallet tidak memiliki token.`);
             isSoldOnChain = false;
           }
         }
       }
-    } else {
-      // Paper trading mode
-      isSoldOnChain = true;
-    }
 
       if (!isSoldOnChain) {
         setActivePosition((prev) => (prev ? { ...prev, status: 'OPEN' } : null));
