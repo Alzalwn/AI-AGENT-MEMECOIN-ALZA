@@ -82,6 +82,10 @@ export interface TradingState {
   isSearchingMint: boolean;
   sniperStatus: string | null;
   pendingSnipeConfirmation: PendingSnipeConfirmation | null;
+  walletHoldings: import('../app/api/wallet/holdings/route').TokenHolding[];
+  isHoldingsLoading: boolean;
+  totalHoldingsValueUsd: number;
+  totalHoldingsValueSol: number;
 }
 
 export interface TradingActions {
@@ -105,9 +109,13 @@ export interface TradingActions {
   toggleAudio: () => void;
   openLivePosition: (result: import('../lib/jupiter').SwapExecutionResult, token?: TokenSignal | null) => Promise<void>;
   refreshWalletBalance: () => Promise<void>;
+  refreshHoldings: () => Promise<void>;
+  sellTokenHolding: (mint: string, percentage: number) => Promise<boolean>;
+  dumpAllHoldingsToSol: () => Promise<void>;
   clearLogs: () => void;
   clearTrades: () => void;
   appendLog: (category: LogCategory, level: LogLevel, message: string, data?: any) => void;
 }
 
 export type TradingContextType = TradingState & TradingActions;
+export type { TokenHolding } from '../app/api/wallet/holdings/route';

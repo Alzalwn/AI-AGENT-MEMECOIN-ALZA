@@ -17,6 +17,7 @@ export interface TokenSignal {
   narrativeTheme: string;
   priceSol: number;
   detectedAt: number;
+  decimals?: number;
   // Real on-chain metadata
   iconUrl?: string;
   dexUrl?: string;

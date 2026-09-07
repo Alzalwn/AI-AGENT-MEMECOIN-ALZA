@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
     if (quoteResponse && quoteResponse.jupiterRawQuote) {
       const jupSwapEndpoints = [
         'https://api.jup.ag/swap/v1/swap',
-        'https://quote-api.jup.ag/v6/swap'
+        'https://lite-api.jup.ag/swap/v1/swap'
       ];
 
       for (const ep of jupSwapEndpoints) {

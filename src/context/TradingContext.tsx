@@ -43,7 +43,8 @@ import {
 } from '../lib/discord';
 import { createJitoBundleReceipt } from '../lib/jito';
 import { rpcFailoverInstance } from '../lib/rpcFailover';
-import { fetchJupiterQuote, executeJupiterSwap, SwapExecutionResult } from '../lib/jupiter';
+import { fetchJupiterQuote, fetchJupiterSellQuote, executeJupiterSwap, SwapExecutionResult } from '../lib/jupiter';
+import type { TokenHolding } from '../app/api/wallet/holdings/route';
 import { HeliusBlockchainStream } from '../lib/heliusStream';
 import { verifySafeToSell } from '../lib/honeypot';
 import { positionMutex } from '../engine/mutex';
@@ -490,6 +491,149 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [walletState.fullPublicKey, appendLog]);
 
+  // Wallet Holdings State (Tokens held in user's on-chain wallet)
+  const [walletHoldings, setWalletHoldings] = useState<TokenHolding[]>([]);
+  const [isHoldingsLoading, setIsHoldingsLoading] = useState<boolean>(false);
+  const [totalHoldingsValueUsd, setTotalHoldingsValueUsd] = useState<number>(0);
+  const [totalHoldingsValueSol, setTotalHoldingsValueSol] = useState<number>(0);
+
+  const refreshHoldings = useCallback(async () => {
+    const fullKey =
+      walletState.fullPublicKey ||
+      (typeof window !== 'undefined'
+        ? (window as any).phantom?.solana?.publicKey?.toString() ||
+          (window as any).solflare?.publicKey?.toString() ||
+          (window as any).backpack?.publicKey?.toString()
+        : null);
+
+    if (!fullKey) return;
+    setIsHoldingsLoading(true);
+
+    try {
+      const res = await fetch(`/api/wallet/holdings?address=${encodeURIComponent(fullKey)}`, {
+        signal: AbortSignal.timeout(8000)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.holdings)) {
+          setWalletHoldings(data.holdings);
+          setTotalHoldingsValueUsd(data.totalValueUsd || 0);
+          setTotalHoldingsValueSol(data.totalValueSol || 0);
+        }
+      }
+    } catch (err: any) {
+      console.warn('Gagal memuat token holdings:', err.message);
+    } finally {
+      setIsHoldingsLoading(false);
+    }
+  }, [walletState.fullPublicKey]);
+
+  const sellTokenHolding = useCallback(
+    async (mint: string, percentage: number = 100): Promise<boolean> => {
+      const holding = walletHoldings.find((h) => h.mint === mint);
+      if (!holding) {
+        appendLog('EXECUTION', 'WARN', `Token ${mint} tidak ditemukan di holdings.`);
+        return false;
+      }
+
+      let provider = typeof window !== 'undefined'
+        ? ((window as any).phantom?.solana || (window as any).solana || (window as any).solflare || (window as any).backpack)
+        : null;
+      const pubKey = walletState.fullPublicKey || provider?.publicKey?.toString();
+
+      if (!provider || !pubKey) {
+        appendLog('EXECUTION', 'WARN', `⚠️ Dompet Phantom belum terhubung untuk mengeksekusi swap jual.`);
+        return false;
+      }
+
+      appendLog(
+        'EXECUTION',
+        'INFO',
+        `⚡ [LIQUIDASI] Menyiapkan swap jual ${percentage}% untuk ${holding.symbol} (${holding.uiAmount} token)...`
+      );
+
+      try {
+        const portion = Math.min(1.0, Math.max(0.01, percentage / 100));
+        let rawUnitsToSell: string;
+
+        if (holding.rawAmount && BigInt(holding.rawAmount) > BigInt(0)) {
+          const rawBig = BigInt(holding.rawAmount);
+          const toSellBig = (rawBig * BigInt(Math.round(portion * 1000))) / BigInt(1000);
+          rawUnitsToSell = (toSellBig > BigInt(0) ? toSellBig : rawBig).toString();
+        } else {
+          rawUnitsToSell = Math.floor(holding.uiAmount * portion * 10 ** (holding.decimals || 6)).toString();
+        }
+
+        const quote = await fetchJupiterSellQuote(holding.mint, rawUnitsToSell, 250);
+
+        appendLog(
+          'EXECUTION',
+          'INFO',
+          `🟡 [PHANTOM POPUP] Menunggu persetujuan swap di dompet untuk ${holding.symbol} -> SOL...`
+        );
+
+        const swapRes = await executeJupiterSwap(
+          quote,
+          'SOL',
+          0.0001,
+          networkMetrics.currentSlot,
+          pubKey,
+          provider
+        );
+
+        if (swapRes.signature) {
+          appendLog(
+            'JITO',
+            'SUCCESS',
+            `🎯 [SELL SUKSES] ${holding.symbol} berhasil dijual ke SOL! Tx: https://solscan.io/tx/${swapRes.signature}`
+          );
+          soundFx.playTakeProfit();
+
+          // Refresh holdings & wallet balance after sale
+          setTimeout(async () => {
+            await refreshHoldings();
+            await refreshWalletBalance();
+          }, 2000);
+
+          return true;
+        }
+      } catch (err: any) {
+        appendLog('EXECUTION', 'DANGER', `❌ Gagal menjual ${holding.symbol}: ${err.message}`);
+        return false;
+      }
+      return false;
+    },
+    [walletHoldings, walletState.fullPublicKey, networkMetrics.currentSlot, appendLog, refreshHoldings, refreshWalletBalance]
+  );
+
+  const dumpAllHoldingsToSol = useCallback(async () => {
+    const WSOL = 'So11111111111111111111111111111111111111112';
+    const tokensToSell = walletHoldings.filter((h) => h.mint !== WSOL && h.uiAmount > 0);
+
+    if (tokensToSell.length === 0) {
+      appendLog('EXECUTION', 'INFO', 'ℹ️ Tidak ada token lain di dompet selain SOL untuk dilikuidasi.');
+      return;
+    }
+
+    appendLog(
+      'EXECUTION',
+      'WARN',
+      `🚨 [EMERGENCY DUMP ALL] Memulai likuidasi berurutan untuk ${tokensToSell.length} token di dompet Phantom...`
+    );
+
+    for (const token of tokensToSell) {
+      appendLog('EXECUTION', 'INFO', `⏳ Menjual token ${token.symbol} (${token.uiAmount} token)...`);
+      const success = await sellTokenHolding(token.mint, 100);
+      if (!success) {
+        appendLog('EXECUTION', 'WARN', `⚠️ Penjualan ${token.symbol} dibatalkan atau gagal. Melanjutkan token berikutnya...`);
+      }
+    }
+
+    appendLog('EXECUTION', 'SUCCESS', '🏁 [DUMP ALL SELESAI] Seluruh token telah diproses untuk dilikuidasi ke SOL.');
+    await refreshHoldings();
+    await refreshWalletBalance();
+  }, [walletHoldings, appendLog, sellTokenHolding, refreshHoldings, refreshWalletBalance]);
+
   // Open Real Live Position from confirmed swap transaction (Requirement 1 & 4)
   const openLivePosition = useCallback(
     async (result: SwapExecutionResult, tokenSignal?: TokenSignal | null) => {
@@ -666,11 +810,17 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
             const pubKey = walletState.fullPublicKey || provider?.publicKey?.toString();
             if (provider && pubKey) {
               appendLog('EXECUTION', 'INFO', `🟡 [PHANTOM SELL] Meminta tanda tangan transaksi jual di dompet untuk ${pos.token.symbol}...`);
-              const quote = await fetchJupiterQuote(
-                'So11111111111111111111111111111111111111112',
-                pos.solInvested * (percentage / 100),
-                250
-              );
+              
+              const decimals = pos.token.decimals || 6;
+              const portion = Math.min(1.0, Math.max(0.01, percentage / 100));
+              let rawUnitsToSell: string;
+              if (pos.tokenAmount && pos.tokenAmount > 0) {
+                rawUnitsToSell = Math.floor(pos.tokenAmount * portion * 10 ** decimals).toString();
+              } else {
+                rawUnitsToSell = Math.floor(1000 * 10 ** decimals).toString();
+              }
+
+              const quote = await fetchJupiterSellQuote(pos.token.mint, rawUnitsToSell, 250);
               const swapRes = await executeJupiterSwap(
                 quote,
                 'SOL',
@@ -681,23 +831,36 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
               );
               if (swapRes.signature) {
                 appendLog('JITO', 'SUCCESS', `⚡ [PHANTOM SELL CONFIRMED] Tx: https://solscan.io/tx/${swapRes.signature}`);
+                if (quote.tokenAmountUi && pos.tokenAmount > 0) {
+                  exitPriceSol = +(quote.tokenAmountUi / (pos.tokenAmount * portion)).toFixed(8);
+                }
                 isSoldOnChain = true;
               }
             } else {
-              appendLog('EXECUTION', 'WARN', `⚠️ Dompet tidak terhubung untuk sign sell on-chain. Menutup posisi secara lokal.`);
-              isSoldOnChain = true;
+              appendLog('EXECUTION', 'WARN', `⚠️ Dompet tidak terhubung untuk sign sell on-chain. Posisi tetap berstatus OPEN.`);
+              isSoldOnChain = false;
             }
           } else {
-            appendLog('EXECUTION', 'WARN', `Sell on-chain gagal: ${sellData.error || 'Unknown error'}. Menutup posisi secara lokal.`);
-            isSoldOnChain = true;
+            appendLog('EXECUTION', 'WARN', `Sell on-chain gagal: ${sellData.error || 'Unknown error'}. Posisi tetap berstatus OPEN.`);
+            isSoldOnChain = false;
           }
         } catch (sellErr: any) {
-          appendLog('EXECUTION', 'DANGER', `Error saat executeSell: ${sellErr.message}. Menutup posisi secara lokal.`);
-          isSoldOnChain = true;
+          appendLog('EXECUTION', 'DANGER', `❌ Error saat executeSell: ${sellErr.message}. Posisi tetap berstatus OPEN.`);
+          isSoldOnChain = false;
         }
       } else {
         // Paper trading mode
         isSoldOnChain = true;
+      }
+
+      if (!isSoldOnChain) {
+        setActivePosition((prev) => (prev ? { ...prev, status: 'OPEN' } : null));
+        appendLog(
+          'EXECUTION',
+          'WARN',
+          `⚠️ Transaksi jual on-chain ${pos.token.symbol} belum terkonfirmasi. Posisi tetap aktif di dashboard.`
+        );
+        return;
       }
 
       if (isSoldOnChain) {
@@ -744,6 +907,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
           }));
 
           await refreshWalletBalance();
+          await refreshHoldings();
 
           if (telegramConfig.isEnabled) {
             sendTelegramExitAlert(closed, telegramConfig);
@@ -783,11 +947,12 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
           });
 
           await refreshWalletBalance();
+          await refreshHoldings();
           appendLog('EXECUTION', 'SUCCESS', `🎯 [PARTIAL PROFIT] Sold ${percentage}% ${pos.token.symbol} (+${freedPnlSol} SOL)`);
         }
       }
     },
-    [walletState.mode, walletState.fullPublicKey, networkMetrics.currentSlot, appendLog, setActivePosition, setClosedTrades, refreshWalletBalance, telegramConfig, discordConfig]
+    [walletState.mode, walletState.fullPublicKey, networkMetrics.currentSlot, appendLog, setActivePosition, setClosedTrades, refreshWalletBalance, refreshHoldings, telegramConfig, discordConfig]
   );
 
   // EMERGENCY KILL-SWITCH
@@ -1650,9 +1815,13 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
 
     syncBalance();
-    const interval = setInterval(syncBalance, 25000);
+    refreshHoldings();
+    const interval = setInterval(() => {
+      syncBalance();
+      refreshHoldings();
+    }, 25000);
     return () => clearInterval(interval);
-  }, [walletState.isConnected, walletState.fullPublicKey]);
+  }, [walletState.isConnected, walletState.fullPublicKey, refreshHoldings]);
 
   const value: TradingContextType = {
     engineStatus,
@@ -1675,6 +1844,10 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     isSearchingMint,
     sniperStatus,
     pendingSnipeConfirmation,
+    walletHoldings,
+    isHoldingsLoading,
+    totalHoldingsValueUsd,
+    totalHoldingsValueSol,
     setEngineStatus,
     toggleEngine,
     emergencyKillSwitch,
@@ -1695,6 +1868,9 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     toggleAudio,
     openLivePosition,
     refreshWalletBalance,
+    refreshHoldings,
+    sellTokenHolding,
+    dumpAllHoldingsToSol,
     clearLogs,
     clearTrades,
     appendLog

@@ -42,6 +42,32 @@ export async function fetchJupiterQuote(
   return data.quote;
 }
 
+/**
+ * Fetch optimal DEX sell route from Jupiter (Token -> WSOL/Native SOL)
+ */
+export async function fetchJupiterSellQuote(
+  tokenMint: string,
+  rawAmount: string,
+  slippageBps: number = 250
+): Promise<JupiterQuoteResponse> {
+  const WSOL_MINT = 'So11111111111111111111111111111111111111112';
+  const params = new URLSearchParams({
+    inputMint: tokenMint.trim(),
+    outputMint: WSOL_MINT,
+    amountRaw: rawAmount.trim(),
+    slippageBps: slippageBps.toString()
+  });
+
+  const res = await fetch(`/api/jupiter/quote?${params.toString()}`);
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `Gagal mengambil quote jual (status ${res.status})`);
+  }
+
+  const data = await res.json();
+  return data.quote;
+}
+
 import { Connection, VersionedTransaction } from '@solana/web3.js';
 
 function base64ToUint8Array(base64: string): Uint8Array {
@@ -142,7 +168,7 @@ export async function executeJupiterSwap(
 
   return {
     signature,
-    inAmountSol: quote.inAmountSol,
+    inAmountSol: quote.inAmountSol || 0,
     outAmountFormatted: quote.outAmountFormatted,
     tokenAmountUi: quote.tokenAmountUi,
     decimals: quote.decimals,
