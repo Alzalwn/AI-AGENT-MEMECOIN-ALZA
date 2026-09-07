@@ -49,6 +49,9 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
     refreshHoldings,
     sellTokenHolding,
     dumpAllHoldingsToSol,
+    unwrapWsolOrCloseAccount,
+    emergencyStopAllTrading,
+    engineStatus,
     walletState
   } = useTradingAgent();
 
@@ -56,6 +59,7 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
   const [isDetailsOpen, setIsDetailsOpen] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'SNIPER' | 'HOLDINGS'>('SNIPER');
   const [sellingMint, setSellingMint] = useState<string | null>(null);
+  const [unwrappingMint, setUnwrappingMint] = useState<string | null>(null);
   const [isDumpingAll, setIsDumpingAll] = useState<boolean>(false);
 
   const handleCopy = (text: string) => {
@@ -81,6 +85,15 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
       } finally {
         setIsDumpingAll(false);
       }
+    }
+  };
+
+  const handleUnwrapWsol = async (mint: string, isToken2022: boolean = false) => {
+    setUnwrappingMint(mint);
+    try {
+      await unwrapWsolOrCloseAccount(mint, isToken2022);
+    } finally {
+      setUnwrappingMint(null);
     }
   };
 
@@ -144,6 +157,56 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
       }
     >
       <div className="space-y-3 font-mono">
+        {/* Anti-Fee Drainage & Transparency Banner */}
+        <div className="p-3 rounded-xl bg-zinc-950/90 border border-zinc-800 flex items-center justify-between flex-wrap gap-2.5 shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <div className={`p-2 rounded-lg ${engineStatus === 'PAUSED' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+              <Shield className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 text-xs font-bold flex-wrap">
+                <span className="text-zinc-200">Mode Bot:</span>
+                <span className={`px-2 py-0.5 rounded-md text-[10px] font-black ${
+                  engineStatus === 'PAUSED'
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-amber-500/20 text-amber-400 border border-amber-500/30 animate-pulse'
+                }`}>
+                  {engineStatus === 'PAUSED' ? '🛡️ PAUSED (AMAN • TIDAK ADA TRANSAKSI OTOMATIS)' : '⚡ BERJALAN'}
+                </span>
+                <span className="text-[10px] text-zinc-400">
+                  Priority Fee: <b className="text-cyan-400">0.000010 SOL (~$0.001)</b>
+                </span>
+              </div>
+              <p className="text-[10px] text-zinc-400 mt-0.5">
+                💡 <span className="text-zinc-300">Tidak ada biaya admin server.</span> Dana Anda aman berada di token Phantom ($15.98) & deposit sewa akun.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {engineStatus !== 'PAUSED' && (
+              <button
+                type="button"
+                onClick={() => emergencyStopAllTrading()}
+                className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-lg shadow-rose-600/30 transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>🛑 STOP SEMUA BOT</span>
+              </button>
+            )}
+            {memeHoldings.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('HOLDINGS')}
+                className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/40 font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Flame className="w-3.5 h-3.5" />
+                <span>Lihat {memeHoldings.length} Token</span>
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Navigation Tabs between Active Sniper Slot & Wallet Holdings */}
         <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2">
           <div className="flex items-center gap-2">
@@ -595,28 +658,52 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
                       {/* Action Buttons for this token */}
                       {!isWSOL ? (
                         <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end pt-1 sm:pt-0 border-t sm:border-t-0 border-zinc-800/80">
-                          <button
-                            type="button"
-                            onClick={() => handleSingleTokenSell(token.mint, 50)}
-                            disabled={isSellingThis || isDumpingAll}
-                            className="px-2.5 py-1 text-[10px] rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 hover:border-zinc-700 font-bold transition-all disabled:opacity-50 cursor-pointer flex items-center gap-1"
-                          >
-                            <span>Jual 50%</span>
-                          </button>
+                          {token.uiAmount > 0 ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleSingleTokenSell(token.mint, 50)}
+                                disabled={isSellingThis || isDumpingAll}
+                                className="px-2.5 py-1 text-[10px] rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 hover:border-zinc-700 font-bold transition-all disabled:opacity-50 cursor-pointer flex items-center gap-1"
+                              >
+                                <span>Jual 50%</span>
+                              </button>
 
-                          <button
-                            type="button"
-                            onClick={() => handleSingleTokenSell(token.mint, 100)}
-                            disabled={isSellingThis || isDumpingAll}
-                            className="px-3 py-1 text-[10px] rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/40 hover:border-rose-500 font-bold transition-all disabled:opacity-50 cursor-pointer flex items-center gap-1 shadow-sm shadow-rose-500/10"
-                          >
-                            <Flame className={`w-3 h-3 ${isSellingThis ? 'animate-spin' : ''}`} />
-                            <span>{isSellingThis ? 'Memproses...' : 'Jual 100%'}</span>
-                          </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSingleTokenSell(token.mint, 100)}
+                                disabled={isSellingThis || isDumpingAll}
+                                className="px-3 py-1 text-[10px] rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/40 hover:border-rose-500 font-bold transition-all disabled:opacity-50 cursor-pointer flex items-center gap-1 shadow-sm shadow-rose-500/10"
+                              >
+                                <Flame className={`w-3 h-3 ${isSellingThis ? 'animate-spin' : ''}`} />
+                                <span>{isSellingThis ? 'Memproses...' : 'Jual 100%'}</span>
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleUnwrapWsol(token.mint, token.isToken2022)}
+                              disabled={unwrappingMint === token.mint}
+                              className="px-2.5 py-1 text-[10px] rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 font-bold transition-all disabled:opacity-50 cursor-pointer flex items-center gap-1"
+                              title="Tutup akun kosong ini dan tarik kembali ~0.002 SOL sewa ke dompet"
+                            >
+                              <RotateCcw className={`w-3 h-3 ${unwrappingMint === token.mint ? 'animate-spin' : ''}`} />
+                              <span>{unwrappingMint === token.mint ? 'Menarik...' : 'Tarik Sewa (~0.002 SOL)'}</span>
+                            </button>
+                          )}
                         </div>
                       ) : (
-                        <div className="text-[10px] text-zinc-500 italic">
-                          Native Liquidity Asset
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleUnwrapWsol(token.mint, token.isToken2022)}
+                            disabled={unwrappingMint === token.mint}
+                            className="px-3 py-1.5 text-xs rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 hover:border-emerald-500 font-bold transition-all disabled:opacity-50 cursor-pointer flex items-center gap-1.5 shadow-sm shadow-emerald-500/10"
+                            title="Konversi WSOL kembali ke SOL asli dan kembalikan deposit sewa akun"
+                          >
+                            <RotateCcw className={`w-3.5 h-3.5 ${unwrappingMint === token.mint ? 'animate-spin' : ''}`} />
+                            <span>{unwrappingMint === token.mint ? 'Mengembalikan SOL...' : '⚡ Unwrap WSOL ke Native SOL'}</span>
+                          </button>
                         </div>
                       )}
                     </div>

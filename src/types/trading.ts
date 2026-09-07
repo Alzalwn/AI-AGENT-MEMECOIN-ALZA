@@ -112,6 +112,8 @@ export interface TradingActions {
   refreshHoldings: () => Promise<void>;
   sellTokenHolding: (mint: string, percentage: number) => Promise<boolean>;
   dumpAllHoldingsToSol: () => Promise<void>;
+  unwrapWsolOrCloseAccount: (mint: string, isToken2022?: boolean) => Promise<boolean>;
+  emergencyStopAllTrading: () => void;
   clearLogs: () => void;
   clearTrades: () => void;
   appendLog: (category: LogCategory, level: LogLevel, message: string, data?: any) => void;

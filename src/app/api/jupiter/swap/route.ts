@@ -36,7 +36,8 @@ async function submitToJito(serializedTx: string): Promise<string | null> {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { quoteResponse, userPublicKey, prioritizationFeeLamports = 50000 } = body;
+    const { quoteResponse, userPublicKey, prioritizationFeeLamports = 20000 } = body;
+    const safePriorityFee = Math.min(25000, typeof prioritizationFeeLamports === 'number' ? prioritizationFeeLamports : 20000);
 
     // Require valid wallet public key for real on-chain execution
     if (!userPublicKey || userPublicKey.length < 32) {
@@ -75,7 +76,7 @@ export async function POST(req: NextRequest) {
               userPublicKey: userPublicKey,
               wrapAndUnwrapSol: true,
               dynamicComputeUnitLimit: true,
-              prioritizationFeeLamports: typeof prioritizationFeeLamports === 'number' ? prioritizationFeeLamports : 50000,
+              prioritizationFeeLamports: safePriorityFee,
               asLegacyTransaction: false
             }),
             signal: AbortSignal.timeout(8000)

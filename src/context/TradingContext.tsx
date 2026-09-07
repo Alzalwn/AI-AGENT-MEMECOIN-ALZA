@@ -49,6 +49,7 @@ import { HeliusBlockchainStream } from '../lib/heliusStream';
 import { verifySafeToSell } from '../lib/honeypot';
 import { positionMutex } from '../engine/mutex';
 import { calculateSolanaPnl, parseRawTokenUnits, lamportsToSol } from '../lib/solanaMath';
+import { VersionedTransaction } from '@solana/web3.js';
 
 // Extended configs with minGrokScore (not part of base lib type)
 export interface WebhookTelegramConfig extends TelegramConfig {
@@ -107,7 +108,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return saved;
       }
     }
-    return 'AUTONOMOUS';
+    return 'PAUSED'; // Safety default: never start auto-buying without explicit user action
   });
 
   const setEngineStatus = useCallback((status: 'AUTONOMOUS' | 'IDLE' | 'PAUSED' | ((prev: 'AUTONOMOUS' | 'IDLE' | 'PAUSED') => 'AUTONOMOUS' | 'IDLE' | 'PAUSED')) => {
@@ -347,15 +348,15 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const [autoSnipeConfig, setAutoSnipeConfig] = useState<AutoSnipeConfig>(() => {
     const defaults: AutoSnipeConfig = {
-      isEnabled: true,
-      buyAmountSol: 0.5,
-      minGrokViralityScore: 80,
+      isEnabled: false, // Default OFF to prevent unwanted automatic transactions
+      buyAmountSol: 0.02, // Safe small buy amount
+      minGrokViralityScore: 85,
       minLiquidityUsd: 10000,
       maxTop10HoldersPct: 20,
-      jitoTipTier: 'STANDARD',
+      jitoTipTier: 'ECONOMY', // Ultra-low fee tier
       takeProfitMultiplierR: 3.0,
       stopLossMultiplierR: 0.33,
-      maxDailyTrades: 20,
+      maxDailyTrades: 10,
       dailyTradesExecuted: 0,
       takeProfitPct: 100,
       stopLossPct: -25,
@@ -633,6 +634,87 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     await refreshHoldings();
     await refreshWalletBalance();
   }, [walletHoldings, appendLog, sellTokenHolding, refreshHoldings, refreshWalletBalance]);
+
+  const emergencyStopAllTrading = useCallback(() => {
+    setEngineStatusState('PAUSED');
+    setAutoSnipeConfig((prev) => {
+      const updated = { ...prev, isEnabled: false };
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('GT_ENGINE_STATUS', 'PAUSED');
+          localStorage.setItem('GT_AUTOSNIPE_CONFIG', JSON.stringify(updated));
+        } catch {}
+      }
+      return updated;
+    });
+    isAutoSnipingRef.current = false;
+    soundFx.playEmergencyExit();
+    appendLog('SYSTEM', 'WARN', '🛑 [EMERGENCY STOP] Seluruh bot otomatis, auto-snipe, dan transaksi telah DIMATIKAN seketika.');
+  }, [appendLog]);
+
+  const unwrapWsolOrCloseAccount = useCallback(async (mint: string, isToken2022: boolean = false): Promise<boolean> => {
+    let provider = typeof window !== 'undefined'
+      ? ((window as any).phantom?.solana || (window as any).solana || (window as any).solflare || (window as any).backpack)
+      : null;
+    const pubKey = walletState.fullPublicKey || provider?.publicKey?.toString();
+
+    if (!provider || !pubKey) {
+      appendLog('EXECUTION', 'WARN', '⚠️ Hubungkan dompet Phantom terlebih dahulu.');
+      return false;
+    }
+
+    const isWSOL = mint === 'So11111111111111111111111111111111111111112';
+    appendLog(
+      'EXECUTION',
+      'INFO',
+      isWSOL
+        ? '⚡ [UNWRAP WSOL] Menyiapkan transaksi unwrap WSOL ke Native SOL & tarik kembali sewa SOL...'
+        : `⚡ [RECLAIM RENT] Menyiapkan transaksi penutupan akun token untuk menarik sewa SOL...`
+    );
+
+    try {
+      const res = await fetch('/api/wallet/close-account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userPublicKey: pubKey, mint, isToken2022 })
+      });
+
+      const data = await res.json();
+      if (!data.success || !data.transaction) {
+        throw new Error(data.error || 'Gagal merakit transaksi penutupan akun');
+      }
+
+      const binaryString = window.atob(data.transaction);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const versionedTx = VersionedTransaction.deserialize(bytes);
+
+      const sendResult = await provider.signAndSendTransaction(versionedTx);
+      const signature = sendResult?.signature || (typeof sendResult === 'string' ? sendResult : null);
+
+      if (signature) {
+        appendLog(
+          'JITO',
+          'SUCCESS',
+          isWSOL
+            ? `🎯 [WSOL UNWRAPPED] Seluruh saldo WSOL & sewa akun berhasil dikembalikan ke saldo SOL asli! Tx: https://solscan.io/tx/${signature}`
+            : `🎯 [RENT RECLAIMED] Akun token berhasil ditutup! ~0.002 SOL sewa dikembalikan ke dompet Anda! Tx: https://solscan.io/tx/${signature}`
+        );
+        soundFx.playTakeProfit();
+        setTimeout(async () => {
+          await refreshHoldings();
+          await refreshWalletBalance();
+        }, 2000);
+        return true;
+      }
+    } catch (err: any) {
+      appendLog('EXECUTION', 'DANGER', `❌ Gagal unwrap/tutup akun: ${err.message}`);
+      return false;
+    }
+    return false;
+  }, [walletState.fullPublicKey, appendLog, refreshHoldings, refreshWalletBalance]);
 
   // Open Real Live Position from confirmed swap transaction (Requirement 1 & 4)
   const openLivePosition = useCallback(
@@ -1407,20 +1489,9 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
           solInvest = +(Math.min(maxCapSol, Math.max(0.02, kellyAmountSol))).toFixed(3);
         }
 
-        // 4. Dynamic Tip Booster
-        const baseTier = autoSnipeConfig.jitoTipTier || agentConfig.jitoTipTier || 'STANDARD';
-        let tipSol = JITO_TIP_TIERS[baseTier] || 0.000100;
-        const isHighVirality = consensus.token.narrativeCosineSim >= 0.88;
-        const isHighRush = consensus.token.uniqueBuyersCount >= 8 || consensus.token.volumeDelta15s >= 4.0;
-        const isBoosted = isHighVirality || isHighRush;
-
-        if (isBoosted) {
-          if (baseTier === 'ECONOMY' || baseTier === 'STANDARD') {
-            tipSol = JITO_TIP_TIERS.TURBO;
-          } else if (baseTier === 'FAST' || baseTier === 'TURBO') {
-            tipSol = JITO_TIP_TIERS.ULTRA_DEGEN;
-          }
-        }
+        // 4. Ultra-Low Tip Guard (Prevent fee drainage)
+        const baseTier = autoSnipeConfig.jitoTipTier || agentConfig.jitoTipTier || 'ECONOMY';
+        const tipSol = Math.min(0.000025, JITO_TIP_TIERS[baseTier] || 0.000010);
 
         // 5. Automated Execution Decision Engine with Synchronous Mutex Lock
         if (walletState.mode === 'LIVE_ON_CHAIN') {
@@ -1535,7 +1606,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         appendLog(
           'JITO',
           'SUCCESS',
-          `⚡ JITO TOKYO BUNDLE LANDED: ${bundleReceipt.bundleId} (${bundleReceipt.latencyMs}ms) • Tip: ${tipSol} SOL [Slot #${bundleReceipt.targetSlot}]${isBoosted ? ' 🚀 [BOOSTED]' : ''}`
+          `⚡ JITO TOKYO BUNDLE LANDED: ${bundleReceipt.bundleId} (${bundleReceipt.latencyMs}ms) • Tip: ${tipSol} SOL [Slot #${bundleReceipt.targetSlot}]`
         );
 
         const tokenPrice = consensus.token.priceSol > 0 ? consensus.token.priceSol : 0.0001;
@@ -1871,6 +1942,8 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     refreshHoldings,
     sellTokenHolding,
     dumpAllHoldingsToSol,
+    unwrapWsolOrCloseAccount,
+    emergencyStopAllTrading,
     clearLogs,
     clearTrades,
     appendLog

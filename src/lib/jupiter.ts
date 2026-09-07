@@ -99,7 +99,7 @@ export async function executeJupiterSwap(
     body: JSON.stringify({
       quoteResponse: quote,
       userPublicKey: userPublicKey || undefined,
-      prioritizationFeeLamports: Math.floor(jitoTipSol * 1_000_000_000)
+      prioritizationFeeLamports: Math.min(25000, Math.max(5000, Math.floor((jitoTipSol || 0.00001) * 1_000_000_000)))
     })
   });
 
