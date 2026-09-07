@@ -22,11 +22,7 @@ import Badge from '../ui/Badge';
 import { DeskFeedSkeletonItem } from '../ui/Skeleton';
 import CollapsibleCard from '../ui/CollapsibleCard';
 
-interface DeskFeedProps {
-  onOpenJupiterSwap?: (mint: string) => void;
-}
-
-export const DeskFeed: React.FC<DeskFeedProps> = ({ onOpenJupiterSwap }) => {
+export const DeskFeed: React.FC = () => {
   const {
     consensusFeed,
     selectedResult,
@@ -229,20 +225,6 @@ export const DeskFeed: React.FC<DeskFeedProps> = ({ onOpenJupiterSwap }) => {
                       ${item.token.initialLpUsd.toLocaleString()}
                     </span>
 
-                    {/* Direct SWAP Button */}
-                    {onOpenJupiterSwap && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenJupiterSwap(item.token.mint);
-                        }}
-                        className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-terminal-cyan to-terminal-green text-zinc-950 font-black text-[10px] shadow-[0_0_8px_rgba(0,240,255,0.25)] hover:brightness-110 transition-all cursor-pointer flex items-center gap-1"
-                        title={`Beli ${item.token.symbol} via Jupiter Swap`}
-                      >
-                        <Zap className="w-3 h-3 fill-current" />
-                        <span>SWAP</span>
-                      </button>
-                    )}
 
                     {/* Verdict Pill */}
                     <span

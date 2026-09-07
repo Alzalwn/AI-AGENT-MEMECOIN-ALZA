@@ -3,15 +3,10 @@
 import React, { useState } from 'react';
 import { TradingProvider, useTradingAgent } from '../context/TradingContext';
 import Header from '../components/dashboard/Header';
-import MetricCards from '../components/dashboard/MetricCards';
-import PositionsTable from '../components/dashboard/PositionsTable';
 import MiniTerminalFeed from '../components/dashboard/MiniTerminalFeed';
 import TerminalLogs from '../components/dashboard/TerminalLogs';
-import ConfigPanel from '../components/dashboard/ConfigPanel';
 import DeskFeed from '../components/dashboard/DeskFeed';
 import ConsensusEvaluator from '../components/dashboard/ConsensusEvaluator';
-import ManualMintSniper from '../components/dashboard/ManualMintSniper';
-import CumulativeCurve from '../components/CumulativeCurve';
 import { SignalFeed } from '../components/signals/SignalFeed';
 import { SignalStats } from '../components/signals/SignalStats';
 import { SignalHeroStats } from '../components/signals/SignalHeroStats';
@@ -208,17 +203,13 @@ function TerminalAppInner() {
 
       {/* Main Workspace Body */}
       <main className="p-3.5 sm:p-5 flex-1 flex flex-col gap-4 max-w-[1920px] mx-auto w-full">
-        {/* Top KPI Section: SignalHeroStats for Signal & History views, MetricCards for trading/scanner */}
-        {dashTab !== 'trading' ? (
-          <SignalHeroStats
-            stats={signalStats}
-            onOpenTelegramModal={() => setIsTelegramModalOpen(true)}
-            onOpenVpsBot={() => setIsVpsBotOpen(true)}
-            isTelegramConnected={telegramConfig?.isEnabled && Boolean(telegramConfig?.botToken && telegramConfig?.chatId)}
-          />
-        ) : (
-          <MetricCards />
-        )}
+        {/* Top KPI Section: Live Signal Stats, Win-Rate & Telegram Webhook Telemetry */}
+        <SignalHeroStats
+          stats={signalStats}
+          onOpenTelegramModal={() => setIsTelegramModalOpen(true)}
+          onOpenVpsBot={() => setIsVpsBotOpen(true)}
+          isTelegramConnected={telegramConfig?.isEnabled && Boolean(telegramConfig?.botToken && telegramConfig?.chatId)}
+        />
 
         {/* Quick Instant Signal Generator & CA Scanner */}
         <QuickSignalScanner
@@ -282,42 +273,20 @@ function TerminalAppInner() {
           </div>
         )}
 
-        {/* Trading Terminal Tab (existing layout) */}
+        {/* AI Consensus Scanner Tab (5-Agent Matrix & Live Decision Logs) */}
         {dashTab === 'trading' && (<>
 
-        {/* 3. Manual Mint Address Sniper & On-Chain Lookup */}
-        <ManualMintSniper 
-          onOpenJitoTracker={() => setIsJitoTrackerOpen(true)}
-          onOpenJupiterSwap={(ca) => {
-            setCustomSwapMint(ca);
-            setIsJupiterModalOpen(true);
-          }}
-        />
-
-        {/* 4. Cumulative PnL Curve & Equity Chart */}
-        <CumulativeCurve
-          currentBalanceSol={telemetry.currentBalanceSol}
-          initialBalanceSol={telemetry.initialBalanceSol}
-          totalPnlSol={telemetry.totalPnlSol}
-        />
-
-        {/* 5. Core 3-Column Trading Workspace */}
+        {/* Core 3-Column AI Consensus Workspace */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1">
           {/* Left Column: Desk Feed (Real-Time Ingestion Stream) */}
           <div className="lg:col-span-4">
-            <DeskFeed 
-              onOpenJupiterSwap={(mint) => {
-                setCustomSwapMint(mint);
-                setIsJupiterModalOpen(true);
-              }}
-            />
+            <DeskFeed />
           </div>
 
           {/* Middle Column: 4D Strategy Radar & 5-Agent Evaluator */}
           <div className="lg:col-span-5">
             <ConsensusEvaluator
               onOpenGemini={() => setIsGeminiModalOpen(true)}
-              onOpenJupiterSwap={() => setIsJupiterModalOpen(true)}
               onShareTrade={(trade) => {
                 setShareTrade(trade);
                 setIsShareModalOpen(true);
@@ -326,17 +295,10 @@ function TerminalAppInner() {
             />
           </div>
 
-          {/* Right Column: Positions, Decision Terminal Feed, Logs, and Configuration Controls */}
+          {/* Right Column: AI Decision Stream & Real-Time Engine Logs */}
           <div className="lg:col-span-3 flex flex-col gap-4">
-            <PositionsTable
-              onSharePnl={() => {
-                setShareTrade(activePosition);
-                setIsShareModalOpen(true);
-              }}
-            />
             <MiniTerminalFeed />
             <TerminalLogs />
-            <ConfigPanel onOpenPasswordModal={() => setIsPasswordModalOpen(true)} />
           </div>
         </div>
 
@@ -354,7 +316,7 @@ function TerminalAppInner() {
             </span>
             <span className="flex items-center gap-1">
               <kbd className="px-1.5 py-0.5 bg-zinc-800 border border-zinc-700 rounded text-zinc-200 font-bold">
-                1 - 6
+                1 - 4
               </kbd>
               <span>Switch Visualizer</span>
             </span>

@@ -22,8 +22,8 @@ import CollapsibleCard from '../ui/CollapsibleCard';
 import Badge from '../ui/Badge';
 
 export const MiniTerminalFeed: React.FC = () => {
-  const { logs, clearLogs, isSimulationMode, toggleSimulationMode, consensusFeed } = useTradingAgent();
-  const [filterMode, setFilterMode] = useState<'ALL' | 'APPROVED' | 'VETOED' | 'SIMULATION'>('ALL');
+  const { logs, clearLogs, consensusFeed } = useTradingAgent();
+  const [filterMode, setFilterMode] = useState<'ALL' | 'APPROVED' | 'VETOED'>('ALL');
   const [autoScroll, setAutoScroll] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -40,8 +40,6 @@ export const MiniTerminalFeed: React.FC = () => {
       } else if (filterMode === 'VETOED') {
         const isVeto = log.level === 'WARN' || log.level === 'DANGER' || log.message.includes('VETO') || log.message.includes('ditolak');
         if (!isVeto) return false;
-      } else if (filterMode === 'SIMULATION') {
-        if (!log.message.includes('DRY-RUN') && !log.message.includes('simulasi')) return false;
       }
 
       if (searchQuery.trim()) {
@@ -100,25 +98,13 @@ export const MiniTerminalFeed: React.FC = () => {
     <CollapsibleCard
       title="Decision Engine Terminal Feed"
       subtitle="Verifikasi Langkah Likuiditas, Honeypot, dan Momentum Real-Time"
-      badge={isSimulationMode ? '🧪 DRY-RUN (0 SOL DRAIN)' : '⚡ LIVE ON-CHAIN'}
-      badgeVariant={isSimulationMode ? 'cyan' : 'rose'}
+      badge="⚡ 5-AGENT DECISION STREAM"
+      badgeVariant="emerald"
       icon={<Cpu className="w-4 h-4 text-emerald-400" />}
       storageKey="card_mini_terminal_feed"
       defaultCollapsed={false}
       headerActions={
         <div className="flex items-center gap-1.5 font-mono">
-          <button
-            type="button"
-            onClick={toggleSimulationMode}
-            className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer flex items-center gap-1 ${
-              isSimulationMode
-                ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300'
-                : 'bg-amber-500/20 border-amber-500/40 text-amber-300'
-            }`}
-            title="Toggle Dry-Run Simulation Mode"
-          >
-            <span>{isSimulationMode ? '🧪 Dry-Run: ON' : '⚠️ Mode Riil: ON'}</span>
-          </button>
 
           <button
             type="button"
@@ -149,7 +135,7 @@ export const MiniTerminalFeed: React.FC = () => {
         {/* Terminal Top Bar: Filter Buttons & Search */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pb-2.5 border-b border-zinc-800/80">
           <div className="flex items-center gap-1 overflow-x-auto scrollbar-none w-full sm:w-auto">
-            {(['ALL', 'APPROVED', 'VETOED', 'SIMULATION'] as const).map((mode) => (
+            {(['ALL', 'APPROVED', 'VETOED'] as const).map((mode) => (
               <button
                 key={mode}
                 type="button"
@@ -160,16 +146,13 @@ export const MiniTerminalFeed: React.FC = () => {
                       ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-black'
                       : mode === 'VETOED'
                       ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40 font-black'
-                      : mode === 'SIMULATION'
-                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-black'
                       : 'bg-zinc-200 text-zinc-950 font-black'
                     : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-400 border border-zinc-800'
                 }`}
               >
                 {mode === 'ALL' && 'SEMUA'}
-                {mode === 'APPROVED' && '✅ LOLOS (BUY)'}
+                {mode === 'APPROVED' && '✅ LOLOS (5/5)'}
                 {mode === 'VETOED' && '🛑 DITOLAK (VETO)'}
-                {mode === 'SIMULATION' && '🧪 SIMULASI'}
               </button>
             ))}
           </div>
@@ -241,7 +224,7 @@ export const MiniTerminalFeed: React.FC = () => {
             </span>
             <span className="hidden sm:inline text-zinc-700">|</span>
             <span className="hidden sm:inline text-zinc-400">
-              Pencegatan RPC: <b className={isSimulationMode ? 'text-cyan-400' : 'text-amber-400'}>{isSimulationMode ? 'ACTIVE (Zero Risk)' : 'OFF (Real SOL)'}</b>
+              Filter Konsensus: <b className="text-emerald-400">5/5 Skor + Zero-Rug</b>
             </span>
           </div>
 

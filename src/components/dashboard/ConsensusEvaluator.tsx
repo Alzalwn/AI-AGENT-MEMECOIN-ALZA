@@ -35,14 +35,12 @@ import CollapsibleCard from '../ui/CollapsibleCard';
 
 interface ConsensusEvaluatorProps {
   onOpenGemini: () => void;
-  onOpenJupiterSwap: () => void;
   onShareTrade?: (trade: ClosedTrade) => void;
   onOpenAnalytics?: () => void;
 }
 
 export const ConsensusEvaluator: React.FC<ConsensusEvaluatorProps> = ({
   onOpenGemini,
-  onOpenJupiterSwap,
   onShareTrade,
   onOpenAnalytics
 }) => {
@@ -143,27 +141,6 @@ export const ConsensusEvaluator: React.FC<ConsensusEvaluatorProps> = ({
               <Compass className="w-3.5 h-3.5" /> 2D Cluster
             </button>
 
-            <button
-              onClick={() => setVisualMode('kelly')}
-              className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
-                visualMode === 'kelly'
-                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/50 shadow-[0_0_8px_rgba(245,166,35,0.2)]'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 border border-transparent'
-              }`}
-            >
-              <ShieldCheck className="w-3.5 h-3.5" /> Kelly Risk
-            </button>
-
-            <button
-              onClick={() => setVisualMode('ledger')}
-              className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
-                visualMode === 'ledger'
-                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.2)]'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 border border-transparent'
-              }`}
-            >
-              <History className="w-3.5 h-3.5" /> Ledger ({closedTrades.length})
-            </button>
 
             <button
               onClick={() => setVisualMode('chart')}
@@ -239,17 +216,7 @@ export const ConsensusEvaluator: React.FC<ConsensusEvaluatorProps> = ({
           icon={<ShieldCheck className="w-4 h-4 text-cyan-400" />}
           storageKey="card_consensus_eval"
           defaultCollapsed={false}
-          headerActions={
-            <button
-              type="button"
-              onClick={onOpenJupiterSwap}
-              className="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-400 font-bold text-[10px] flex items-center gap-1.5 transition-all cursor-pointer"
-              title="Buka Jupiter Swap Modal"
-            >
-              <Layers className="w-3 h-3" />
-              <span className="hidden sm:inline">Swap</span>
-            </button>
-          }
+
         >
           <div className="space-y-3 pt-1">
             {/* Token Quick Header */}
