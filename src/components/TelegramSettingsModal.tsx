@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Send, X, Check, AlertCircle, Loader2, HelpCircle, MessageSquare } from 'lucide-react';
-import { TelegramConfig, testTelegramConnection, sendTelegramExitAlert } from '../lib/telegram';
+import { TelegramConfig, testTelegramConnection, sendTelegramExitAlert, sendSignalAlert } from '../lib/telegram';
+import { getInitialSeedSignals } from '../engine/initialSignals';
 import { DiscordConfig, testDiscordWebhook, sendDiscordExitAlert } from '../lib/discord';
 
 interface TelegramSettingsModalProps {
@@ -94,6 +95,32 @@ export default function TelegramSettingsModal({
       message: ok ? 'Contoh Trade Alert berhasil dikirim ke Telegram!' : 'Gagal mengirim Test Trade Alert. Periksa Bot Token & Chat ID.'
     });
     setIsTestingTelegram(false);
+  };
+
+  const handleTestTelegramSignal = async () => {
+    setIsTestingTelegram(true);
+    setTelegramTestResult(null);
+    try {
+      const seed = getInitialSeedSignals().activeSignals[0];
+      const ok = await sendSignalAlert(seed, {
+        botToken: botToken.trim(),
+        chatId: chatId.trim(),
+        isEnabled: true
+      });
+      setTelegramTestResult({
+        success: ok,
+        message: ok
+          ? '✅ Sinyal Alpha Lengkap (Entry/TP/SL/ETA/6 Buttons) berhasil terkirim ke Telegram!'
+          : '❌ Gagal mengirim Sinyal. Pastikan Bot Token & Chat ID benar, dan jika menggunakan channel/grup pastikan Bot sudah dijadikan Admin.'
+      });
+    } catch (e: unknown) {
+      setTelegramTestResult({
+        success: false,
+        message: `Error: ${e instanceof Error ? e.message : 'Unknown error'}`
+      });
+    } finally {
+      setIsTestingTelegram(false);
+    }
   };
 
   const handleTestDiscord = async () => {
@@ -278,20 +305,20 @@ export default function TelegramSettingsModal({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={handleTestTelegramSignal}
+                  disabled={isTestingTelegram || !botToken.trim() || !chatId.trim()}
+                  className="py-1.5 px-3 rounded-lg bg-emerald-500/20 border border-emerald-500/40 hover:border-emerald-400 text-xs font-bold text-emerald-300 flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-40"
+                >
+                  🚀 Test Sinyal Alpha (Lengkap)
+                </button>
+                <button
+                  type="button"
                   onClick={handleTestTelegram}
                   disabled={isTestingTelegram || !botToken.trim() || !chatId.trim()}
                   className="py-1.5 px-3 rounded-lg bg-terminal-card border border-terminal-border hover:border-sky-400 text-xs font-bold text-sky-400 flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-40"
                 >
                   {isTestingTelegram ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                  Test Ping Bot
-                </button>
-                <button
-                  type="button"
-                  onClick={handleTestTelegramTrade}
-                  disabled={isTestingTelegram || !botToken.trim() || !chatId.trim()}
-                  className="py-1.5 px-3 rounded-lg bg-sky-500/10 border border-sky-500/30 hover:border-sky-400 text-xs font-bold text-sky-300 flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-40"
-                >
-                  ⚡ Test Trade Alert
+                  Ping
                 </button>
               </div>
 
@@ -301,15 +328,22 @@ export default function TelegramSettingsModal({
                 className="text-[10px] text-sky-400 hover:underline flex items-center gap-1 cursor-pointer font-bold"
               >
                 <HelpCircle className="w-3 h-3" />
-                {showHelp ? 'Tutup Panduan' : 'Panduan Telegram'}
+                {showHelp ? 'Tutup Panduan' : 'Panduan Cara Sambung'}
               </button>
             </div>
 
             {showHelp && (
-              <div className="p-3 bg-terminal-bg rounded-lg border border-terminal-border text-[10px] text-terminal-muted space-y-1 leading-relaxed">
-                <p>1. Buka Telegram dan cari <strong>@BotFather</strong>, ketik <code>/newbot</code>.</p>
-                <p>2. Dapatkan API token bot Anda.</p>
-                <p>3. Dapatkan Chat ID dengan membuka <strong>@userinfobot</strong>.</p>
+              <div className="p-3.5 bg-terminal-bg rounded-xl border border-terminal-border text-[11px] text-terminal-muted space-y-2 leading-relaxed">
+                <p className="font-bold text-sky-400 uppercase tracking-wide text-[10px]">📌 Cara Menghubungkan ke Telegram:</p>
+                <div className="space-y-1 pl-2 border-l-2 border-sky-500/30">
+                  <p><strong>1. Buat Bot Telegram:</strong> Buka Telegram, cari <code className="text-white bg-zinc-800 px-1 py-0.5 rounded">@BotFather</code>, kirim <code className="text-emerald-400">/newbot</code>. Ikuti instruksi dan salin <strong>API Token</strong>.</p>
+                  <p><strong>2. Dapatkan Chat ID / Channel ID:</strong></p>
+                  <ul className="list-disc list-inside pl-2 space-y-0.5 text-zinc-300">
+                    <li><strong>Chat Pribadi:</strong> Chat ke <code className="text-white bg-zinc-800 px-1 py-0.5 rounded">@userinfobot</code>, salin angka <strong>Id</strong> Anda. Lalu buka bot Anda dan klik <strong>Start</strong>.</li>
+                    <li><strong>Channel / Grup:</strong> Buat Channel baru, undang Bot Anda ke Channel, lalu jadikan Bot sebagai <strong>Administrator</strong> (centang Post Messages). Chat ID bisa berupa <code className="text-cyan-400">@nama_channel</code> Anda atau angka ID channel.</li>
+                  </ul>
+                  <p><strong>3. Masukkan ke Form:</strong> Masukkan Token dan Chat ID di atas, klik <strong>Test Sinyal Alpha</strong> untuk mencoba, lalu klik <strong>Simpan</strong>.</p>
+                </div>
               </div>
             )}
           </div>
