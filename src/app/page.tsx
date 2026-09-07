@@ -14,6 +14,8 @@ import ManualMintSniper from '../components/dashboard/ManualMintSniper';
 import CumulativeCurve from '../components/CumulativeCurve';
 import { SignalFeed } from '../components/signals/SignalFeed';
 import { SignalStats } from '../components/signals/SignalStats';
+import { SignalHeroStats } from '../components/signals/SignalHeroStats';
+import { QuickSignalScanner } from '../components/signals/QuickSignalScanner';
 import { SignalHistoryTable } from '../components/signals/SignalHistoryTable';
 import { SignalStats as SignalStatsType } from '../types/signal';
 
@@ -98,8 +100,8 @@ function TerminalAppInner() {
   const [isSmartMoneyOpen, setIsSmartMoneyOpen] = useState<boolean>(false);
   const [isVpsBotOpen, setIsVpsBotOpen] = useState<boolean>(false);
 
-  // Signal Terminal tab: 'trading' | 'signals' | 'history'
-  const [dashTab, setDashTab] = useState<'trading' | 'signals' | 'history'>('trading');
+  // Signal Terminal tab: 'signals' (default) | 'history' | 'trading'
+  const [dashTab, setDashTab] = useState<'signals' | 'history' | 'trading'>('signals');
 
   // Compute signal stats from signalHistory
   const signalStats: SignalStatsType = React.useMemo(() => {
@@ -206,35 +208,68 @@ function TerminalAppInner() {
 
       {/* Main Workspace Body */}
       <main className="p-3.5 sm:p-5 flex-1 flex flex-col gap-4 max-w-[1920px] mx-auto w-full">
-        {/* 2. KPI Metric Cards */}
-        <MetricCards />
+        {/* Top KPI Section: SignalHeroStats for Signal & History views, MetricCards for trading/scanner */}
+        {dashTab !== 'trading' ? (
+          <SignalHeroStats
+            stats={signalStats}
+            onOpenTelegramModal={() => setIsTelegramModalOpen(true)}
+            isTelegramConnected={telegramConfig?.isEnabled}
+          />
+        ) : (
+          <MetricCards />
+        )}
 
-        {/* 3. Dashboard Tab Switcher: Trading | Signal Feed | History */}
-        <div className="flex items-center gap-1 border border-white/5 bg-[#111111] rounded-xl p-1">
+        {/* Quick Instant Signal Generator & CA Scanner */}
+        <QuickSignalScanner
+          onOpenJupiterSwap={(ca) => {
+            setCustomSwapMint(ca);
+            setIsJupiterModalOpen(true);
+          }}
+        />
+
+        {/* Dashboard Tab Switcher */}
+        <div className="flex items-center gap-1 border border-white/10 bg-[#0e0e0e] rounded-2xl p-1.5 shadow-lg">
           {[
-            { key: 'trading' as const, label: '📡 Trading Terminal', sub: 'Scanner & Positions' },
-            { key: 'signals' as const, label: '🚀 Signal Feed', sub: `${activeSignals.length} active` },
-            { key: 'history' as const, label: '📚 Signal History', sub: `${signalHistory.length} sinyal` },
-          ].map(({ key, label, sub }) => (
+            {
+              key: 'signals' as const,
+              label: '🚀 Sinyal Alpha Live',
+              sub: `${activeSignals.length} Sinyal Aktif Dipantau`,
+              highlight: true
+            },
+            {
+              key: 'history' as const,
+              label: '📚 Riwayat & Win-Rate',
+              sub: `${signalHistory.length} Total Sinyal Historis`
+            },
+            {
+              key: 'trading' as const,
+              label: '🧠 AI Consensus Scanner',
+              sub: '5-Agent Matrix & Logs'
+            },
+          ].map(({ key, label, sub, highlight }) => (
             <button
               key={key}
               onClick={() => setDashTab(key)}
-              className={`flex-1 flex flex-col items-center py-2.5 px-3 rounded-lg text-sm font-medium transition-all duration-200 ${
+              className={`flex-1 flex flex-col items-center py-2.5 px-4 rounded-xl text-sm font-bold transition-all duration-200 cursor-pointer ${
                 dashTab === key
-                  ? 'bg-white/10 text-white shadow-sm'
-                  : 'text-white/40 hover:text-white/60 hover:bg-white/[0.03]'
+                  ? 'bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 text-white border border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.15)]'
+                  : 'text-white/40 hover:text-white/80 hover:bg-white/[0.04]'
               }`}
             >
-              <span>{label}</span>
-              <span className="text-xs text-white/30 mt-0.5">{sub}</span>
+              <span className="flex items-center gap-2">
+                {label}
+                {highlight && activeSignals.length > 0 && (
+                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                )}
+              </span>
+              <span className="text-[11px] text-white/40 font-mono mt-0.5">{sub}</span>
             </button>
           ))}
         </div>
 
-        {/* Signal Terminal Tab */}
+        {/* Signal Terminal Tab (DEFAULT) */}
         {dashTab === 'signals' && (
           <div className="space-y-4">
-            <SignalStats stats={signalStats} />
             <SignalFeed signals={activeSignals} isScanning={engineStatus === 'AUTONOMOUS'} />
           </div>
         )}
@@ -242,7 +277,6 @@ function TerminalAppInner() {
         {/* Signal History Tab */}
         {dashTab === 'history' && (
           <div className="space-y-4">
-            <SignalStats stats={signalStats} />
             <SignalHistoryTable signals={signalHistory} />
           </div>
         )}
