@@ -31,6 +31,9 @@ else
 fi
 
 echo "📥 [2/4] Mengambil kode terbaru dari GitHub (main branch)..."
+git config --global http.version HTTP/1.1 2>/dev/null || true
+git config --global http.lowSpeedLimit 1000 2>/dev/null || true
+git config --global http.lowSpeedTime 30 2>/dev/null || true
 git fetch origin main
 git reset --hard origin/main
 
