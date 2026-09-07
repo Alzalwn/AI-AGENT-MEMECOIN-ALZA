@@ -9,7 +9,8 @@ import {
   ClosedTrade,
   WalletState,
   AutoSnipeConfig,
-  AgentThresholds
+  AgentThresholds,
+  TradingStyle
 } from '../types/terminal';
 import {
   TradingContextType,
@@ -26,7 +27,7 @@ import { generateRandomTokenSignal } from '../engine/simulator';
 import { runAgentConsensus } from '../agents/consensus';
 import { evaluateExitAgent } from '../agents/exit';
 import { soundFx } from '../engine/audioEngine';
-import { STRATEGY_PRESETS, JITO_TIP_TIERS } from '../config/constants';
+import { STRATEGY_PRESETS, JITO_TIP_TIERS, TRADING_STYLE_PRESETS } from '../config/constants';
 import {
   sendTelegramAlphaAlert,
   sendTelegramBuyAlert,
@@ -81,6 +82,9 @@ const DEFAULT_AGENT_CONFIG: AgentConfig = {
   stopLossPct: -25, // -25% Hard Stop Loss
   maxHoldTimeSec: 180, // 180s (3m) Time-to-Live Fallback
   enableMomentumExit: true,
+  tradingStyle: 'SCALPING',
+  ttlUnlimited: false,
+  autoSellEnabled: true,
   antiRugpull: {
     requireMintRevoked: true,
     requireFreezeRevoked: true,
@@ -106,11 +110,11 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [engineStatus, setEngineStatusState] = useState<'AUTONOMOUS' | 'IDLE' | 'PAUSED'>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('GT_ENGINE_STATUS');
-      if (saved === 'AUTONOMOUS' || saved === 'IDLE') {
+      if (saved === 'AUTONOMOUS' || saved === 'IDLE' || saved === 'PAUSED') {
         return saved;
       }
     }
-    return 'AUTONOMOUS'; // Langsung aktif otomatis (Autonomous Bot)
+    return 'AUTONOMOUS';
   });
 
   const setEngineStatus = useCallback((status: 'AUTONOMOUS' | 'IDLE' | 'PAUSED' | ((prev: 'AUTONOMOUS' | 'IDLE' | 'PAUSED') => 'AUTONOMOUS' | 'IDLE' | 'PAUSED')) => {
@@ -375,7 +379,10 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       stopLossPct: -25,
       trailingStopLossPct: 15,
       maxHoldTimeSec: 180,
-      enableMomentumExit: true
+      enableMomentumExit: true,
+      tradingStyle: 'SCALPING',
+      ttlUnlimited: false,
+      autoSellEnabled: true
     };
     if (typeof window !== 'undefined') {
       try {
@@ -383,7 +390,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (saved) {
           const parsed = JSON.parse(saved);
           if (parsed && typeof parsed === 'object') {
-            return { ...defaults, ...parsed, isEnabled: true };
+            return { ...defaults, ...parsed };
           }
         }
       } catch {}
@@ -1621,6 +1628,10 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const slPrice = +(entryPrice * (1 + slPct / 100)).toFixed(8);
     const trailingStop = +(entryPrice * (1 - trailingDist / 100)).toFixed(8);
 
+    const tradingStyle = autoSnipeConfig.tradingStyle || 'SCALPING';
+    const isTtlUnlimited = autoSnipeConfig.ttlUnlimited ?? (tradingStyle === 'HODL');
+    const isAutoSellOn = autoSnipeConfig.autoSellEnabled ?? (tradingStyle !== 'HODL');
+
     const newPos: ActivePosition = {
       id: `POS-${Math.floor(1000 + Math.random() * 9000)}`,
       token,
@@ -1636,15 +1647,18 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       entryTimestamp: Date.now(),
       status: 'OPEN',
       targetTpPct: tpPct,
-      targetTpPriceSol: targetTpPrice,
+      targetTpPriceSol: tpPct > 0 ? targetTpPrice : undefined,
       stopLossPct: slPct,
       stopLossPriceSol: slPrice,
       trailingDistancePct: trailingDist,
-      maxHoldTimeSec: maxTtl,
+      maxHoldTimeSec: isTtlUnlimited ? 0 : maxTtl,
       velocityPctPerSec: 0,
       etaToTpSeconds: null,
       momentumStatus: 'STAGNANT',
-      holdDurationSec: 0
+      holdDurationSec: 0,
+      tradingStyle,
+      ttlUnlimited: isTtlUnlimited,
+      autoSellEnabled: isAutoSellOn
     };
     priceSamplesRef.current = [{ price: entryPrice, timestamp: Date.now() }];
     positionMutex.markBuyCompleted(token.mint);
@@ -1977,10 +1991,13 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
             isSimulation: isDryRun,
             slippageBps: Math.round((agentConfig.slippagePct || 1.5) * 100),
             jitoTipSol: tipSol,
-            targetTpPct: agentConfig.takeProfitPct || 100,
-            stopLossPct: agentConfig.stopLossPct || -25,
-            trailingStopLossPct: agentConfig.trailingStopLossPct || 15,
-            maxHoldTimeSec: agentConfig.maxHoldTimeSec || 180
+            targetTpPct: agentConfig.takeProfitPct ?? autoSnipeConfig.takeProfitPct ?? 100,
+            stopLossPct: agentConfig.stopLossPct ?? autoSnipeConfig.stopLossPct ?? -25,
+            trailingStopLossPct: agentConfig.trailingStopLossPct ?? autoSnipeConfig.trailingStopLossPct ?? 15,
+            maxHoldTimeSec: agentConfig.maxHoldTimeSec ?? autoSnipeConfig.maxHoldTimeSec ?? 180,
+            tradingStyle: autoSnipeConfig.tradingStyle || 'SCALPING',
+            ttlUnlimited: autoSnipeConfig.ttlUnlimited ?? false,
+            autoSellEnabled: autoSnipeConfig.autoSellEnabled ?? true
           })
           .then((result) => {
             if (result.success && result.position) {
@@ -2182,6 +2199,59 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
   }, []);
 
+  const setTradingStyle = useCallback((style: TradingStyle) => {
+    const preset = TRADING_STYLE_PRESETS[style];
+    if (!preset) return;
+
+    setAutoSnipeConfig((prev) => {
+      const next: AutoSnipeConfig = {
+        ...prev,
+        tradingStyle: style,
+        takeProfitPct: preset.targetTpPct,
+        stopLossPct: preset.stopLossPct,
+        trailingStopLossPct: preset.trailingStopLossPct,
+        maxHoldTimeSec: preset.maxHoldTimeSec,
+        minLiquidityUsd: preset.minLiquidityUsd,
+        minGrokViralityScore: preset.minGrokViralityScore,
+        jitoTipTier: preset.jitoTipTier,
+        ttlUnlimited: preset.ttlUnlimited,
+        autoSellEnabled: preset.autoSellEnabled
+      };
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('GT_AUTOSNIPE_CONFIG', JSON.stringify(next));
+        } catch {}
+      }
+      return next;
+    });
+
+    setAgentConfig((prev) => {
+      const next: AgentConfig = {
+        ...prev,
+        tradingStyle: style,
+        takeProfitPct: preset.targetTpPct,
+        stopLossPct: preset.stopLossPct,
+        trailingStopLossPct: preset.trailingStopLossPct,
+        maxHoldTimeSec: preset.maxHoldTimeSec,
+        jitoTipTier: preset.jitoTipTier,
+        ttlUnlimited: preset.ttlUnlimited,
+        autoSellEnabled: preset.autoSellEnabled
+      };
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('GT_AGENT_CONFIG', JSON.stringify(next));
+        } catch {}
+      }
+      return next;
+    });
+
+    appendLog(
+      'SYSTEM',
+      'SUCCESS',
+      `🎯 [GAYA TRADING AKTIF: ${preset.label}] TP: ${preset.targetTpPct > 0 ? `+${preset.targetTpPct}%` : 'MANUAL (HODL)'} | SL: ${preset.stopLossPct}% | TTL: ${preset.ttlUnlimited ? 'UNLIMITED (NO AUTO-SELL)' : `${preset.maxHoldTimeSec}s`} | Min LP: $${preset.minLiquidityUsd.toLocaleString()}`
+    );
+  }, [appendLog]);
+
   const updateTelegramConfig = useCallback((updates: Partial<WebhookTelegramConfig>) => {
     setTelegramConfig((prev) => {
       const updated = { ...prev, ...updates };
@@ -2365,6 +2435,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     updateAgentConfig,
     updateExecutionConfig,
     updateAutoSnipeConfig,
+    setTradingStyle,
     updateTelegramConfig,
     updateDiscordConfig,
     updateWalletState,

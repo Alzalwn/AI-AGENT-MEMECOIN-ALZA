@@ -161,6 +161,9 @@ export interface ActivePosition {
   maxHoldTimeSec?: number; // TTL (default: 180s)
   holdDurationSec?: number; // hold duration in seconds
   trailingDistancePct?: number; // trailing stop distance % (default: 15%)
+  tradingStyle?: TradingStyle; // 'SCALPING' | 'SWING' | 'HODL'
+  ttlUnlimited?: boolean; // When true, position will never auto-close due to time expiry
+  autoSellEnabled?: boolean; // When false, TP/SL auto-sell is disabled (except emergency rug defense)
 }
 
 export interface TerminalTelemetry {
@@ -224,6 +227,8 @@ export interface WalletState {
   lastBalanceUpdate?: number;
 }
 
+export type TradingStyle = 'SCALPING' | 'SWING' | 'HODL';
+
 export interface AutoSnipeConfig {
   isEnabled: boolean;
   buyAmountSol: number;
@@ -242,4 +247,7 @@ export interface AutoSnipeConfig {
   trailingStopLossPct?: number; // e.g. 15 (15%)
   maxHoldTimeSec?: number; // e.g. 180 (3m)
   enableMomentumExit?: boolean;
+  tradingStyle?: TradingStyle; // 'SCALPING' | 'SWING' | 'HODL'
+  ttlUnlimited?: boolean;
+  autoSellEnabled?: boolean;
 }

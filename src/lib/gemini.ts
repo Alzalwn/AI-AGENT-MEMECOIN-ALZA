@@ -86,8 +86,8 @@ Respond strictly in valid JSON format:
   "analysis": "<short 1-2 sentence razor-sharp rationalization in Indonesian or English>"
 }`;
 
-  // Attempt Primary: Gemini 2.0 Flash, Fallback: Gemini 1.5 Flash
-  const models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+  // Attempt Primary: Gemini 3.6 Flash / Flash Latest, Fallbacks: Gemini 2.0 / 1.5 Flash
+  const models = ['gemini-3.6-flash', 'gemini-flash-latest', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 
   for (const model of models) {
     try {
@@ -95,7 +95,10 @@ Respond strictly in valid JSON format:
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'X-goog-api-key': apiKey
+          },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: {

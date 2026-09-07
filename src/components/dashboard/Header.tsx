@@ -26,8 +26,10 @@ import {
   X as CloseIcon,
   Users,
   ShieldCheck,
-  Server
+  Server,
+  Database
 } from 'lucide-react';
+import Link from 'next/link';
 import { rpcFailoverInstance } from '../../lib/rpcFailover';
 import { useSolRate } from '../../hooks/useSolRate';
 import Badge from '../ui/Badge';
@@ -47,6 +49,7 @@ interface HeaderProps {
   onOpenPassword?: () => void;
   onOpenSmartMoney?: () => void;
   onOpenVpsBot?: () => void;
+  onOpenAutoSnipe?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -61,7 +64,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenConverter,
   onOpenPassword,
   onOpenSmartMoney,
-  onOpenVpsBot
+  onOpenVpsBot,
+  onOpenAutoSnipe
 }) => {
   const {
     engineStatus,
@@ -73,6 +77,7 @@ export const Header: React.FC<HeaderProps> = ({
     toggleAudio,
     activePosition,
     executionConfig,
+    autoSnipeConfig,
     isSimulationMode,
     toggleSimulationMode
   } = useTradingAgent();
@@ -108,7 +113,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Bot State Indicator */}
+          {/* Bot State Indicator & Style Badge */}
           <div className="flex items-center gap-2">
             <Badge
               variant={isAutonomous ? 'emerald' : 'amber'}
@@ -125,6 +130,28 @@ export const Header: React.FC<HeaderProps> = ({
               className="p-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
             >
               {isAutonomous ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 text-emerald-400" />}
+            </button>
+
+            {/* Quick Trading Style Badge / Switcher */}
+            <button
+              onClick={() => (onOpenAutoSnipe ? onOpenAutoSnipe() : onOpenStrategy())}
+              title="Klik untuk mengubah Gaya Trading (Scalp / Swing / HODL)"
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 transition-all cursor-pointer text-[10px] shadow-sm"
+            >
+              <span className="text-zinc-500 font-bold">STYLE:</span>
+              <span className={`font-black tracking-wide ${
+                autoSnipeConfig.tradingStyle === 'HODL'
+                  ? 'text-cyan-400'
+                  : autoSnipeConfig.tradingStyle === 'SWING'
+                  ? 'text-purple-400'
+                  : 'text-emerald-400'
+              }`}>
+                {autoSnipeConfig.tradingStyle === 'HODL'
+                  ? '💎 HODL'
+                  : autoSnipeConfig.tradingStyle === 'SWING'
+                  ? '📈 SWING'
+                  : '⚡ SCALP'}
+              </span>
             </button>
           </div>
         </div>
@@ -277,6 +304,18 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="hidden xl:inline text-[11px] font-bold">VPS Bot (24/7)</span>
             </button>
           )}
+
+          {/* VPS Monitor & Supabase Data Explorer (Desktop) */}
+          <Link
+            href="/vps-explorer"
+            className="hidden lg:flex p-2 rounded-xl bg-[#3ecf8e]/10 hover:bg-[#3ecf8e]/20 border border-[#3ecf8e]/30 text-[#3ecf8e] hover:text-emerald-300 transition-all cursor-pointer items-center gap-1.5 text-xs shadow-[0_0_10px_rgba(62,207,142,0.15)]"
+            title="Buka VPS Monitor & Data Explorer (Supabase Table Editor & Live PM2 Terminal)"
+            aria-label="Buka VPS Monitor & Data Explorer"
+          >
+            <Database className="w-4 h-4 text-[#3ecf8e]" />
+            <span className="hidden xl:inline text-[11px] font-bold">VPS & Explorer</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-[#3ecf8e] animate-pulse" />
+          </Link>
 
           {/* Execution Settings (Desktop) */}
           <button
@@ -488,6 +527,16 @@ export const Header: React.FC<HeaderProps> = ({
                 <span>Hotkeys (?)</span>
               </button>
             )}
+
+            {/* VPS Monitor & Data Explorer */}
+            <Link
+              href="/vps-explorer"
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="p-2.5 rounded-xl bg-[#3ecf8e]/10 border border-[#3ecf8e]/30 hover:bg-[#3ecf8e]/20 text-[#3ecf8e] flex items-center gap-2 transition-all cursor-pointer font-bold"
+            >
+              <Database className="w-4 h-4 text-[#3ecf8e] shrink-0" />
+              <span>VPS Monitor & Data Explorer</span>
+            </Link>
 
             {/* Ganti Password */}
             {onOpenPassword && (

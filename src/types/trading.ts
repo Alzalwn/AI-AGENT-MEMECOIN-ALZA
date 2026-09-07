@@ -6,9 +6,10 @@ import {
   ClosedTrade,
   WalletState,
   AgentThresholds,
-  AutoSnipeConfig
+  AutoSnipeConfig,
+  TradingStyle
 } from './terminal';
-export type { ActivePosition };
+export type { ActivePosition, TradingStyle };
 import { ExecutionConfig } from '../components/ExecutionSettingsModal';
 import type { WebhookTelegramConfig, WebhookDiscordConfig } from '../context/TradingContext';
 
@@ -46,6 +47,9 @@ export interface AgentConfig {
   stopLossPct?: number; // e.g. -25 for -25%
   maxHoldTimeSec?: number; // e.g. 180s TTL
   enableMomentumExit?: boolean; // emergency exit on velocity dump / stagnancy
+  tradingStyle?: TradingStyle;
+  ttlUnlimited?: boolean;
+  autoSellEnabled?: boolean;
   antiRugpull: {
     requireMintRevoked: boolean;
     requireFreezeRevoked: boolean;
@@ -105,6 +109,7 @@ export interface TradingActions {
   updateAgentConfig: (updates: Partial<AgentConfig>) => void;
   updateExecutionConfig: (updates: Partial<ExecutionConfig>) => void;
   updateAutoSnipeConfig: (updates: Partial<AutoSnipeConfig>) => void;
+  setTradingStyle: (style: TradingStyle) => void;
   updateTelegramConfig: (updates: Partial<WebhookTelegramConfig>) => void;
   updateDiscordConfig: (updates: Partial<WebhookDiscordConfig>) => void;
   updateWalletState: (wallet: WalletState) => void;

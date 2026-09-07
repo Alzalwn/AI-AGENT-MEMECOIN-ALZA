@@ -168,6 +168,7 @@ function TerminalAppInner() {
         onOpenPassword={() => setIsPasswordModalOpen(true)}
         onOpenSmartMoney={() => setIsSmartMoneyOpen(true)}
         onOpenVpsBot={() => setIsVpsBotOpen(true)}
+        onOpenAutoSnipe={() => setIsAutoSnipeModalOpen(true)}
       />
 
       {/* Main Workspace Body */}

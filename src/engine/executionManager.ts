@@ -14,6 +14,9 @@ export interface BuyOptions {
   stopLossPct?: number; // e.g. -25 for -25%
   trailingStopLossPct?: number; // e.g. 15 for 15%
   maxHoldTimeSec?: number; // default 180s
+  tradingStyle?: import('../types/terminal').TradingStyle;
+  ttlUnlimited?: boolean;
+  autoSellEnabled?: boolean;
 }
 
 export interface BuyResult {
@@ -229,10 +232,14 @@ export class ExecutionManager {
       positionMutex.markBuyCompleted(mint);
 
       // 1.4 Catat Metrik Krusial & Masukkan ke State ACTIVE POSITION
-      const targetTpPct = options.targetTpPct || 100; // Default Take Profit +100%
-      const stopLossPct = options.stopLossPct || -25; // Default Stop Loss -25%
-      const trailingDistancePct = options.trailingStopLossPct || 15; // 15% trailing stop
-      const maxHoldTimeSec = options.maxHoldTimeSec || 180; // TTL 180 detik
+      const tradingStyle = options.tradingStyle || 'SCALPING';
+      const ttlUnlimited = Boolean(options.ttlUnlimited ?? (tradingStyle === 'HODL' || (options.maxHoldTimeSec !== undefined && options.maxHoldTimeSec <= 0)));
+      const autoSellEnabled = Boolean(options.autoSellEnabled ?? (tradingStyle !== 'HODL'));
+
+      const targetTpPct = options.targetTpPct !== undefined ? options.targetTpPct : (tradingStyle === 'HODL' ? 0 : 100);
+      const stopLossPct = options.stopLossPct !== undefined ? options.stopLossPct : (tradingStyle === 'HODL' ? -50 : -25);
+      const trailingDistancePct = options.trailingStopLossPct !== undefined ? options.trailingStopLossPct : (tradingStyle === 'HODL' ? 0 : 15);
+      const maxHoldTimeSec = ttlUnlimited ? 0 : (options.maxHoldTimeSec || 180);
 
       const newPosition: ActivePosition = {
         id: `POS-${Date.now()}-${mint.slice(0, 6)}`,
@@ -253,7 +260,7 @@ export class ExecutionManager {
         entryTimestamp: Date.now(),
         status: 'OPEN',
         targetTpPct,
-        targetTpPriceSol: +(entryPriceSol * (1 + targetTpPct / 100)).toFixed(8),
+        targetTpPriceSol: targetTpPct > 0 ? +(entryPriceSol * (1 + targetTpPct / 100)).toFixed(8) : undefined,
         stopLossPct,
         stopLossPriceSol: +(entryPriceSol * (1 + stopLossPct / 100)).toFixed(8),
         velocityPctPerSec: 0,
@@ -261,7 +268,10 @@ export class ExecutionManager {
         momentumStatus: 'STEADY',
         maxHoldTimeSec,
         holdDurationSec: 0,
-        trailingDistancePct
+        trailingDistancePct,
+        tradingStyle,
+        ttlUnlimited,
+        autoSellEnabled
       };
 
       this.activePosition = newPosition;
@@ -270,7 +280,7 @@ export class ExecutionManager {
       this.log(
         'EXECUTION',
         'SUCCESS',
-        `✅ [ACTIVE POSITION DIBUKA] CA: ${mint} | Entry: ${entryPriceSol.toFixed(8)} SOL | Tokens: ${tokenAmount.toLocaleString()} | Target TP: +${targetTpPct}% | SL: ${stopLossPct}%`
+        `✅ [ACTIVE POSITION DIBUKA] [${tradingStyle}] CA: ${mint} | Entry: ${entryPriceSol.toFixed(8)} SOL | Target TP: ${targetTpPct > 0 ? `+${targetTpPct}%` : 'MANUAL'} | SL: ${stopLossPct}% | TTL: ${ttlUnlimited ? 'UNLIMITED (HODL)' : `${maxHoldTimeSec}s`}`
       );
 
       // 1.5 Aktifkan Pemantau Posisi Real-Time (The Tracker)
@@ -385,25 +395,35 @@ export class ExecutionManager {
         this.callbacks.onPositionUpdated?.(this.activePosition);
 
         // 2.3 Evaluasi Kondisi Auto-Sell (TP / SL / Trailing SL / TTL)
-        const targetTpPct = this.activePosition.targetTpPct || 100;
-        const stopLossPct = this.activePosition.stopLossPct || -25;
-        const maxHoldTimeSec = this.activePosition.maxHoldTimeSec || 180;
+        const targetTpPct = this.activePosition.targetTpPct ?? 100;
+        const stopLossPct = this.activePosition.stopLossPct ?? -25;
+        const maxHoldTimeSec = this.activePosition.maxHoldTimeSec ?? 180;
+        const isTtlUnlimited = Boolean(this.activePosition.ttlUnlimited || maxHoldTimeSec <= 0);
+        const isAutoSellEnabled = this.activePosition.autoSellEnabled !== false;
 
         let shouldSell = false;
         let sellReason = '';
 
-        if (pnlPct >= targetTpPct) {
-          shouldSell = true;
-          sellReason = `🎯 TAKE PROFIT TERCAPAI (+${pnlPct}% >= +${targetTpPct}%)`;
-        } else if (pnlPct <= stopLossPct) {
-          shouldSell = true;
-          sellReason = `🛑 STOP LOSS TERSENTUH (${pnlPct}% <= ${stopLossPct}%)`;
-        } else if (highestPriceSol > entryPrice * 1.25 && livePriceSol <= trailingStopPriceSol) {
-          shouldSell = true;
-          sellReason = `📉 TRAILING STOP LOSS TERSENTUH (Turun ${trailingDist}% dari peak ${highestPriceSol.toFixed(8)} SOL)`;
-        } else if (holdDurationSec >= maxHoldTimeSec) {
-          shouldSell = true;
-          sellReason = `⏳ TIME-TO-LIVE HABIS (${holdDurationSec}s >= ${maxHoldTimeSec}s)`;
+        if (!isAutoSellEnabled) {
+          // Mode HODL / Spot: Hanya lindungi dari sudden catastrophic drain / rugpull (-50%)
+          if (stopLossPct < 0 && pnlPct <= stopLossPct) {
+            shouldSell = true;
+            sellReason = `🚨 EMERGENCY RUG SHIELD (${pnlPct}% <= ${stopLossPct}%)`;
+          }
+        } else {
+          if (targetTpPct > 0 && pnlPct >= targetTpPct) {
+            shouldSell = true;
+            sellReason = `🎯 TAKE PROFIT TERCAPAI (+${pnlPct}% >= +${targetTpPct}%)`;
+          } else if (stopLossPct < 0 && pnlPct <= stopLossPct) {
+            shouldSell = true;
+            sellReason = `🛑 STOP LOSS TERSENTUH (${pnlPct}% <= ${stopLossPct}%)`;
+          } else if (trailingDist > 0 && highestPriceSol > entryPrice * 1.20 && livePriceSol <= trailingStopPriceSol) {
+            shouldSell = true;
+            sellReason = `📉 TRAILING STOP LOSS TERSENTUH (Turun ${trailingDist}% dari peak ${highestPriceSol.toFixed(8)} SOL)`;
+          } else if (!isTtlUnlimited && maxHoldTimeSec > 0 && holdDurationSec >= maxHoldTimeSec) {
+            shouldSell = true;
+            sellReason = `⏳ TIME-TO-LIVE HABIS (${holdDurationSec}s >= ${maxHoldTimeSec}s)`;
+          }
         }
 
         if (shouldSell) {

@@ -8,7 +8,7 @@ export function evaluateNarrativeAgent(token: TokenSignal, thresholds?: AgentThr
   if (token.narrativeCosineSim < minCosSim) {
     return {
       agentId: 'narrative',
-      agentName: 'Narrative Agent',
+      agentName: 'Narrative Agent (Gemini AI Powered)',
       status: 'VETO',
       reason: `Cosine similarity narasi (${token.narrativeCosineSim.toFixed(2)}) di bawah ambang batas ${minCosSim.toFixed(2)}`,
       metricValue: token.narrativeCosineSim.toFixed(2),
@@ -19,7 +19,7 @@ export function evaluateNarrativeAgent(token: TokenSignal, thresholds?: AgentThr
 
   return {
     agentId: 'narrative',
-    agentName: 'Narrative Agent',
+    agentName: 'Narrative Agent (Gemini AI Powered)',
     status: 'APPROVE',
     reason: `Narasi '${token.narrativeTheme}' selaras dengan tren pasar aktif (${token.narrativeCosineSim.toFixed(2)} >= ${minCosSim.toFixed(2)}).`,
     metricValue: token.narrativeCosineSim.toFixed(2),

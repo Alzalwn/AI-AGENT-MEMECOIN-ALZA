@@ -117,3 +117,51 @@ export const STRATEGY_PRESETS = {
     trailingStopLossR: 0.33,
   }
 };
+
+export const TRADING_STYLE_PRESETS = {
+  SCALPING: {
+    styleName: 'SCALPING' as const,
+    label: 'Scalp / Snipe (Detik/Menit)',
+    badge: 'ULTRA-FAST',
+    description: 'Auto-sniper ultra cepat untuk momentum detik awal Pump.fun/Raydium.',
+    targetTpPct: 100, // +100%
+    stopLossPct: -25, // -25%
+    trailingStopLossPct: 15,
+    maxHoldTimeSec: 180, // 3 menit
+    ttlUnlimited: false,
+    minLiquidityUsd: 5000,
+    minGrokViralityScore: 85,
+    jitoTipTier: 'STANDARD' as const,
+    autoSellEnabled: true
+  },
+  SWING: {
+    styleName: 'SWING' as const,
+    label: 'Swing / Trend (Jam)',
+    badge: 'HIGH-EXP',
+    description: 'Menunggangi tren & breakout dengan target keuntungan berlipat (moonshot).',
+    targetTpPct: 300, // +300%
+    stopLossPct: -35, // -35%
+    trailingStopLossPct: 25,
+    maxHoldTimeSec: 14400, // 4 jam
+    ttlUnlimited: false,
+    minLiquidityUsd: 12000,
+    minGrokViralityScore: 80,
+    jitoTipTier: 'ECONOMY' as const,
+    autoSellEnabled: true
+  },
+  HODL: {
+    styleName: 'HODL' as const,
+    label: 'Spot / HODL Tracker',
+    badge: 'UNLIMITED',
+    description: 'Akumulasi token dan pantau portfolio tanpa auto-sell (hanya alert proteksi darurat).',
+    targetTpPct: 0, // Manual exit
+    stopLossPct: -50, // Emergency rug safeguard
+    trailingStopLossPct: 0, // Disabled
+    maxHoldTimeSec: 0, // Unlimited hold time
+    ttlUnlimited: true,
+    minLiquidityUsd: 15000,
+    minGrokViralityScore: 75,
+    jitoTipTier: 'ECONOMY' as const,
+    autoSellEnabled: false
+  }
+} as const;
