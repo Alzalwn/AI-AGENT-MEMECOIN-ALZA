@@ -25,8 +25,8 @@ module.exports = {
         }
       },
       fontFamily: {
-        mono: ['var(--font-mono)', 'JetBrains Mono', 'Fira Code', 'Courier New', 'monospace'],
-        sans: ['var(--font-sans)', 'Inter', 'system-ui', 'sans-serif']
+        mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', '"Liberation Mono"', 'monospace'],
+        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'sans-serif']
       }
     },
   },
