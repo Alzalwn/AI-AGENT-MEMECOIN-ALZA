@@ -45,6 +45,7 @@ import { createJitoBundleReceipt } from '../lib/jito';
 import { rpcFailoverInstance } from '../lib/rpcFailover';
 import { fetchJupiterQuote, executeJupiterSwap, SwapExecutionResult } from '../lib/jupiter';
 import { HeliusBlockchainStream } from '../lib/heliusStream';
+import { verifySafeToSell } from '../lib/honeypot';
 
 // Extended configs with minGrokScore (not part of base lib type)
 export interface WebhookTelegramConfig extends TelegramConfig {
@@ -592,14 +593,55 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
 
       const foundToken: TokenSignal = data.token;
-      setSniperStatus(`Mengevaluasi 5 agen untuk ${foundToken.symbol}...`);
+      setSniperStatus(`Mengevaluasi 5 agen & simulasi honeypot untuk ${foundToken.symbol}...`);
+
+      // High-Security Honeypot Pre-flight Verification
+      const honeypotCheck = await verifySafeToSell(foundToken);
+      foundToken.honeypotCheck = honeypotCheck;
+
+      if (!honeypotCheck.isSafeToSell) {
+        setSniperStatus('VETOED - HONEYPOT DETECTED');
+        appendLog('RISK', 'DANGER', `🛑 [VETOED - HONEYPOT DETECTED] Token ${foundToken.symbol} (${foundToken.mint.slice(0, 8)}...) adalah HONEYPOT! ${honeypotCheck.reason}`);
+        soundFx.playEmergencyExit();
+
+        const vetoConsensus: ConsensusResult = {
+          token: foundToken,
+          verdict: 'VETOED',
+          vetoAgent: 'risk',
+          vetoReason: `[HONEYPOT DETECTED] ${honeypotCheck.reason}`,
+          verdicts: {
+            risk: {
+              agentId: 'risk',
+              agentName: 'Honeypot Shield',
+              status: 'VETO',
+              reason: honeypotCheck.reason || 'Honeypot detected',
+              metricValue: 'Honeypot',
+              threshold: 'Safe To Sell',
+              latencyMs: honeypotCheck.latencyMs
+            },
+            scanner: { agentId: 'scanner', agentName: 'Scanner Agent', status: 'APPROVE', reason: 'N/A', metricValue: 'N/A', threshold: 'N/A', latencyMs: 0 },
+            narrative: { agentId: 'narrative', agentName: 'Narrative Agent', status: 'APPROVE', reason: 'N/A', metricValue: 'N/A', threshold: 'N/A', latencyMs: 0 },
+            timing: { agentId: 'timing', agentName: 'Timing Agent', status: 'APPROVE', reason: 'N/A', metricValue: 'N/A', threshold: 'N/A', latencyMs: 0 },
+            exit: { agentId: 'exit', agentName: 'Exit Agent', status: 'APPROVE', reason: 'N/A', metricValue: 'N/A', threshold: 'N/A', latencyMs: 0 }
+          },
+          consensusLatencyMs: honeypotCheck.latencyMs,
+          timestamp: Date.now(),
+          honeypotCheck
+        };
+
+        setConsensusFeed((prev) => [vetoConsensus, ...prev.slice(0, 39)]);
+        setSelectedResult(vetoConsensus);
+        return;
+      }
+
       const consensus = runAgentConsensus(foundToken, STRATEGY_PRESETS.BALANCED);
+      consensus.honeypotCheck = honeypotCheck;
 
       setConsensusFeed((prev) => [consensus, ...prev.slice(0, 39)]);
       setSelectedResult(consensus);
 
       if (consensus.verdict === 'APPROVED') {
-        appendLog('RISK', 'SUCCESS', `Manual target ${foundToken.symbol} PASSED 5/5 consensus!`);
+        appendLog('RISK', 'SUCCESS', `Manual target ${foundToken.symbol} PASSED 5/5 consensus & Honeypot Shield!`);
         soundFx.playApproval();
 
         // If no active position, prompt user confirmation dialog before opening (Fix #12)
@@ -614,6 +656,11 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       } else {
         appendLog('RISK', 'WARN', `Manual target ${foundToken.symbol} VETOED by ${consensus.vetoAgent}: ${consensus.vetoReason}`);
         soundFx.playVeto();
+        if (consensus.vetoReason?.includes('HONEYPOT') || foundToken.isHoneypotDetected) {
+          setSniperStatus('VETOED - HONEYPOT DETECTED');
+        } else {
+          setSniperStatus(`VETOED: ${consensus.vetoAgent}`);
+        }
       }
     } catch (err: any) {
       appendLog('SYSTEM', 'DANGER', `Lookup error: ${err.message}`);
@@ -623,9 +670,21 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [activePosition, appendLog]);
 
   // Confirmation actions for Manual Snipe (Fix #12)
-  const confirmSnipe = useCallback(() => {
+  const confirmSnipe = useCallback(async () => {
     if (!pendingSnipeConfirmation) return;
     const { token, solInvest } = pendingSnipeConfirmation;
+
+    // Last-Second Pre-flight Honeypot Guard Check
+    const hp = token.honeypotCheck || await verifySafeToSell(token);
+    token.honeypotCheck = hp;
+    if (!hp.isSafeToSell) {
+      setSniperStatus('VETOED - HONEYPOT DETECTED');
+      appendLog('RISK', 'DANGER', `🛑 [EXECUTION BLOCKED] Token ${token.symbol} terdeteksi sebagai HONEYPOT saat pre-flight final! Transaksi dibatalkan.`);
+      soundFx.playEmergencyExit();
+      setPendingSnipeConfirmation(null);
+      return;
+    }
+
     const entryPrice = token.priceSol || 0.0001;
     const tpPct = agentConfig.takeProfitPct ?? autoSnipeConfig.takeProfitPct ?? 100;
     const slPct = agentConfig.stopLossPct ?? autoSnipeConfig.stopLossPct ?? -25;
@@ -826,7 +885,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     if (engineStatus !== 'AUTONOMOUS') return;
 
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       // Slot increment
       setNetworkMetrics((m) => ({
         ...m,
@@ -854,6 +913,20 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }));
 
       if (consensus.verdict === 'APPROVED') {
+        // Pre-flight Honeypot Check before processing automated purchase
+        const hp = await verifySafeToSell(consensus.token);
+        consensus.token.honeypotCheck = hp;
+        if (!hp.isSafeToSell) {
+          soundFx.playEmergencyExit();
+          appendLog(
+            'RISK',
+            'DANGER',
+            `🛑 [VETOED - HONEYPOT DETECTED] Auto-snipe DIBATALKAN untuk ${consensus.token.symbol} (${consensus.token.mint.slice(0, 8)}...)! Alasan: ${hp.reason}`
+          );
+          setSniperStatus('VETOED - HONEYPOT DETECTED');
+          return;
+        }
+
         soundFx.playApproval();
         appendLog('SCAN', 'SUCCESS', `Signal APPROVED: ${consensus.token.symbol} (Score: ${consensus.token.narrativeCosineSim})`);
 

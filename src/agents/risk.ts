@@ -1,5 +1,6 @@
 import { TokenSignal, AgentVerdict, AgentThresholds } from '../types/terminal';
 import { PRD_THRESHOLDS } from '../config/constants';
+import { KNOWN_DEPLOYER_BLACKLIST } from '../lib/honeypot';
 
 export function evaluateRiskAgent(token: TokenSignal, thresholds?: AgentThresholds): AgentVerdict {
   const start = performance.now();
@@ -96,7 +97,19 @@ export function evaluateRiskAgent(token: TokenSignal, thresholds?: AgentThreshol
     };
   }
 
-  // 7. Creator / Deployer Wallet Balance Check (PRD Section 6 Wallet Linkage Defense)
+  // 7. Creator / Deployer Blacklist & Wallet Balance Check
+  if (token.creatorAddress && KNOWN_DEPLOYER_BLACKLIST.has(token.creatorAddress)) {
+    return {
+      agentId: 'risk',
+      agentName: 'Risk Agent',
+      status: 'VETO',
+      reason: `Deployer wallet (${token.creatorAddress.slice(0, 6)}...${token.creatorAddress.slice(-4)}) terdaftar dalam blacklist serial rug pull / honeypot!`,
+      metricValue: 'Blacklisted Dev',
+      threshold: 'Clean Dev',
+      latencyMs: +(performance.now() - start).toFixed(2)
+    };
+  }
+
   if (token.creatorBalancePct !== undefined && token.creatorBalancePct > 15) {
     return {
       agentId: 'risk',

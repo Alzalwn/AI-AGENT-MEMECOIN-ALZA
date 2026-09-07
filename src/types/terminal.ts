@@ -38,6 +38,7 @@ export interface TokenSignal {
   smartMoneyCount?: number;
   smartMoneyWallets?: string[];
   moonshot?: MoonshotVerdict;
+  honeypotCheck?: import('../lib/honeypot').HoneypotCheckResult;
 }
 
 export interface MoonshotPillars {
@@ -102,6 +103,7 @@ export interface ConsensusResult {
   consensusLatencyMs: number;
   timestamp: number;
   moonshot?: MoonshotVerdict;
+  honeypotCheck?: import('../lib/honeypot').HoneypotCheckResult;
 }
 
 export interface ActivePosition {

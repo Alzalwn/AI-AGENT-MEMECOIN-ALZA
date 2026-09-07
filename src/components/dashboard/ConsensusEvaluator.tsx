@@ -21,7 +21,8 @@ import {
   ChevronDown,
   ChevronsUpDown,
   Maximize2,
-  Rocket
+  Rocket,
+  ShieldAlert
 } from 'lucide-react';
 import { ClosedTrade } from '../../types/terminal';
 import StrategyRadar from '../StrategyRadar';
@@ -88,6 +89,14 @@ export const ConsensusEvaluator: React.FC<ConsensusEvaluatorProps> = ({
   } = useTradingAgent();
 
   const targetResult = selectedResult || consensusFeed[0] || null;
+
+  const isHoneypotDetected = Boolean(
+    targetResult &&
+    (targetResult.verdict === 'VETOED' &&
+      (targetResult.vetoReason?.includes('HONEYPOT') ||
+        targetResult.token.isHoneypotDetected ||
+        (targetResult.honeypotCheck && !targetResult.honeypotCheck.isSafeToSell)))
+  );
 
   return (
     <section className="flex flex-col gap-4 font-mono">
@@ -223,7 +232,7 @@ export const ConsensusEvaluator: React.FC<ConsensusEvaluatorProps> = ({
         <CollapsibleCard
           title={`${targetResult.token.symbol} Consensus Analysis`}
           subtitle={targetResult.token.name}
-          badge={targetResult.verdict}
+          badge={isHoneypotDetected ? 'VETOED - HONEYPOT DETECTED' : targetResult.verdict}
           badgeVariant={targetResult.verdict === 'APPROVED' ? 'emerald' : 'rose'}
           icon={<ShieldCheck className="w-4 h-4 text-cyan-400" />}
           storageKey="card_consensus_eval"
@@ -300,6 +309,56 @@ export const ConsensusEvaluator: React.FC<ConsensusEvaluatorProps> = ({
                 </span>
               </div>
             </div>
+
+            {/* Honeypot VETO Danger Banner */}
+            {isHoneypotDetected && (
+              <div className="bg-red-950/80 border-2 border-red-500/80 rounded-xl p-3 shadow-[0_0_20px_rgba(239,68,68,0.35)] space-y-2 animate-pulse">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1 rounded bg-red-500/20 text-red-400 border border-red-500/50">
+                      <ShieldAlert className="w-4 h-4 text-red-400" />
+                    </div>
+                    <span className="text-xs font-black uppercase tracking-wider text-red-300">
+                      ⚠️ VETOED - HONEYPOT DETECTED (DEFENSE SHIELD)
+                    </span>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-red-500/30 text-red-200 font-black border border-red-400/50">
+                    TRANSAKSI DIBLOKIR
+                  </span>
+                </div>
+                <p className="text-[11px] text-red-200 leading-relaxed font-sans">
+                  {targetResult.honeypotCheck?.reason || targetResult.vetoReason || 'Token terdeteksi sebagai Honeypot on-chain (tidak bisa di-swap/dijual kembali). Eksekusi pembelian otomatis & manual dibatalkan.'}
+                </p>
+                {targetResult.honeypotCheck && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[10px]">
+                    <div className="bg-black/40 p-1.5 rounded border border-red-500/30">
+                      <span className="text-zinc-400 block">Freeze Authority:</span>
+                      <span className={`font-bold ${targetResult.honeypotCheck.checks.freezeAuthority.status === 'PASS' ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {targetResult.honeypotCheck.checks.freezeAuthority.status === 'PASS' ? 'REVOKED (PASS)' : 'ACTIVE (VETO)'}
+                      </span>
+                    </div>
+                    <div className="bg-black/40 p-1.5 rounded border border-red-500/30">
+                      <span className="text-zinc-400 block">Token-2022 Tax:</span>
+                      <span className={`font-bold ${targetResult.honeypotCheck.checks.token2022Extensions.status === 'PASS' ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {targetResult.honeypotCheck.checks.token2022Extensions.transferFeePct}% Tax
+                      </span>
+                    </div>
+                    <div className="bg-black/40 p-1.5 rounded border border-red-500/30">
+                      <span className="text-zinc-400 block">Sell Simulation:</span>
+                      <span className={`font-bold ${targetResult.honeypotCheck.checks.simulation.status === 'PASS' ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {targetResult.honeypotCheck.checks.simulation.status}
+                      </span>
+                    </div>
+                    <div className="bg-black/40 p-1.5 rounded border border-red-500/30">
+                      <span className="text-zinc-400 block">Deployer:</span>
+                      <span className={`font-bold ${targetResult.honeypotCheck.checks.deployer.status === 'CLEAN' ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {targetResult.honeypotCheck.checks.deployer.status}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Moonshot Predictor Engine (Pump Potential Matrix) */}
             {targetResult.moonshot && (

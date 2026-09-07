@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useTradingAgent } from '../../hooks/useTradingAgent';
-import { Crosshair, Search, RefreshCw, Zap } from 'lucide-react';
+import { Crosshair, Search, RefreshCw, Zap, ShieldAlert } from 'lucide-react';
 import Button from '../ui/Button';
 
 interface ManualMintSniperProps {
@@ -80,7 +80,16 @@ export const ManualMintSniper: React.FC<ManualMintSniperProps> = ({ onOpenJitoTr
 
       {/* Quick Status Pill */}
       {sniperStatus && (
-        <span className="text-amber-400 animate-pulse font-semibold px-2.5 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px]">
+        <span
+          className={`font-mono text-[11px] px-2.5 py-1 rounded-xl flex items-center gap-1.5 transition-all shadow-sm ${
+            sniperStatus.includes('HONEYPOT')
+              ? 'text-red-300 font-black bg-red-500/20 border border-red-500/60 shadow-[0_0_14px_rgba(239,68,68,0.4)] animate-pulse'
+              : sniperStatus.includes('VETOED')
+              ? 'text-rose-400 font-bold bg-rose-500/10 border border-rose-500/30'
+              : 'text-amber-400 font-semibold bg-amber-500/10 border border-amber-500/30 animate-pulse'
+          }`}
+        >
+          {sniperStatus.includes('HONEYPOT') && <ShieldAlert className="w-3.5 h-3.5 text-red-400" />}
           {sniperStatus}
         </span>
       )}
