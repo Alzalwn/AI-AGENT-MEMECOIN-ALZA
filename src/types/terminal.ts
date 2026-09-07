@@ -241,7 +241,6 @@ export interface AutoSnipeConfig {
   maxDailyTrades: number;
   dailyTradesExecuted: number;
   useKellySizing?: boolean;
-  lastSnipeTimestamp?: number;
   takeProfitPct?: number; // e.g. 100 (+100%)
   stopLossPct?: number; // e.g. -25 (-25%)
   trailingStopLossPct?: number; // e.g. 15 (15%)
@@ -250,4 +249,11 @@ export interface AutoSnipeConfig {
   tradingStyle?: TradingStyle; // 'SCALPING' | 'SWING' | 'HODL'
   ttlUnlimited?: boolean;
   autoSellEnabled?: boolean;
+  // Signal Engine & Anti-Spam Throttling
+  maxSignalsPer5m?: number;
+  dedup24hEnabled?: boolean;
+  minRiskRewardRatio?: number;
+  telegramAlertsEnabled?: boolean;
+  telegramBotToken?: string;
+  telegramChatId?: string;
 }

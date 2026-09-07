@@ -32,7 +32,15 @@ export interface BotSettingsState {
   grokApiKey: string;
   geminiApiKey: string;
 
-  // 5. Cloud Sync & Hydration Tracking
+  // 5. Signal Engine & Anti-Spam Throttling
+  maxSignalsPer5m: number;
+  dedup24hEnabled: boolean;
+  minRiskRewardRatio: number;
+  telegramBotToken: string;
+  telegramChatId: string;
+  telegramAlertsEnabled: boolean;
+
+  // 6. Cloud Sync & Hydration Tracking
   _hasHydrated: boolean;
   isSyncingCloud: boolean;
   lastCloudSyncAt: number | null;
@@ -71,6 +79,13 @@ const DEFAULT_SETTINGS = {
 
   grokApiKey: process.env.NEXT_PUBLIC_GROK_API_KEY || '',
   geminiApiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY || '',
+
+  maxSignalsPer5m: 3,
+  dedup24hEnabled: true,
+  minRiskRewardRatio: 2.0,
+  telegramBotToken: process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN || '',
+  telegramChatId: process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID || '',
+  telegramAlertsEnabled: true,
 
   _hasHydrated: false,
   isSyncingCloud: false,
@@ -139,6 +154,12 @@ export const useSettingsStore = create<BotSettingsState>()(
             jitoTipTier: current.jitoTipTier,
             isAutonomousEnabled: current.isAutonomousEnabled,
             engineStatus: current.engineStatus,
+            maxSignalsPer5m: current.maxSignalsPer5m,
+            dedup24hEnabled: current.dedup24hEnabled,
+            minRiskRewardRatio: current.minRiskRewardRatio,
+            telegramBotToken: current.telegramBotToken,
+            telegramChatId: current.telegramChatId,
+            telegramAlertsEnabled: current.telegramAlertsEnabled,
           };
 
           const { error } = await supabase
@@ -220,6 +241,12 @@ export const useSettingsStore = create<BotSettingsState>()(
         engineStatus: state.engineStatus,
         grokApiKey: state.grokApiKey,
         geminiApiKey: state.geminiApiKey,
+        maxSignalsPer5m: state.maxSignalsPer5m,
+        dedup24hEnabled: state.dedup24hEnabled,
+        minRiskRewardRatio: state.minRiskRewardRatio,
+        telegramBotToken: state.telegramBotToken,
+        telegramChatId: state.telegramChatId,
+        telegramAlertsEnabled: state.telegramAlertsEnabled,
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);

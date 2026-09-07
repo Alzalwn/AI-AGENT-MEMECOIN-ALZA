@@ -4,24 +4,24 @@ import React, { useState, useEffect } from 'react';
 import { AutoSnipeConfig, TradingStyle } from '@/types/terminal';
 import { TRADING_STYLE_PRESETS } from '@/config/constants';
 import { useSettingsStore } from '@/store/useSettingsStore';
+import { testTelegramConnection } from '@/lib/telegram';
 import { 
   X, 
-  Bot, 
+  Radio, 
   Zap, 
   ShieldCheck, 
   Sliders, 
-  AlertTriangle, 
-  DollarSign, 
-  TrendingUp, 
-  Power,
-  Flame,
-  Gauge,
-  Clock,
-  Target,
-  Cloud,
-  UploadCloud,
-  CheckCircle2,
-  Loader2
+  Flame, 
+  Clock, 
+  Target, 
+  UploadCloud, 
+  RotateCcw,
+  CheckCircle2, 
+  Loader2,
+  Send,
+  SlidersHorizontal,
+  Sparkles,
+  Info
 } from 'lucide-react';
 
 interface AutoSnipeModalProps {
@@ -29,7 +29,7 @@ interface AutoSnipeModalProps {
   onClose: () => void;
   config: AutoSnipeConfig;
   onSaveConfig: (newConfig: AutoSnipeConfig) => void;
-  currentBalanceSol: number;
+  currentBalanceSol?: number;
 }
 
 export const AutoSnipeModal: React.FC<AutoSnipeModalProps> = ({
@@ -37,12 +37,17 @@ export const AutoSnipeModal: React.FC<AutoSnipeModalProps> = ({
   onClose,
   config,
   onSaveConfig,
-  currentBalanceSol
+  currentBalanceSol = 0
 }) => {
   const [form, setForm] = useState<AutoSnipeConfig>({ ...config });
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
   const [cloudSyncStatus, setCloudSyncStatus] = useState<string | null>(null);
   const [isCloudLoading, setIsCloudLoading] = useState<boolean>(false);
+  
+  // Telegram testing state
+  const [isTestingTelegram, setIsTestingTelegram] = useState<boolean>(false);
+  const [telegramStatus, setTelegramStatus] = useState<{ success: boolean; message: string } | null>(null);
+  const [showTelegramInputs, setShowTelegramInputs] = useState<boolean>(false);
 
   // Synchronize state with persistent store and props whenever modal opens
   useEffect(() => {
@@ -50,21 +55,28 @@ export const AutoSnipeModal: React.FC<AutoSnipeModalProps> = ({
       const store = useSettingsStore.getState();
       setForm({
         ...config,
-        tradingStyle: store.tradingStyle || config.tradingStyle || 'SCALPING',
-        takeProfitPct: store.takeProfitPct ?? config.takeProfitPct ?? 100,
+        tradingStyle: store.tradingStyle || config.tradingStyle || 'SWING',
+        takeProfitPct: store.takeProfitPct ?? config.takeProfitPct ?? 150,
         stopLossPct: store.stopLossPct ?? config.stopLossPct ?? -25,
         trailingStopLossPct: store.trailingStopLossPct ?? config.trailingStopLossPct ?? 15,
-        maxHoldTimeSec: store.maxHoldTimeSec ?? config.maxHoldTimeSec ?? 180,
+        maxHoldTimeSec: store.maxHoldTimeSec ?? config.maxHoldTimeSec ?? 14400,
         ttlUnlimited: store.ttlUnlimited ?? config.ttlUnlimited ?? false,
         autoSellEnabled: store.autoSellEnabled ?? config.autoSellEnabled ?? true,
-        buyAmountSol: store.buyAmountSol ?? config.buyAmountSol ?? 0.02,
+        buyAmountSol: store.buyAmountSol ?? config.buyAmountSol ?? 0.05,
         minLiquidityUsd: store.minLiquidityUsd ?? config.minLiquidityUsd ?? 10000,
         minGrokViralityScore: store.minGrokViralityScore ?? config.minGrokViralityScore ?? 85,
         maxTop10HoldersPct: store.maxTop10HoldersPct ?? config.maxTop10HoldersPct ?? 20,
         jitoTipTier: (store.jitoTipTier as any) ?? config.jitoTipTier ?? 'STANDARD',
-        isEnabled: store.isAutonomousEnabled ?? config.isEnabled ?? true
+        isEnabled: store.isAutonomousEnabled ?? config.isEnabled ?? true,
+        maxSignalsPer5m: (store as any).maxSignalsPer5m ?? config.maxSignalsPer5m ?? 3,
+        dedup24hEnabled: (store as any).dedup24hEnabled ?? config.dedup24hEnabled ?? true,
+        minRiskRewardRatio: (store as any).minRiskRewardRatio ?? config.minRiskRewardRatio ?? 2.0,
+        telegramAlertsEnabled: (store as any).telegramAlertsEnabled ?? config.telegramAlertsEnabled ?? true,
+        telegramBotToken: (store as any).telegramBotToken ?? config.telegramBotToken ?? '',
+        telegramChatId: (store as any).telegramChatId ?? config.telegramChatId ?? '',
       });
       setCloudSyncStatus(null);
+      setTelegramStatus(null);
     }
   }, [config, isOpen]);
 
@@ -73,11 +85,11 @@ export const AutoSnipeModal: React.FC<AutoSnipeModalProps> = ({
   const handleSave = () => {
     // 1. Persist to Zustand persistent store (automatic localStorage sync)
     useSettingsStore.getState().updateSettings({
-      tradingStyle: form.tradingStyle || 'SCALPING',
-      takeProfitPct: form.takeProfitPct || 100,
+      tradingStyle: form.tradingStyle || 'SWING',
+      takeProfitPct: form.takeProfitPct || 150,
       stopLossPct: form.stopLossPct || -25,
       trailingStopLossPct: form.trailingStopLossPct || 15,
-      maxHoldTimeSec: form.maxHoldTimeSec || 180,
+      maxHoldTimeSec: form.maxHoldTimeSec || 14400,
       ttlUnlimited: form.ttlUnlimited || false,
       autoSellEnabled: form.autoSellEnabled !== false,
       buyAmountSol: form.buyAmountSol,
@@ -86,7 +98,13 @@ export const AutoSnipeModal: React.FC<AutoSnipeModalProps> = ({
       maxTop10HoldersPct: form.maxTop10HoldersPct,
       jitoTipTier: form.jitoTipTier,
       isAutonomousEnabled: form.isEnabled,
-    });
+      maxSignalsPer5m: form.maxSignalsPer5m ?? 3,
+      dedup24hEnabled: form.dedup24hEnabled ?? true,
+      minRiskRewardRatio: form.minRiskRewardRatio ?? 2.0,
+      telegramBotToken: form.telegramBotToken ?? '',
+      telegramChatId: form.telegramChatId ?? '',
+      telegramAlertsEnabled: form.telegramAlertsEnabled ?? true,
+    } as any);
 
     // 2. Propagate to context callback & legacy localStorage key
     onSaveConfig(form);
@@ -103,17 +121,36 @@ export const AutoSnipeModal: React.FC<AutoSnipeModalProps> = ({
     }, 600);
   };
 
+  const handleResetDefaults = () => {
+    setForm((prev) => ({
+      ...prev,
+      tradingStyle: 'SWING',
+      isEnabled: true,
+      takeProfitPct: 150,
+      stopLossPct: -25,
+      trailingStopLossPct: 20,
+      maxHoldTimeSec: 14400,
+      ttlUnlimited: false,
+      minGrokViralityScore: 85,
+      minLiquidityUsd: 10000,
+      maxTop10HoldersPct: 20,
+      maxSignalsPer5m: 3,
+      dedup24hEnabled: true,
+      minRiskRewardRatio: 2.0,
+      telegramAlertsEnabled: true,
+    }));
+  };
+
   const handleCloudSave = async () => {
     setIsCloudLoading(true);
-    setCloudSyncStatus('Menyinkronkan ke Supabase...');
+    setCloudSyncStatus('Menyinkronkan pengaturan sinyal ke Supabase...');
 
-    // First update local state
     useSettingsStore.getState().updateSettings({
-      tradingStyle: form.tradingStyle || 'SCALPING',
-      takeProfitPct: form.takeProfitPct || 100,
+      tradingStyle: form.tradingStyle || 'SWING',
+      takeProfitPct: form.takeProfitPct || 150,
       stopLossPct: form.stopLossPct || -25,
       trailingStopLossPct: form.trailingStopLossPct || 15,
-      maxHoldTimeSec: form.maxHoldTimeSec || 180,
+      maxHoldTimeSec: form.maxHoldTimeSec || 14400,
       ttlUnlimited: form.ttlUnlimited || false,
       autoSellEnabled: form.autoSellEnabled !== false,
       buyAmountSol: form.buyAmountSol,
@@ -122,107 +159,140 @@ export const AutoSnipeModal: React.FC<AutoSnipeModalProps> = ({
       maxTop10HoldersPct: form.maxTop10HoldersPct,
       jitoTipTier: form.jitoTipTier,
       isAutonomousEnabled: form.isEnabled,
-    });
+      maxSignalsPer5m: form.maxSignalsPer5m ?? 3,
+      dedup24hEnabled: form.dedup24hEnabled ?? true,
+      minRiskRewardRatio: form.minRiskRewardRatio ?? 2.0,
+      telegramBotToken: form.telegramBotToken ?? '',
+      telegramChatId: form.telegramChatId ?? '',
+      telegramAlertsEnabled: form.telegramAlertsEnabled ?? true,
+    } as any);
 
     const res = await useSettingsStore.getState().saveToSupabase();
     setIsCloudLoading(false);
     if (res.success) {
-      setCloudSyncStatus('✅ Berhasil tersimpan di Supabase!');
+      setCloudSyncStatus('✅ Berhasil tersimpan di Supabase Cloud!');
       setTimeout(() => setCloudSyncStatus(null), 3000);
     } else {
       setCloudSyncStatus(`⚠️ ${res.error || 'Gagal sinkron cloud'}`);
     }
   };
 
-  const buyPresets = [0.05, 0.1, 0.25, 0.5];
+  const handleTestTelegram = async () => {
+    const token = form.telegramBotToken || process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN || '';
+    const chat = form.telegramChatId || process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID || '';
+
+    if (!token || !chat) {
+      setTelegramStatus({
+        success: false,
+        message: 'Bot Token dan Chat ID wajib diisi untuk tes pengiriman sinyal!'
+      });
+      setShowTelegramInputs(true);
+      return;
+    }
+
+    setIsTestingTelegram(true);
+    setTelegramStatus(null);
+    try {
+      const res = await testTelegramConnection(token, chat);
+      setTelegramStatus(res);
+    } catch (err: any) {
+      setTelegramStatus({
+        success: false,
+        message: err?.message || 'Gagal mengirim pesan tes ke Telegram'
+      });
+    } finally {
+      setIsTestingTelegram(false);
+    }
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-terminal-panel border border-terminal-border rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col font-mono text-xs max-h-[92vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-[#0e0e10] border border-cyan-500/30 rounded-2xl w-full max-w-lg shadow-[0_0_40px_rgba(6,182,212,0.15)] overflow-hidden flex flex-col font-mono text-xs max-h-[92vh]">
         {/* Header */}
-        <div className="p-4 border-b border-terminal-border flex items-center justify-between bg-terminal-card/80">
-          <div className="flex items-center gap-2.5">
-            <div className={`p-2 rounded-xl border transition-all ${
+        <div className="p-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-950/90">
+          <div className="flex items-center gap-3">
+            <div className={`p-2.5 rounded-xl border transition-all ${
               form.isEnabled 
-                ? 'bg-terminal-green/15 border-terminal-green text-terminal-green glow-green'
-                : 'bg-terminal-card border-terminal-border text-terminal-muted'
+                ? 'bg-cyan-500/15 border-cyan-500/50 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.3)]'
+                : 'bg-zinc-900 border-zinc-800 text-zinc-500'
             }`}>
-              <Bot className="w-5 h-5" />
+              <Radio className={`w-5 h-5 ${form.isEnabled ? 'animate-pulse' : ''}`} />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-black text-sm tracking-wider text-terminal-text">
-                  AUTONOMOUS AI SNIPER BOT
+                <span className="font-black text-sm tracking-wider text-zinc-100">
+                  PENGATURAN SINYAL ALPHA
                 </span>
-                <span className={`text-[10px] px-2 py-0.5 rounded font-bold border ${
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold border ${
                   form.isEnabled
-                    ? 'bg-terminal-green/20 border-terminal-green text-terminal-green'
-                    : 'bg-terminal-card border-terminal-border text-terminal-muted'
+                    ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                    : 'bg-zinc-800/60 border-zinc-700 text-zinc-400'
                 }`}>
-                  {form.isEnabled ? 'ACTIVE' : 'DISABLED'}
+                  {form.isEnabled ? 'ENGINE AKTIF' : 'DIJEDA'}
                 </span>
               </div>
-              <p className="text-[10px] text-terminal-muted">
-                Sub-350ms 5-Agent Consensus Auto-Execution Engine
+              <p className="text-[10px] text-zinc-400 mt-0.5">
+                Multi-Agent AI Filter, Throttling & Telegram Broadcaster
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            aria-label="Tutup modal auto-sniper"
-            className="p-1.5 rounded-lg text-terminal-muted hover:text-terminal-text hover:bg-terminal-card border border-transparent hover:border-terminal-border transition-all cursor-pointer"
+            aria-label="Tutup modal pengaturan sinyal"
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 border border-transparent hover:border-zinc-700 transition-all cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Form Body */}
-        <div className="p-4 overflow-y-auto space-y-4 flex-1">
-          {/* Master Toggle */}
-          <div className={`p-3.5 rounded-xl border flex items-center justify-between transition-all ${
+        <div className="p-4 overflow-y-auto space-y-4 flex-1 custom-scrollbar">
+          {/* Master Signal Switch */}
+          <div className={`p-3.5 rounded-xl border transition-all flex items-center justify-between ${
             form.isEnabled
-              ? 'bg-terminal-green/10 border-terminal-green/50 shadow-[0_0_15px_rgba(13,242,137,0.15)]'
-              : 'bg-terminal-card border-terminal-border'
+              ? 'bg-cyan-950/20 border-cyan-500/40 shadow-[0_0_20px_rgba(6,182,212,0.12)]'
+              : 'bg-zinc-900/60 border-zinc-800'
           }`}>
-            <div className="space-y-0.5">
-              <span className="font-bold text-sm text-terminal-text flex items-center gap-2">
-                <Power className={`w-4 h-4 ${form.isEnabled ? 'text-terminal-green' : 'text-terminal-muted'}`} />
-                <span>Autonomous Sniping Mode</span>
+            <div className="space-y-1 pr-3">
+              <span className="font-bold text-sm text-zinc-100 flex items-center gap-2">
+                <Zap className={`w-4 h-4 ${form.isEnabled ? 'text-cyan-400' : 'text-zinc-500'}`} />
+                <span>Mode Penyiaran Sinyal Otomatis</span>
               </span>
-              <p className="text-[10px] text-terminal-muted">
+              <p className="text-[10px] text-zinc-400 leading-relaxed">
                 {form.isEnabled 
-                  ? 'Bot memindai dan otomatis membeli token saat 5/5 agen menyetujui.'
-                  : 'Bot dalam kondisi standby (tidak melakukan order otomatis).'}
+                  ? 'Engine memindai pasar live & menyiarkan sinyal Entry/TP/SL saat konsensus 5/5 agen tercapai.'
+                  : 'Penyiaran sinyal sedang dijeda (tidak memproduksi sinyal baru ke feed & Telegram).'}
               </p>
             </div>
             <button
+              type="button"
               onClick={() => setForm(f => ({ ...f, isEnabled: !f.isEnabled }))}
-              className={`px-4 py-2 rounded-xl font-black text-xs transition-all cursor-pointer border ${
+              className={`px-3.5 py-2 rounded-xl font-black text-xs transition-all cursor-pointer border whitespace-nowrap shadow-sm ${
                 form.isEnabled
-                  ? 'bg-terminal-green text-terminal-bg border-terminal-green glow-green'
-                  : 'bg-terminal-panel text-terminal-muted border-terminal-border hover:text-terminal-text'
+                  ? 'bg-emerald-500 hover:bg-emerald-400 text-black border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.35)]'
+                  : 'bg-zinc-800 text-zinc-300 border-zinc-700 hover:text-white'
               }`}
             >
-              {form.isEnabled ? 'ACTIVE (ON)' : 'TURN ON'}
+              {form.isEnabled ? 'AKTIF (ON)' : 'AKTIFKAN'}
             </button>
           </div>
 
-          {/* Trading Style Profile Selector */}
-          <div className="bg-terminal-card p-3.5 rounded-xl border border-terminal-border space-y-2.5">
+          {/* Signal Strategy Profile Selector */}
+          <div className="bg-zinc-900/70 p-3.5 rounded-xl border border-zinc-800/90 space-y-2.5">
             <div className="flex items-center justify-between">
-              <span className="font-bold text-terminal-text flex items-center gap-1.5">
-                <Gauge className="w-4 h-4 text-terminal-cyan" />
-                <span>Trading Style Profile</span>
+              <span className="font-bold text-zinc-200 flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-purple-400" />
+                <span>Profil Target Sinyal</span>
               </span>
-              <span className="text-[10px] px-2 py-0.5 rounded font-bold border bg-terminal-panel border-terminal-border text-terminal-cyan">
-                {form.tradingStyle || 'SCALPING'}
+              <span className="text-[10px] px-2 py-0.5 rounded font-black border bg-zinc-950 border-purple-500/30 text-purple-400">
+                {form.tradingStyle === 'HODL' ? '💎 MOONBAG' : form.tradingStyle === 'SWING' ? '📈 SWING RUNNER' : '⚡ SCALP ALPHA'}
               </span>
             </div>
 
             <div className="grid grid-cols-3 gap-2">
               {(['SCALPING', 'SWING', 'HODL'] as const).map((styleKey) => {
                 const p = TRADING_STYLE_PRESETS[styleKey];
-                const isSelected = (form.tradingStyle || 'SCALPING') === styleKey;
+                const isSelected = (form.tradingStyle || 'SWING') === styleKey;
                 return (
                   <button
                     key={styleKey}
@@ -231,105 +301,174 @@ export const AutoSnipeModal: React.FC<AutoSnipeModalProps> = ({
                       setForm((prev) => ({
                         ...prev,
                         tradingStyle: styleKey,
-                        takeProfitPct: p.targetTpPct,
+                        takeProfitPct: styleKey === 'SCALPING' ? 80 : styleKey === 'SWING' ? 200 : 500,
                         stopLossPct: p.stopLossPct,
                         trailingStopLossPct: p.trailingStopLossPct,
                         maxHoldTimeSec: p.maxHoldTimeSec,
                         minLiquidityUsd: p.minLiquidityUsd,
                         minGrokViralityScore: p.minGrokViralityScore,
-                        jitoTipTier: p.jitoTipTier,
                         ttlUnlimited: p.ttlUnlimited,
                         autoSellEnabled: p.autoSellEnabled
                       }));
                     }}
                     className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
                       isSelected
-                        ? 'bg-terminal-green/15 border-terminal-green text-terminal-green shadow-[0_0_12px_rgba(13,242,137,0.2)]'
-                        : 'bg-terminal-panel border-terminal-border text-terminal-muted hover:text-terminal-text'
+                        ? 'bg-purple-950/40 border-purple-500 text-purple-300 shadow-[0_0_15px_rgba(168,85,247,0.25)]'
+                        : 'bg-zinc-950/60 border-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
                     }`}
                   >
                     <div className="flex items-center justify-between w-full mb-1">
-                      <span className="font-black text-[11px] tracking-wider">
+                      <span className="font-black text-[11px] tracking-wider text-zinc-100">
                         {styleKey === 'SCALPING' && '⚡ SCALP'}
                         {styleKey === 'SWING' && '📈 SWING'}
-                        {styleKey === 'HODL' && '💎 HODL'}
+                        {styleKey === 'HODL' && '💎 MOONBAG'}
                       </span>
-                      <span className="text-[8px] px-1 py-0.2 rounded border border-current font-bold opacity-80">
-                        {p.badge}
+                      <span className="text-[8px] px-1 py-0.5 rounded border border-current font-bold opacity-90">
+                        {styleKey === 'SCALPING' ? 'RAPID' : styleKey === 'SWING' ? 'RECOMMENDED' : 'RUNNER'}
                       </span>
                     </div>
-                    <span className="text-[9px] opacity-75 line-clamp-1">
-                      {styleKey === 'SCALPING' && 'TTL 3m • +100% TP'}
-                      {styleKey === 'SWING' && 'TTL 4h • +300% TP'}
-                      {styleKey === 'HODL' && 'No Auto-Sell'}
+                    <span className="text-[9.5px] opacity-80 leading-tight">
+                      {styleKey === 'SCALPING' && 'TP +50-100% • ETA 3-15m'}
+                      {styleKey === 'SWING' && 'TP +150-350% • ETA 1-4h'}
+                      {styleKey === 'HODL' && 'TP +500%+ • Moonshot'}
                     </span>
                   </button>
                 );
               })}
             </div>
-            <p className="text-[9.5px] text-terminal-muted leading-relaxed">
-              {form.tradingStyle === 'HODL' && '💎 Mode Spot / HODL menonaktifkan auto-sell waktu (TTL) sehingga posisi Anda tetap tersimpan dan aman hingga Anda menjualnya manual.'}
-              {form.tradingStyle === 'SWING' && '📈 Mode Swing menahan token selama beberapa jam untuk menangkap lonjakan breakout gelombang kedua dan moonshot.'}
-              {(!form.tradingStyle || form.tradingStyle === 'SCALPING') && '⚡ Mode Scalping memindai detik ke-0 peluncuran Pump.fun dan auto-sell cepat dalam 3 menit untuk mengamankan profit.'}
-            </p>
+
+            <div className="p-2.5 rounded-lg bg-zinc-950/70 border border-zinc-800/80 text-[10px] text-zinc-400 leading-relaxed flex items-start gap-2">
+              <Info className="w-3.5 h-3.5 text-purple-400 shrink-0 mt-0.5" />
+              <div>
+                {form.tradingStyle === 'SCALPING' && (
+                  <span>⚡ <strong>Profil Scalp Alpha</strong>: Memprioritaskan sinyal entry cepat detik awal peluncuran dengan target TP1-2 kilat dan waktu estimasi singkat (3-15 menit).</span>
+                )}
+                {form.tradingStyle === 'SWING' && (
+                  <span>📈 <strong>Profil Swing Runner (Disarankan)</strong>: Menangkap konfirmasi momentum gelombang kedua dengan akumulasi Smart Money dan target TP +150% s/d +350%.</span>
+                )}
+                {form.tradingStyle === 'HODL' && (
+                  <span>💎 <strong>Profil Moonbag Runner</strong>: Target narasi viral xAI Grok dengan potensi lonjakan ratusan persen untuk koin berkapitalisasi organik.</span>
+                )}
+              </div>
+            </div>
           </div>
 
-          {/* Allocation per Snipe */}
-          <div className="bg-terminal-card p-3.5 rounded-xl border border-terminal-border space-y-2.5">
+          {/* Anti-Spam & Signal Throttling */}
+          <div className="bg-zinc-900/70 p-3.5 rounded-xl border border-zinc-800/90 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="font-bold text-terminal-text flex items-center gap-1.5">
-                <DollarSign className="w-4 h-4 text-terminal-green" />
-                <span>Capital Allocation per Snipe</span>
+              <span className="font-bold text-zinc-200 flex items-center gap-1.5">
+                <SlidersHorizontal className="w-4 h-4 text-emerald-400" />
+                <span>Anti-Spam & Signal Throttling</span>
               </span>
-              <span className="text-terminal-muted text-[10px]">
-                Balance: <strong className="text-terminal-text">{currentBalanceSol.toFixed(2)} SOL</strong>
+              <span className="text-[9px] px-2 py-0.5 rounded font-black border bg-emerald-950/50 border-emerald-500/40 text-emerald-400">
+                RATE LIMITER
               </span>
             </div>
-            <div className="grid grid-cols-4 gap-2">
-              {buyPresets.map((amount) => (
-                <button
-                  key={amount}
-                  onClick={() => setForm(f => ({ ...f, buyAmountSol: amount }))}
-                  className={`py-2 rounded-lg font-bold text-center border transition-all cursor-pointer ${
-                    form.buyAmountSol === amount
-                      ? 'bg-terminal-green/20 border-terminal-green text-terminal-green'
-                      : 'bg-terminal-panel border-terminal-border text-terminal-muted hover:text-terminal-text'
-                  }`}
-                >
-                  {amount} SOL
-                </button>
-              ))}
+            <p className="text-[10px] text-zinc-400">
+              Membatasi frekuensi sinyal agar feed bersih, terpercaya, dan hanya koin probabilitas tertinggi yang lolos.
+            </p>
+
+            {/* Max Signals per 5 Minutes */}
+            <div className="space-y-1.5 pt-1">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-zinc-300">Batas Frekuensi Sinyal (Per 5 Menit):</span>
+                <span className="font-bold text-emerald-400">
+                  Maks. {form.maxSignalsPer5m ?? 3} Sinyal
+                </span>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[
+                  { count: 1, label: '1 Sinyal', desc: 'Ketat' },
+                  { count: 2, label: '2 Sinyal', desc: 'Stabil' },
+                  { count: 3, label: '3 Sinyal', desc: 'Disarankan' },
+                  { count: 5, label: '5 Sinyal', desc: 'Agresif' },
+                ].map((item) => (
+                  <button
+                    key={item.count}
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, maxSignalsPer5m: item.count }))}
+                    className={`py-1.5 px-2 rounded-lg font-bold text-center border transition-all cursor-pointer flex flex-col items-center ${
+                      (form.maxSignalsPer5m ?? 3) === item.count
+                        ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 font-black shadow-[0_0_10px_rgba(16,185,129,0.2)]'
+                        : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    <span className="text-[10px]">{item.label}</span>
+                    <span className="text-[8px] opacity-70 font-normal">{item.desc}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex items-center gap-2 pt-1">
-              <span className="text-[10px] text-terminal-muted whitespace-nowrap">Custom Amount:</span>
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                max="5"
-                value={form.buyAmountSol}
-                onChange={(e) => setForm(f => ({ ...f, buyAmountSol: Math.max(0.01, parseFloat(e.target.value) || 0.05) }))}
-                className="w-full bg-terminal-panel border border-terminal-border focus:border-terminal-green rounded px-2 py-1 text-terminal-text text-xs font-bold outline-none"
-              />
-              <span className="text-[10px] font-bold text-terminal-green">SOL</span>
+
+            {/* 24-Hour Token Deduplication Toggle */}
+            <div className="pt-2.5 border-t border-zinc-800/80 flex items-center justify-between">
+              <div className="space-y-0.5 pr-2">
+                <span className="font-bold text-[11px] text-zinc-200 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Deduplikasi Token 24 Jam (Single Alert Rule)</span>
+                </span>
+                <p className="text-[9.5px] text-zinc-400">
+                  Blokir Contract Address (CA) yang sama dalam 24 jam agar pengguna tidak dihujani spam.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setForm(f => ({ ...f, dedup24hEnabled: !(f.dedup24hEnabled ?? true) }))}
+                className={`px-3 py-1.5 rounded-lg font-bold text-[10px] border transition-all cursor-pointer whitespace-nowrap ${
+                  (form.dedup24hEnabled ?? true)
+                    ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300 font-extrabold shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                    : 'bg-zinc-800 border-zinc-700 text-zinc-400'
+                }`}
+              >
+                {(form.dedup24hEnabled ?? true) ? 'DEDUP ON ✅' : 'NONAKTIF'}
+              </button>
+            </div>
+
+            {/* Minimum Risk / Reward Ratio */}
+            <div className="pt-2.5 border-t border-zinc-800/80 space-y-1.5">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-zinc-300">Minimum Risk / Reward (R:R) Ratio:</span>
+                <span className="font-bold text-cyan-400">1 : {form.minRiskRewardRatio ?? 2.0}</span>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[
+                  { rr: 1.5, label: '1 : 1.5' },
+                  { rr: 2.0, label: '1 : 2.0 (Standar)' },
+                  { rr: 2.5, label: '1 : 2.5' },
+                  { rr: 3.0, label: '1 : 3.0+' },
+                ].map((item) => (
+                  <button
+                    key={item.rr}
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, minRiskRewardRatio: item.rr }))}
+                    className={`py-1.5 rounded-lg font-bold text-center border transition-all cursor-pointer text-[10px] ${
+                      (form.minRiskRewardRatio ?? 2.0) === item.rr
+                        ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300 font-extrabold'
+                        : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
-          {/* Risk Guardrails & Thresholds */}
-          <div className="bg-terminal-card p-3.5 rounded-xl border border-terminal-border space-y-3">
-            <span className="font-bold text-terminal-text flex items-center gap-1.5">
-              <Sliders className="w-4 h-4 text-terminal-cyan" />
-              <span>Safety Guardrails & Filters</span>
+          {/* Quality Gate & Security Filters */}
+          <div className="bg-zinc-900/70 p-3.5 rounded-xl border border-zinc-800/90 space-y-3">
+            <span className="font-bold text-zinc-200 flex items-center gap-1.5">
+              <Sliders className="w-4 h-4 text-amber-400" />
+              <span>Quality Gate & Filter Keamanan AI</span>
             </span>
 
             {/* Min Grok Virality */}
             <div className="space-y-1">
               <div className="flex items-center justify-between text-[11px]">
-                <span className="text-terminal-muted flex items-center gap-1">
-                  <Flame className="w-3.5 h-3.5 text-terminal-amber" />
-                  <span>Min. Grok Virality Score:</span>
+                <span className="text-zinc-300 flex items-center gap-1">
+                  <Flame className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Min. Skor Virality xAI Grok:</span>
                 </span>
-                <span className="font-bold text-terminal-amber">{form.minGrokViralityScore}%</span>
+                <span className="font-black text-amber-400">{form.minGrokViralityScore}%</span>
               </div>
               <input
                 type="range"
@@ -338,20 +477,20 @@ export const AutoSnipeModal: React.FC<AutoSnipeModalProps> = ({
                 step="1"
                 value={form.minGrokViralityScore}
                 onChange={(e) => setForm(f => ({ ...f, minGrokViralityScore: parseInt(e.target.value, 10) }))}
-                className="w-full accent-terminal-amber cursor-pointer"
+                className="w-full accent-amber-400 cursor-pointer h-1.5 bg-zinc-800 rounded-lg"
               />
-              <div className="flex justify-between text-[9px] text-terminal-muted">
-                <span>70% (Loose)</span>
-                <span>85% (Recommended)</span>
-                <span>95% (Ultra-Selective)</span>
+              <div className="flex justify-between text-[9px] text-zinc-500">
+                <span>70% (Longgar)</span>
+                <span className="text-amber-400/80">85% (Rekomendasi Alpha)</span>
+                <span>95% (Supernova Only)</span>
               </div>
             </div>
 
             {/* Min Liquidity */}
-            <div className="flex items-center justify-between pt-2 border-t border-terminal-border/60">
-              <span className="text-terminal-muted text-[11px]">Min. Initial LP:</span>
+            <div className="flex items-center justify-between pt-2 border-t border-zinc-800/80">
+              <span className="text-zinc-300 text-[11px]">Min. Likuiditas Awal ($ USD):</span>
               <div className="flex items-center gap-1">
-                <span className="text-terminal-muted">$</span>
+                <span className="text-zinc-500">$</span>
                 <input
                   type="number"
                   min="2000"
@@ -359,197 +498,194 @@ export const AutoSnipeModal: React.FC<AutoSnipeModalProps> = ({
                   max="50000"
                   value={form.minLiquidityUsd}
                   onChange={(e) => setForm(f => ({ ...f, minLiquidityUsd: parseInt(e.target.value, 10) || 5000 }))}
-                  className="w-24 bg-terminal-panel border border-terminal-border rounded px-2 py-0.5 text-terminal-text text-right font-bold outline-none"
+                  className="w-24 bg-zinc-950 border border-zinc-800 focus:border-cyan-500 rounded px-2 py-0.5 text-zinc-100 text-right font-bold outline-none"
                 />
               </div>
             </div>
 
             {/* Max Top 10 Concentration */}
-            <div className="flex items-center justify-between pt-2 border-t border-terminal-border/60">
-              <span className="text-terminal-muted text-[11px]">Max. Top 10 Concentration:</span>
+            <div className="flex items-center justify-between pt-2 border-t border-zinc-800/80">
+              <span className="text-zinc-300 text-[11px]">Maks. Konsentrasi Top 10 Holder:</span>
               <div className="flex items-center gap-1">
                 <input
                   type="number"
                   min="5"
-                  max="30"
+                  max="35"
                   value={form.maxTop10HoldersPct}
-                  onChange={(e) => setForm(f => ({ ...f, maxTop10HoldersPct: parseInt(e.target.value, 10) || 15 }))}
-                  className="w-16 bg-terminal-panel border border-terminal-border rounded px-2 py-0.5 text-terminal-text text-right font-bold outline-none"
+                  onChange={(e) => setForm(f => ({ ...f, maxTop10HoldersPct: parseInt(e.target.value, 10) || 20 }))}
+                  className="w-16 bg-zinc-950 border border-zinc-800 focus:border-cyan-500 rounded px-2 py-0.5 text-zinc-100 text-right font-bold outline-none"
                 />
-                <span className="text-terminal-muted">%</span>
+                <span className="text-zinc-500">%</span>
               </div>
             </div>
           </div>
 
-          {/* Jito MEV Tip Level */}
-          <div className="bg-terminal-card p-3.5 rounded-xl border border-terminal-border space-y-2">
+          {/* Telegram Broadcast Channel Integration */}
+          <div className="bg-zinc-900/70 p-3.5 rounded-xl border border-zinc-800/90 space-y-2.5">
             <div className="flex items-center justify-between">
-              <span className="font-bold text-terminal-text flex items-center gap-1.5">
-                <Zap className="w-4 h-4 text-terminal-green" />
-                <span>Jito MEV Bundling Priority</span>
+              <span className="font-bold text-zinc-200 flex items-center gap-1.5">
+                <Send className="w-4 h-4 text-cyan-400" />
+                <span>Saluran Penyiaran Telegram</span>
               </span>
-              <span className="text-[10px] text-terminal-green font-bold">0% FRONT-RUN LEAK</span>
+              <button
+                type="button"
+                onClick={() => setForm(f => ({ ...f, telegramAlertsEnabled: !(f.telegramAlertsEnabled ?? true) }))}
+                className={`text-[9px] px-2 py-0.5 rounded font-extrabold border transition-all cursor-pointer ${
+                  (form.telegramAlertsEnabled ?? true)
+                    ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300'
+                    : 'bg-zinc-800 border-zinc-700 text-zinc-500'
+                }`}
+              >
+                {(form.telegramAlertsEnabled ?? true) ? 'BROADCAST ON' : 'OFF'}
+              </button>
             </div>
-            <div className="grid grid-cols-4 gap-2">
-              {(['ECONOMY', 'STANDARD', 'FAST', 'TURBO'] as const).map((tier) => (
-                <button
-                  key={tier}
-                  onClick={() => setForm(f => ({ ...f, jitoTipTier: tier }))}
-                  className={`py-1.5 rounded-lg font-bold text-center border transition-all cursor-pointer text-[10px] ${
-                    form.jitoTipTier === tier
-                      ? 'bg-terminal-green/20 border-terminal-green text-terminal-green'
-                      : 'bg-terminal-panel border-terminal-border text-terminal-muted hover:text-terminal-text'
-                  }`}
-                >
-                  {tier}
-                </button>
-              ))}
+
+            <p className="text-[10px] text-zinc-400 leading-relaxed">
+              Kirim kartu sinyal lengkap (Entry Zone, TP1-3, Stop Loss, Estimasi Waktu, dan Tombol BullX/Photon) otomatis ke Telegram Channel.
+            </p>
+
+            {telegramStatus && (
+              <div className={`p-2.5 rounded-lg border text-[10px] leading-relaxed flex items-start gap-2 ${
+                telegramStatus.success
+                  ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300'
+                  : 'bg-rose-950/30 border-rose-500/40 text-rose-300'
+              }`}>
+                {telegramStatus.success ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" /> : <Info className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />}
+                <span>{telegramStatus.message}</span>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleTestTelegram}
+                disabled={isTestingTelegram}
+                className="flex-1 py-1.5 px-3 rounded-lg bg-zinc-800 hover:bg-zinc-700/80 border border-zinc-700 text-zinc-200 hover:text-white font-bold text-[10px] flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isTestingTelegram ? <Loader2 className="w-3 h-3 animate-spin text-cyan-400" /> : <Send className="w-3 h-3 text-cyan-400" />}
+                <span>{isTestingTelegram ? 'Mengirim Sinyal Tes...' : 'Kirim Sinyal Tes ke Telegram'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowTelegramInputs(prev => !prev)}
+                className="py-1.5 px-2.5 rounded-lg bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 text-[10px] font-bold transition-all cursor-pointer"
+              >
+                {showTelegramInputs ? 'Tutup Kredensial' : 'Edit Token/Chat ID'}
+              </button>
             </div>
+
+            {showTelegramInputs && (
+              <div className="pt-2 border-t border-zinc-800/80 space-y-2 animate-in fade-in">
+                <div>
+                  <label className="text-[9.5px] text-zinc-400 block mb-0.5">Telegram Bot Token:</label>
+                  <input
+                    type="password"
+                    placeholder="123456:ABC-DEF..."
+                    value={form.telegramBotToken || ''}
+                    onChange={(e) => setForm(f => ({ ...f, telegramBotToken: e.target.value }))}
+                    className="w-full bg-zinc-950 border border-zinc-800 focus:border-cyan-500 rounded px-2.5 py-1 text-zinc-200 text-[11px] outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[9.5px] text-zinc-400 block mb-0.5">Telegram Chat ID / Channel ID:</label>
+                  <input
+                    type="text"
+                    placeholder="-100xxxxxxxxx atau @channel_name"
+                    value={form.telegramChatId || ''}
+                    onChange={(e) => setForm(f => ({ ...f, telegramChatId: e.target.value }))}
+                    className="w-full bg-zinc-950 border border-zinc-800 focus:border-cyan-500 rounded px-2.5 py-1 text-zinc-200 text-[11px] outline-none"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Hold Duration (TTL) & Take Profit Target Customizer */}
-          <div className="bg-terminal-card p-3.5 rounded-xl border border-terminal-border space-y-3">
+          {/* Target Take Profit Customizer */}
+          <div className="bg-zinc-900/70 p-3.5 rounded-xl border border-zinc-800/90 space-y-2.5">
             <div className="flex items-center justify-between">
-              <span className="font-bold text-terminal-text flex items-center gap-1.5">
-                <Clock className="w-4 h-4 text-terminal-cyan" />
-                <span>Max Hold Duration (Time-to-Live)</span>
+              <span className="font-bold text-zinc-200 flex items-center gap-1.5">
+                <Target className="w-4 h-4 text-emerald-400" />
+                <span>Target Take Profit (TP) Utama</span>
               </span>
-              <span className="text-[10px] font-bold text-terminal-cyan">
-                {form.ttlUnlimited || !form.maxHoldTimeSec || form.maxHoldTimeSec <= 0
-                  ? 'UNLIMITED (HODL)'
-                  : form.maxHoldTimeSec >= 3600
-                  ? `${form.maxHoldTimeSec / 3600} Jam`
-                  : `${Math.round(form.maxHoldTimeSec / 60)} Menit`}
-              </span>
+              <span className="text-[10px] font-bold text-emerald-400">+{form.takeProfitPct || 150}% TP</span>
             </div>
 
             <div className="grid grid-cols-5 gap-1.5">
-              {[
-                { label: '3m', sec: 180, unlimited: false },
-                { label: '15m', sec: 900, unlimited: false },
-                { label: '1h', sec: 3600, unlimited: false },
-                { label: '4h', sec: 14400, unlimited: false },
-                { label: '∞ HODL', sec: 0, unlimited: true }
-              ].map((opt) => {
-                const isMatch = opt.unlimited
-                  ? Boolean(form.ttlUnlimited || !form.maxHoldTimeSec || form.maxHoldTimeSec <= 0)
-                  : form.maxHoldTimeSec === opt.sec && !form.ttlUnlimited;
-                return (
-                  <button
-                    key={opt.label}
-                    type="button"
-                    onClick={() => {
-                      setForm((prev) => ({
-                        ...prev,
-                        maxHoldTimeSec: opt.sec,
-                        ttlUnlimited: opt.unlimited,
-                        autoSellEnabled: !opt.unlimited
-                      }));
-                    }}
-                    className={`py-1.5 rounded-lg font-bold text-center border transition-all cursor-pointer text-[10px] ${
-                      isMatch
-                        ? 'bg-terminal-cyan/20 border-terminal-cyan text-terminal-cyan font-black'
-                        : 'bg-terminal-panel border-terminal-border text-terminal-muted hover:text-terminal-text'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
+              {[50, 100, 150, 250, 500].map((tp) => (
+                <button
+                  key={tp}
+                  type="button"
+                  onClick={() => setForm((prev) => ({ ...prev, takeProfitPct: tp }))}
+                  className={`py-1.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer text-center ${
+                    form.takeProfitPct === tp
+                      ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-black shadow-[0_0_10px_rgba(16,185,129,0.2)]'
+                      : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  +{tp}%
+                </button>
+              ))}
             </div>
 
-            {/* Target Take Profit % */}
-            <div className="pt-2 border-t border-terminal-border/60 flex items-center justify-between">
-              <span className="text-terminal-muted text-[11px] flex items-center gap-1">
-                <Target className="w-3.5 h-3.5 text-terminal-green" />
-                <span>Target Take Profit (TP):</span>
+            <div className="flex items-center justify-between pt-2 border-t border-zinc-800/80 text-[10px]">
+              <span className="text-zinc-400 flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Estimasi Waktu Sampai Target (ETA):</span>
               </span>
-              <div className="flex items-center gap-1.5">
-                {[50, 100, 200, 300, 500].map((tp) => (
-                  <button
-                    key={tp}
-                    type="button"
-                    onClick={() => setForm((prev) => ({ ...prev, takeProfitPct: tp }))}
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all ${
-                      form.takeProfitPct === tp
-                        ? 'bg-terminal-green/20 border-terminal-green text-terminal-green'
-                        : 'bg-terminal-panel border-terminal-border text-terminal-muted hover:text-terminal-text'
-                    }`}
-                  >
-                    +{tp}%
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Daily Trades Limit & Exit Agent Targets */}
-          <div className="bg-terminal-card p-3.5 rounded-xl border border-terminal-border space-y-2 text-[11px]">
-            <div className="flex items-center justify-between">
-              <span className="text-terminal-muted flex items-center gap-1">
-                <Gauge className="w-3.5 h-3.5 text-terminal-cyan" />
-                <span>Max Trades per Day:</span>
-              </span>
-              <span className="font-bold text-terminal-text">{form.maxDailyTrades} Trades</span>
-            </div>
-            <div className="flex items-center justify-between pt-1 border-t border-terminal-border/60">
-              <span className="text-terminal-muted flex items-center gap-1">
-                <TrendingUp className="w-3.5 h-3.5 text-terminal-green" />
-                <span>Exit Strategy TP / SL:</span>
-              </span>
-              <span className="font-bold text-terminal-green">
-                {form.ttlUnlimited || form.autoSellEnabled === false
-                  ? 'MANUAL EXIT (HODL) / SL -50%'
-                  : `+${form.takeProfitPct || 100}% TP / ${form.stopLossPct || -25}% SL`}
+              <span className="font-bold text-cyan-400">
+                {form.tradingStyle === 'SCALPING' ? '3 - 15 Menit' : form.tradingStyle === 'SWING' ? '1 - 4 Jam' : '6 - 24 Jam+'}
               </span>
             </div>
-          </div>
-
-          {/* Safety Notice */}
-          <div className="bg-terminal-cyan/5 border border-terminal-cyan/20 p-3 rounded-xl flex items-start gap-2.5">
-            <ShieldCheck className="w-4 h-4 text-terminal-cyan shrink-0 mt-0.5" />
-            <p className="text-[10px] text-terminal-muted leading-relaxed">
-              <strong>Single Position Mutex Guard</strong>: Auto-Sniper akan otomatis berhenti mencari token baru saat ada 1 posisi aktif yang sedang terbuka, sampai posisi tersebut di-close oleh Exit Agent.
-            </p>
           </div>
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 border-t border-terminal-border bg-terminal-card/80 flex flex-col gap-2.5">
+        <div className="p-4 border-t border-zinc-800 bg-zinc-950/90 flex flex-col gap-2.5">
           {cloudSyncStatus && (
-            <div className="text-[10px] text-center font-bold text-terminal-cyan flex items-center justify-center gap-1.5">
+            <div className="text-[10px] text-center font-bold text-cyan-400 flex items-center justify-center gap-1.5">
               {isCloudLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               <span>{cloudSyncStatus}</span>
             </div>
           )}
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={onClose}
-              className="px-3.5 py-2 rounded-xl bg-terminal-panel border border-terminal-border text-terminal-muted hover:text-terminal-text font-bold transition-all cursor-pointer"
+              className="px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 font-bold transition-all cursor-pointer"
             >
               Batal
+            </button>
+            <button
+              type="button"
+              onClick={handleResetDefaults}
+              title="Kembalikan semua pengaturan ke nilai rekomendasi AI"
+              className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 font-bold transition-all cursor-pointer"
+            >
+              <RotateCcw className="w-4 h-4" />
             </button>
             <button
               type="button"
               onClick={handleCloudSave}
               disabled={isCloudLoading}
               title="Simpan backup konfigurasi ke database cloud Supabase"
-              className="px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 hover:border-cyan-500/50 text-cyan-400 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+              className="px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-cyan-500/50 text-cyan-400 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
             >
               <UploadCloud className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Backup</span> Cloud
             </button>
             <button
+              type="button"
               onClick={handleSave}
               className={`flex-1 py-2 rounded-xl font-black text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg ${
                 savedSuccess
-                  ? 'bg-terminal-green text-terminal-bg'
-                  : 'bg-terminal-green text-terminal-bg hover:bg-terminal-hover glow-green'
+                  ? 'bg-emerald-500 text-black shadow-[0_0_20px_rgba(16,185,129,0.5)]'
+                  : 'bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold shadow-[0_0_20px_rgba(6,182,212,0.3)]'
               }`}
             >
-              <Bot className="w-4 h-4" />
-              <span>{savedSuccess ? 'PENGATURAN TERSIMPAN!' : 'SIMPAN PENGATURAN BOT'}</span>
+              <CheckCircle2 className="w-4 h-4" />
+              <span>{savedSuccess ? 'PENGATURAN SINYAL TERSIMPAN! ✅' : 'SIMPAN PENGATURAN SINYAL'}</span>
             </button>
           </div>
         </div>

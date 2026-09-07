@@ -121,12 +121,12 @@ export const Header: React.FC<HeaderProps> = ({
               dot
               pulse={isAutonomous}
             >
-              {isAutonomous ? 'AUTONOMOUS BOT' : 'MANUAL / PAUSED'}
+              {isAutonomous ? 'SIGNAL ENGINE: ON' : 'ENGINE: PAUSED'}
             </Badge>
 
             <button
               onClick={toggleEngine}
-              title={isAutonomous ? 'Pause Autonomous Engine' : 'Resume Autonomous Engine'}
+              title={isAutonomous ? 'Jeda Engine Sinyal' : 'Mulai Engine Sinyal'}
               className="p-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
             >
               {isAutonomous ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 text-emerald-400" />}
@@ -135,10 +135,10 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Quick Trading Style Badge / Switcher */}
             <button
               onClick={() => (onOpenAutoSnipe ? onOpenAutoSnipe() : onOpenStrategy())}
-              title="Klik untuk mengubah Gaya Trading (Scalp / Swing / HODL)"
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 transition-all cursor-pointer text-[10px] shadow-sm"
+              title="Klik untuk membuka Pengaturan Sinyal (Profil Target, Throttling & Filter)"
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 hover:border-cyan-500/40 transition-all cursor-pointer text-[10px] shadow-sm"
             >
-              <span className="text-zinc-500 font-bold">STYLE:</span>
+              <span className="text-zinc-500 font-bold">SINYAL:</span>
               <span className={`font-black tracking-wide ${
                 autoSnipeConfig.tradingStyle === 'HODL'
                   ? 'text-cyan-400'
@@ -147,7 +147,7 @@ export const Header: React.FC<HeaderProps> = ({
                   : 'text-emerald-400'
               }`}>
                 {autoSnipeConfig.tradingStyle === 'HODL'
-                  ? '💎 HODL'
+                  ? '💎 MOONBAG'
                   : autoSnipeConfig.tradingStyle === 'SWING'
                   ? '📈 SWING'
                   : '⚡ SCALP'}
