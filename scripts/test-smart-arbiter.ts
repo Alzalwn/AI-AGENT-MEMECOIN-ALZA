@@ -64,7 +64,7 @@ const res1 = evaluateExitAgent(pos1, {
   maxHoldTimeSec: 180,
   enableMomentumExit: true
 });
-console.log(`Verdict: shouldExit = ${res1.shouldExit}, Action: ${res1.action}`);
+console.log(`Verdict: shouldExit = ${res1.shouldExit}, Reason: ${res1.reason || 'Holding'}`);
 if (!res1.shouldExit) console.log('✅ PASS: Position kept open to let profits run!\n');
 else console.error('❌ FAIL: Premature exit\n');
 
