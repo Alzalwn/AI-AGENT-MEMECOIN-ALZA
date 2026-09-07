@@ -1,9 +1,11 @@
 import { TokenSignal, ConsensusResult, AgentVerdict, AgentId, AgentThresholds } from '../types/terminal';
+import { TradingSignal } from '../types/signal';
 import { evaluateScannerAgent } from './scanner';
 import { evaluateNarrativeAgent } from './narrative';
 import { evaluateRiskAgent } from './risk';
 import { evaluateTimingAgent } from './timing';
 import { MoonshotAnalyzer } from './moonshot';
+import { computeSignal } from '../lib/signalCalculator';
 
 export function runAgentConsensus(token: TokenSignal, thresholds?: AgentThresholds): ConsensusResult {
   const startTime = performance.now();
@@ -109,7 +111,7 @@ export function runAgentConsensus(token: TokenSignal, thresholds?: AgentThreshol
       `  [1/3] LIKUIDITAS       : ${isLpPassed ? '✅ PASS' : '🛑 VETO'} | LP: $${token.initialLpUsd.toLocaleString()} | Burnt: ${token.burntLiquidityPct}%\n` +
       `  [2/3] HONEYPOT SHIELD  : ${isHoneypotPassed ? '✅ PASS' : '🛑 VETO'} | Mint: ${token.mintAuthorityRevoked ? 'REVOKED' : 'ACTIVE'} | Freeze: ${token.freezeAuthorityRevoked ? 'REVOKED' : 'ACTIVE'} | Top10: ${token.top10HolderPct}%\n` +
       `  [3/3] MOMENTUM/VELOCITY: ${isMomentumPassed ? '✅ PASS' : '🛑 VETO'} | VolDelta: ${token.volumeDelta15s > 0 ? '+' : ''}${token.volumeDelta15s} SOL | Buyers: ${token.uniqueBuyersCount} | Virality: ${token.narrativeCosineSim}\n` +
-      `  🎯 FINAL VERDICT       : ${firstVetoAgent ? `❌ REJECTED [${verdicts[firstVetoAgent]?.agentName || firstVetoAgent}: ${firstVetoReason}]` : '✅ APPROVED (5/5 CONSENSUS - SIAP SNIPE)'}\n` +
+      `  🎯 FINAL VERDICT       : ${firstVetoAgent ? `❌ REJECTED [${verdicts[firstVetoAgent]?.agentName || firstVetoAgent}: ${firstVetoReason}]` : '✅ APPROVED (5/5 CONSENSUS - GENERATING SIGNAL 📡)'}\n` +
       `========================================================================`
     );
   } catch {}
@@ -125,4 +127,33 @@ export function runAgentConsensus(token: TokenSignal, thresholds?: AgentThreshol
     moonshot: moonshotVerdict,
     decisionTrace
   };
+}
+
+/**
+ * Helper: Jalankan konsensus lengkap dan jika APPROVED, hasilkan TradingSignal.
+ * Ini adalah entry point utama untuk pipeline signal provider.
+ * @returns { consensusResult, signal? } — signal hanya ada jika APPROVED
+ */
+export function runConsensusAndBuildSignal(
+  token: TokenSignal,
+  opts?: {
+    thresholds?: AgentThresholds;
+    grokViralityScore?: number;
+    solRateUsd?: number;
+  }
+): { consensusResult: ConsensusResult; signal: TradingSignal | null } {
+  const consensusResult = runAgentConsensus(token, opts?.thresholds);
+
+  if (consensusResult.verdict !== 'APPROVED' || !consensusResult.moonshot) {
+    return { consensusResult, signal: null };
+  }
+
+  const signal = computeSignal({
+    token,
+    moonshot: consensusResult.moonshot,
+    grokViralityScore: opts?.grokViralityScore ?? token.narrativeCosineSim,
+    solRateUsd: opts?.solRateUsd ?? 140,
+  });
+
+  return { consensusResult, signal };
 }

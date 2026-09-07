@@ -12,6 +12,7 @@ import {
 export type { ActivePosition, TradingStyle };
 import { ExecutionConfig } from '../components/ExecutionSettingsModal';
 import type { WebhookTelegramConfig, WebhookDiscordConfig } from '../context/TradingContext';
+import { TradingSignal } from './signal';
 
 export type LogLevel = 'INFO' | 'SUCCESS' | 'WARN' | 'DANGER';
 export type LogCategory = 'SCAN' | 'RISK' | 'JITO' | 'EXECUTION' | 'SYSTEM' | 'TELEGRAM' | 'DECISION';
@@ -91,6 +92,9 @@ export interface TradingState {
   totalHoldingsValueUsd: number;
   totalHoldingsValueSol: number;
   isSimulationMode: boolean; // Dry-Run Mode: Intercepts Phantom RPC transactions with mock execution
+  // ─── Signal Provider ───
+  activeSignals: TradingSignal[];
+  signalHistory: TradingSignal[];
 }
 
 export interface TradingActions {
@@ -126,6 +130,9 @@ export interface TradingActions {
   clearLogs: () => void;
   clearTrades: () => void;
   appendLog: (category: LogCategory, level: LogLevel, message: string, data?: any) => void;
+  // ─── Signal Provider Actions ───
+  broadcastSignal: (signal: TradingSignal, config: WebhookTelegramConfig) => Promise<void>;
+  clearSignals: () => void;
 }
 
 export type TradingContextType = TradingState & TradingActions;

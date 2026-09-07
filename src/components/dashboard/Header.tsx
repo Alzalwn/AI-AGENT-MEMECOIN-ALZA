@@ -101,14 +101,14 @@ export const Header: React.FC<HeaderProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="font-black text-sm sm:text-base tracking-wider text-zinc-100 uppercase">
-                  Grok Trencher
+                  AI Alpha Signal
                 </h1>
                 <Badge variant="cyan" size="xs">
                   v2.0 PRO
                 </Badge>
               </div>
               <p className="text-[10px] text-zinc-500 hidden sm:block">
-                Multi-Agent Solana Sniper & Jito MEV Defense Terminal
+                Multi-Agent AI Consensus Signal Terminal
               </p>
             </div>
           </div>

@@ -1,4 +1,13 @@
+/**
+ * Telegram Integration — AI Alpha Signal Terminal
+ *
+ * Broadcast format sinyal profesional lengkap (Entry/TP/SL/ETA/R-R)
+ * ke channel/grup Telegram dengan InlineKeyboard button 1-klik trading.
+ */
+
 import { TokenSignal } from '../types/terminal';
+import { TradingSignal, TelegramSignalPayload } from '../types/signal';
+import { formatConfidenceBar } from './signalCalculator';
 
 export interface TelegramConfig {
   botToken: string;
@@ -6,84 +15,231 @@ export interface TelegramConfig {
   isEnabled: boolean;
 }
 
-export async function testTelegramConnection(botToken: string, chatId: string): Promise<{ success: boolean; message: string }> {
-  if (!botToken.trim() || !chatId.trim()) {
-    return { success: false, message: 'Bot Token dan Chat ID wajib diisi!' };
-  }
-
-  try {
-    const text = `⚡ <b>GROK TRENCHER // TELEGRAM WEBHOOK TEST</b> ⚡\n\nKoneksi bot berhasil terhubung ke terminal Grok Trencher! Sinyal 5/5 AI Agent Consensus akan dikirimkan otomatis ke chat ini.`;
-    const res = await fetch(`https://api.telegram.org/bot${botToken.trim()}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId.trim(),
-        text,
-        parse_mode: 'HTML',
-        disable_web_page_preview: true
-      })
-    });
-
-    const data = await res.json();
-    if (res.ok && data.ok) {
-      return { success: true, message: 'Pesan tes berhasil dikirim ke Telegram!' };
-    } else {
-      return { success: false, message: data.description || 'Gagal mengirim pesan ke Telegram' };
-    }
-  } catch (err: any) {
-    return { success: false, message: err.message || 'Network error saat menghubungi Telegram API' };
-  }
-}
-
-export async function sendTelegramAlphaAlert(
-  token: TokenSignal,
+// ─────────────────────────────────────────────────────────
+// CORE: Kirim pesan ke Telegram (internal helper)
+// ─────────────────────────────────────────────────────────
+async function sendTelegramMessage(
   config: TelegramConfig,
-  viralityScore: number = 85,
-  sentiment: string = 'BULLISH',
-  jitoTipSol: number = 0.000050
+  text: string,
+  inlineKeyboard?: { text: string; url: string }[][]
 ): Promise<boolean> {
   if (!config.isEnabled || !config.botToken.trim() || !config.chatId.trim()) {
     return false;
   }
 
+  const body: Record<string, unknown> = {
+    chat_id: config.chatId.trim(),
+    text,
+    parse_mode: 'HTML',
+    disable_web_page_preview: true,
+  };
+
+  if (inlineKeyboard && inlineKeyboard.length > 0) {
+    body.reply_markup = {
+      inline_keyboard: inlineKeyboard.map((row) =>
+        row.map((btn) => ({ text: btn.text, url: btn.url }))
+      ),
+    };
+  }
+
   try {
-    const dexUrl = token.dexUrl || (
-      token.mint.includes('...')
-        ? `https://dexscreener.com/search?q=${encodeURIComponent(token.symbol.replace('$', ''))}`
-        : `https://dexscreener.com/search?q=${encodeURIComponent(token.mint)}`
+    const res = await fetch(
+      `https://api.telegram.org/bot${config.botToken.trim()}/sendMessage`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }
     );
-    const photonUrl = `https://photon-sol.tinyastro.io/en/lp/${token.mint}`;
-
-    const text = `🚨 <b>GROK TRENCHER // 5-AGENT ALPHA ALERT</b> 🚨\n\n` +
-      `🪙 <b>Token:</b> <b>${token.symbol}</b> (${token.name})\n` +
-      `🌐 <b>Platform:</b> ${token.platform}\n` +
-      `🔑 <b>Mint:</b> <code>${token.mint}</code>\n\n` +
-      `⚡ <b>Consensus:</b> <b>5/5 AI AGENTS APPROVED</b> ✅\n` +
-      `🔥 <b>xAI Grok Virality:</b> <b>${viralityScore}/100</b> [${sentiment}]\n` +
-      `🧠 <b>Narrative Cos-Sim:</b> <b>${token.narrativeCosineSim.toFixed(2)}</b> (${token.narrativeTheme})\n` +
-      `💧 <b>Initial LP:</b> $${token.initialLpUsd.toLocaleString()} USD\n` +
-      `🛡️ <b>RugCheck:</b> ${token.rugcheckScore || 'GOOD'} (Mint/Freeze Revoked)\n\n` +
-      `🔒 <b>Execution:</b> Single Mutex Position Locked\n` +
-      `💸 <b>Jito MEV Tip:</b> ${jitoTipSol.toFixed(6)} SOL (Private Bundle)\n\n` +
-      `🔗 <a href="${dexUrl}">DexScreener</a> | <a href="${photonUrl}">Photon SOL</a>`;
-
-    const res = await fetch(`https://api.telegram.org/bot${config.botToken.trim()}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: config.chatId.trim(),
-        text,
-        parse_mode: 'HTML',
-        disable_web_page_preview: false
-      })
-    });
-
     const data = await res.json();
     return !!(res.ok && data.ok);
   } catch (err) {
-    console.error('Failed to send Telegram alpha alert:', err);
+    console.error('[Telegram] Error sending message:', err);
     return false;
   }
+}
+
+// ─────────────────────────────────────────────────────────
+// TEST CONNECTION
+// ─────────────────────────────────────────────────────────
+export async function testTelegramConnection(
+  botToken: string,
+  chatId: string
+): Promise<{ success: boolean; message: string }> {
+  if (!botToken.trim() || !chatId.trim()) {
+    return { success: false, message: 'Bot Token dan Chat ID wajib diisi!' };
+  }
+
+  const text =
+    `⚡ <b>SOLANA AI ALPHA TERMINAL // WEBHOOK TEST</b> ⚡\n\n` +
+    `✅ Koneksi berhasil! Bot siap menerima sinyal alpha.\n` +
+    `📡 Sinyal Entry · TP1 · TP2 · TP3 · SL akan dikirim otomatis ke chat ini.\n` +
+    `🔥 Powered by: Moonshot AI · xAI Grok · Smart Money Tracker`;
+
+  try {
+    const res = await fetch(
+      `https://api.telegram.org/bot${botToken.trim()}/sendMessage`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId.trim(), text, parse_mode: 'HTML' }),
+      }
+    );
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      return { success: true, message: 'Pesan tes berhasil dikirim ke Telegram!' };
+    } else {
+      return { success: false, message: data.description || 'Gagal mengirim ke Telegram' };
+    }
+  } catch (err: unknown) {
+    return { success: false, message: (err instanceof Error ? err.message : 'Network error') };
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// MAIN: Kirim sinyal baru ke Telegram (format profesional)
+// ─────────────────────────────────────────────────────────
+export async function sendSignalAlert(
+  signal: TradingSignal,
+  config: TelegramConfig
+): Promise<boolean> {
+  const { token, entryZone, stopLoss, targets, marketContext, tradingLinks } = signal;
+  const [tp1, tp2, tp3] = targets;
+
+  // Tier emoji & label
+  const tierEmoji = signal.signalTier === 'SUPERNOVA' ? '🚀' : signal.signalTier === 'HIGH' ? '🔥' : '⚡';
+  const tierLabel = signal.signalTier === 'SUPERNOVA' ? 'SUPERNOVA' : signal.signalTier === 'HIGH' ? 'HIGH POTENTIAL' : 'MODERATE';
+
+  // Confidence bar
+  const confBar = formatConfidenceBar(signal.confidenceScore);
+  const confLabel = signal.confidenceTier === 'ALPHA' ? '🏆 ALPHA' : signal.confidenceTier === 'STRONG' ? '💪 STRONG' : '📊 MODERATE';
+
+  // Smart Money line
+  const smartLine = signal.smartMoneyCount >= 1
+    ? `\n🐋 <b>Smart Money:</b> ${signal.smartMoneyCount} wallet terdeteksi masuk ✅`
+    : '';
+
+  // Security badges
+  const mintBadge = token.mintAuthorityRevoked ? '✅' : '❌';
+  const freezeBadge = token.freezeAuthorityRevoked ? '✅' : '❌';
+  const lpBadge = token.burntLiquidityPct >= 90 ? '✅' : token.burntLiquidityPct >= 70 ? '⚠️' : '❌';
+  const hhBadge = token.top10HolderPct <= 20 ? '✅' : token.top10HolderPct <= 30 ? '⚠️' : '❌';
+
+  const virality = (signal.grokViralityScore * 10).toFixed(1);
+
+  const fmtSol = (n: number) => n < 0.0001 ? n.toFixed(9) : n.toFixed(6);
+  const fmtUsd = (n: number) => n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${n.toFixed(0)}`;
+
+  const text =
+    `🚨 <b>SOLANA AI ALPHA SIGNAL</b> 🚨\n` +
+    `${tierEmoji} <b>${tierLabel} · $${token.symbol}</b> — ${token.name}\n` +
+    `🏷️ Platform: ${token.platform} · ${marketContext.isGraduated ? 'Raydium ✅' : 'Pump.fun'}\n` +
+    `📊 MC: ~${fmtUsd(marketContext.marketCapUsd)} | LP: ${fmtUsd(marketContext.liquidityUsd)} (${marketContext.lpBurntPct}% Burnt)\n` +
+    `⭐ Confidence: ${confBar} [${confLabel}]\n` +
+    `🔑 <code>${token.mint}</code>\n` +
+    `\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `🟢 <b>ENTRY ZONE</b>\n` +
+    `  Beli: <b>${fmtSol(entryZone.low)} – ${fmtSol(entryZone.high)} SOL</b>\n` +
+    `  (MC Entry: ${fmtUsd(entryZone.marketCapLow)} – ${fmtUsd(entryZone.marketCapHigh)})\n` +
+    `\n🎯 <b>TAKE PROFIT</b>\n` +
+    `  TP1 (+${tp1.gainPct.toFixed(0)}%): <b>${fmtSol(tp1.priceSol)} SOL</b> ← Ambil Modal\n` +
+    `  TP2 (+${tp2.gainPct.toFixed(0)}%): <b>${fmtSol(tp2.priceSol)} SOL</b> ← Lock Profit\n` +
+    `  TP3 (+${tp3.gainPct.toFixed(0)}%): <b>${fmtSol(tp3.priceSol)} SOL</b> ← Moonbag 🌙\n` +
+    `\n🛑 <b>STOP LOSS</b>\n` +
+    `  SL (${stopLoss.pctFromEntry}%): <b>${fmtSol(stopLoss.priceSol)} SOL</b> (LP Floor)\n` +
+    `  ⚖️ R/R Ratio: <b>1 : ${signal.riskRewardRatio}</b> · ke TP3: <b>1 : ${signal.riskRewardToTP3}</b>\n` +
+    `\n⏱️ <b>ESTIMASI WAKTU</b>\n` +
+    `  TP1: ${signal.etaToTP1.min}–${signal.etaToTP1.max} menit\n` +
+    `  TP2: ${signal.etaToTP2.min}–${signal.etaToTP2.max} menit\n` +
+    `  (Basis: Velocity ${token.txVelocityPerSec?.toFixed(1) || '?'} Tx/s · Grok ${virality}/10)\n` +
+    `\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `🛡️ Mint: ${mintBadge} | Freeze: ${freezeBadge} | LP Burnt: ${lpBadge} | Top10: ${token.top10HolderPct || '?'}% ${hhBadge}\n` +
+    `🔥 Grok Virality: ${virality}/10 · Narrative: ${token.narrativeTheme || 'AI Agent'}` +
+    smartLine;
+
+  // InlineKeyboard: 2 baris × 3 tombol
+  const keyboard = [
+    [
+      { text: '📋 Copy CA', url: `https://solscan.io/token/${token.mint}` },
+      { text: '🔗 BullX', url: tradingLinks.bullx },
+      { text: '📈 Photon', url: tradingLinks.photon },
+    ],
+    [
+      { text: '🦅 GMGN', url: tradingLinks.gmgn },
+      { text: '📊 DexScreener', url: tradingLinks.dexscreener },
+      { text: '🔍 Rugcheck', url: tradingLinks.rugcheck },
+    ],
+  ];
+
+  return sendTelegramMessage(config, text, keyboard);
+}
+
+// ─────────────────────────────────────────────────────────
+// UPDATE: Kirim notifikasi TP Hit / SL Hit
+// ─────────────────────────────────────────────────────────
+export async function sendSignalUpdate(
+  payload: TelegramSignalPayload,
+  config: TelegramConfig
+): Promise<boolean> {
+  const { signal, messageType, updateText } = payload;
+  const { token, targets, stopLoss } = signal;
+
+  let emoji = '📡';
+  let title = 'SIGNAL UPDATE';
+  let detail = updateText || '';
+
+  if (messageType === 'TP1_HIT') {
+    emoji = '🟢';
+    title = 'TP1 HIT ✅ — Ambil Modal!';
+    detail = `TP1 (+${targets[0].gainPct.toFixed(0)}%) tercapai! Modal awal aman.\n💡 Sisakan posisi untuk TP2/TP3.`;
+  } else if (messageType === 'TP2_HIT') {
+    emoji = '🏆';
+    title = 'TP2 HIT ✅ — Profit Terkunci!';
+    detail = `TP2 (+${targets[1].gainPct.toFixed(0)}%) tercapai! Profit utama aman.\n🌙 Moonbag menuju TP3...`;
+  } else if (messageType === 'TP3_HIT') {
+    emoji = '💎';
+    title = 'TP3 HIT 🌙 — MOONSHOT TERCAPAI!';
+    detail = `TP3 (+${targets[2].gainPct.toFixed(0)}%) tercapai! Sinyal SEMPURNA! 🚀`;
+  } else if (messageType === 'SL_HIT') {
+    emoji = '🔴';
+    title = 'SL HIT — Sinyal Ditutup';
+    detail = `Stop Loss (${stopLoss.pctFromEntry}%) terpicu. Modal terlindungi dari kerugian lebih dalam.\n⚠️ Jangan FOMO keluar dari rencana.`;
+  } else if (messageType === 'EXPIRED') {
+    emoji = '⏰';
+    title = 'SINYAL EXPIRED';
+    detail = `Sinyal kedaluwarsa tanpa TP/SL hit. Momentum tidak berkembang.`;
+  }
+
+  const text =
+    `${emoji} <b>${title}</b>\n\n` +
+    `🪙 <b>$${token.symbol}</b> — ${token.name}\n` +
+    `<code>${token.mint}</code>\n\n` +
+    `${detail}\n\n` +
+    `<a href="${signal.tradingLinks.dexscreener}">📊 Lihat Chart</a>`;
+
+  return sendTelegramMessage(config, text);
+}
+
+// ─────────────────────────────────────────────────────────
+// LEGACY COMPAT: Fungsi lama (backward compatibility)
+// ─────────────────────────────────────────────────────────
+export async function sendTelegramAlphaAlert(
+  token: TokenSignal,
+  config: TelegramConfig,
+  viralityScore: number = 85,
+  sentiment: string = 'BULLISH'
+): Promise<boolean> {
+  const dexUrl = token.dexUrl || `https://dexscreener.com/solana/${token.mint}`;
+  const text =
+    `🚨 <b>ALPHA SIGNAL</b> 🚨\n\n` +
+    `🪙 <b>$${token.symbol}</b> (${token.name})\n` +
+    `🌐 Platform: ${token.platform}\n` +
+    `🔑 Mint: <code>${token.mint}</code>\n\n` +
+    `⚡ Consensus: <b>5/5 AI AGENTS APPROVED</b> ✅\n` +
+    `🔥 Virality: <b>${viralityScore}/100</b> [${sentiment}]\n\n` +
+    `<a href="${dexUrl}">📊 DexScreener</a>`;
+
+  return sendTelegramMessage(config, text);
 }
 
 export async function sendTelegramBuyAlert(
@@ -91,41 +247,15 @@ export async function sendTelegramBuyAlert(
   config: TelegramConfig,
   amountSol: number,
   txSignature: string,
-  jitoTipSol: number = 0.0001
+  _jitoTipSol?: number  // retained for backward-compat, not used in signal-only mode
 ): Promise<boolean> {
-  if (!config.isEnabled || !config.botToken.trim() || !config.chatId.trim()) {
-    return false;
-  }
-
-  try {
-    const solscanTx = `https://solscan.io/tx/${txSignature}`;
-    const dexUrl = token.dexUrl || `https://dexscreener.com/solana/${token.mint}`;
-
-    const text = `🎯 <b>GROK TRENCHER // POSITION OPENED</b> ⚡\n\n` +
-      `🪙 <b>Token:</b> <b>${token.symbol}</b> (${token.name})\n` +
-      `💰 <b>Amount:</b> <b>${amountSol.toFixed(3)} SOL</b>\n` +
-      `💵 <b>Entry Price:</b> ${token.priceSol.toFixed(8)} SOL\n` +
-      `🔑 <b>Mint:</b> <code>${token.mint}</code>\n` +
-      `🛡️ <b>MEV Defense:</b> Jito Tokyo Bundle (${jitoTipSol.toFixed(5)} SOL Tip)\n\n` +
-      `🔗 <a href="${solscanTx}">Solscan TX</a> | <a href="${dexUrl}">DexScreener</a>`;
-
-    const res = await fetch(`https://api.telegram.org/bot${config.botToken.trim()}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: config.chatId.trim(),
-        text,
-        parse_mode: 'HTML',
-        disable_web_page_preview: true
-      })
-    });
-
-    const data = await res.json();
-    return !!(res.ok && data.ok);
-  } catch (err) {
-    console.error('sendTelegramBuyAlert error:', err);
-    return false;
-  }
+  const text =
+    `🎯 <b>POSITION ALERT</b>\n\n` +
+    `🪙 <b>$${token.symbol}</b>\n` +
+    `💰 Amount: ${amountSol.toFixed(3)} SOL\n` +
+    `🔑 <code>${token.mint}</code>\n` +
+    `🔗 <a href="https://solscan.io/tx/${txSignature}">Solscan TX</a>`;
+  return sendTelegramMessage(config, text);
 }
 
 export async function sendTelegramExitAlert(
@@ -133,51 +263,22 @@ export async function sendTelegramExitAlert(
     token: TokenSignal;
     entryPriceSol: number;
     exitPriceSol: number;
-    solInvested: number;
     pnlSol: number;
     pnlPct: number;
-    rMultiplier: number;
     holdDurationSec: number;
     exitReason: string;
   },
   config: TelegramConfig
 ): Promise<boolean> {
-  if (!config.isEnabled || !config.botToken.trim() || !config.chatId.trim()) {
-    return false;
-  }
-
-  try {
-    const isProfit = trade.pnlSol >= 0;
-    const emoji = isProfit ? '🟢 💰 <b>TAKE PROFIT HIT</b>' : '🔴 🛑 <b>STOP LOSS TRIGGERED</b>';
-    const sign = isProfit ? '+' : '';
-    const dexUrl = trade.token.dexUrl || `https://dexscreener.com/solana/${trade.token.mint}`;
-
-    const text = `${emoji} 🚨\n\n` +
-      `🪙 <b>Token:</b> <b>${trade.token.symbol}</b>\n` +
-      `📊 <b>P&L:</b> <b>${sign}${trade.pnlSol.toFixed(4)} SOL (${sign}${trade.pnlPct.toFixed(2)}%)</b>\n` +
-      `🎯 <b>R-Multiple:</b> ${sign}${trade.rMultiplier}R\n` +
-      `⏱️ <b>Hold Time:</b> ${trade.holdDurationSec} detik\n` +
-      `📝 <b>Reason:</b> ${trade.exitReason}\n` +
-      `🔑 <b>Mint:</b> <code>${trade.token.mint}</code>\n\n` +
-      `🔗 <a href="${dexUrl}">DexScreener Chart</a>`;
-
-    const res = await fetch(`https://api.telegram.org/bot${config.botToken.trim()}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: config.chatId.trim(),
-        text,
-        parse_mode: 'HTML',
-        disable_web_page_preview: true
-      })
-    });
-
-    const data = await res.json();
-    return !!(res.ok && data.ok);
-  } catch (err) {
-    console.error('sendTelegramExitAlert error:', err);
-    return false;
-  }
+  const isProfit = trade.pnlSol >= 0;
+  const sign = isProfit ? '+' : '';
+  const emoji = isProfit ? '🟢' : '🔴';
+  const text =
+    `${emoji} <b>${isProfit ? 'PROFIT' : 'LOSS'} ALERT</b>\n\n` +
+    `🪙 <b>$${trade.token.symbol}</b>\n` +
+    `📊 P&L: <b>${sign}${trade.pnlSol.toFixed(4)} SOL (${sign}${trade.pnlPct.toFixed(2)}%)</b>\n` +
+    `📝 Reason: ${trade.exitReason}`;
+  return sendTelegramMessage(config, text);
 }
 
 export async function sendTelegramRugpullWarning(
@@ -185,33 +286,10 @@ export async function sendTelegramRugpullWarning(
   config: TelegramConfig,
   riskDetails: string
 ): Promise<boolean> {
-  if (!config.isEnabled || !config.botToken.trim() || !config.chatId.trim()) {
-    return false;
-  }
-
-  try {
-    const text = `⚠️ <b>GROK TRENCHER // RUGPULL DETECTED</b> ⚠️\n\n` +
-      `🪙 <b>Token:</b> <b>${token.symbol}</b> (${token.name})\n` +
-      `🚨 <b>Veto Reason:</b> ${riskDetails}\n` +
-      `🔑 <b>Mint:</b> <code>${token.mint}</code>\n` +
-      `🛡️ <b>Action:</b> Execution blocked by Risk Agent automatically.`;
-
-    const res = await fetch(`https://api.telegram.org/bot${config.botToken.trim()}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: config.chatId.trim(),
-        text,
-        parse_mode: 'HTML',
-        disable_web_page_preview: true
-      })
-    });
-
-    const data = await res.json();
-    return !!(res.ok && data.ok);
-  } catch (err) {
-    console.error('sendTelegramRugpullWarning error:', err);
-    return false;
-  }
+  const text =
+    `⚠️ <b>RUGPULL / RISK DETECTED</b>\n\n` +
+    `🪙 <b>$${token.symbol}</b>\n` +
+    `🚨 Risk: ${riskDetails}\n` +
+    `🛡️ Sinyal DIBATALKAN oleh Risk Agent.`;
+  return sendTelegramMessage(config, text);
 }
-

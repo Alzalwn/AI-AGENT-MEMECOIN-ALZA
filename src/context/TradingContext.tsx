@@ -24,7 +24,8 @@ import {
 } from '../types/trading';
 import { ExecutionConfig, DEFAULT_EXECUTION_CONFIG } from '../components/ExecutionSettingsModal';
 import { generateRandomTokenSignal } from '../engine/simulator';
-import { runAgentConsensus } from '../agents/consensus';
+import { getInitialSeedSignals } from '../engine/initialSignals';
+import { runAgentConsensus, runConsensusAndBuildSignal } from '../agents/consensus';
 import { evaluateExitAgent } from '../agents/exit';
 import { soundFx } from '../engine/audioEngine';
 import { STRATEGY_PRESETS, JITO_TIP_TIERS, TRADING_STYLE_PRESETS } from '../config/constants';
@@ -33,8 +34,10 @@ import {
   sendTelegramBuyAlert,
   sendTelegramExitAlert,
   sendTelegramRugpullWarning,
+  sendSignalAlert,
   TelegramConfig
 } from '../lib/telegram';
+import { TradingSignal } from '../types/signal';
 import {
   sendDiscordAlphaAlert,
   sendDiscordBuyAlert,
@@ -228,7 +231,73 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
   }, []);
 
-  // ExecutionManager Instance for Autonomous Lifecycle
+  // ─── SIGNAL PROVIDER STATE ─────────────────────────────────────────────────
+  // activeSignals: sinyal ACTIVE yang sedang dipantau (max 50)
+  // signalHistory: semua sinyal historis (max 200)
+  const [activeSignals, setActiveSignals] = useState<TradingSignal[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('GT_ACTIVE_SIGNALS');
+        if (saved) {
+          const parsed = JSON.parse(saved) as TradingSignal[];
+          if (parsed && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return getInitialSeedSignals().activeSignals;
+  });
+
+  const [signalHistory, setSignalHistoryState] = useState<TradingSignal[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('GT_SIGNAL_HISTORY');
+        if (saved) {
+          const parsed = JSON.parse(saved) as TradingSignal[];
+          if (parsed && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return getInitialSeedSignals().historySignals;
+  });
+
+  const addSignalToHistory = useCallback((signal: TradingSignal) => {
+    setSignalHistoryState((prev) => {
+      const next = [signal, ...prev].slice(0, 200);
+      try { localStorage.setItem('GT_SIGNAL_HISTORY', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+
+  /**
+   * broadcastSignal: Kirim sinyal yang sudah dikalkulasi ke Telegram + simpan di state
+   * Dipanggil setelah runConsensusAndBuildSignal menghasilkan signal bukan null
+   */
+  const broadcastSignal = useCallback(async (
+    signal: TradingSignal,
+    telegramConfig: WebhookTelegramConfig
+  ): Promise<void> => {
+    // 1. Tambah ke activeSignals
+    setActiveSignals((prev) => {
+      const next = [signal, ...prev.filter((s) => s.id !== signal.id)].slice(0, 50);
+      try { localStorage.setItem('GT_ACTIVE_SIGNALS', JSON.stringify(next)); } catch {}
+      return next;
+    });
+    // 2. Tambah ke history
+    addSignalToHistory(signal);
+    // 3. Kirim ke Telegram
+    if (telegramConfig.isEnabled && telegramConfig.botToken && telegramConfig.chatId) {
+      try {
+        await sendSignalAlert(signal, {
+          botToken: telegramConfig.botToken,
+          chatId: telegramConfig.chatId,
+          isEnabled: telegramConfig.isEnabled,
+        });
+      } catch (err) {
+        console.warn('[broadcastSignal] Telegram send failed:', err);
+      }
+    }
+  }, [addSignalToHistory]);
+
   const executionManagerRef = useRef<ExecutionManager | null>(null);
   if (!executionManagerRef.current) {
     executionManagerRef.current = new ExecutionManager();
@@ -1898,6 +1967,26 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         soundFx.playApproval();
         appendLog('SCAN', 'SUCCESS', `Signal APPROVED: ${consensus.token.symbol} (Score: ${consensus.token.narrativeCosineSim})`);
 
+        // ─── AI Alpha Signal Terminal: Kalkulasi Sinyal & Broadcast ke Telegram ───
+        try {
+          const { signal } = runConsensusAndBuildSignal(consensus.token, {
+            thresholds: STRATEGY_PRESETS.BALANCED,
+            grokViralityScore: consensus.token.narrativeCosineSim,
+            solRateUsd: 140,
+          });
+
+          if (signal) {
+            await broadcastSignal(signal, telegramConfig);
+            appendLog(
+              'TELEGRAM',
+              'SUCCESS',
+              `📡 [SIGNAL BROADCAST] $${signal.token.symbol} Entry: ${signal.entryZone.low.toFixed(6)}-${signal.entryZone.high.toFixed(6)} SOL | TP1: ${signal.targets[0].priceSol.toFixed(6)} | TP2: ${signal.targets[1].priceSol.toFixed(6)} | TP3: ${signal.targets[2].priceSol.toFixed(6)} | SL: ${signal.stopLoss.priceSol.toFixed(6)} SOL (R/R 1:${signal.riskRewardRatio})`
+            );
+          }
+        } catch (sigErr) {
+          console.warn('[SignalBroadcast] Error generating signal:', sigErr);
+        }
+
         // 1. Synchronous Mutex Guard Check & Anti-Spam Repeat Buy Cooldown
         if (positionMutex.isPositionOpen() || isPositionOpenRef.current || activePositionRef.current !== null || isAutoSnipingRef.current) {
           appendLog(
@@ -2395,6 +2484,75 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [walletState.fullPublicKey, refreshHoldings]);
 
+  // ─── SIGNAL TRACKER LOOP ───────────────────────────────────────────────────
+  // Memantau status sinyal aktif secara berkala terhadap target TP1, TP2, TP3, SL
+  const isTrackingRef = useRef(false);
+  useEffect(() => {
+    if (activeSignals.length === 0) return;
+
+    const interval = setInterval(async () => {
+      if (isTrackingRef.current) return;
+      isTrackingRef.current = true;
+      try {
+        const res = await fetch('/api/signals/track', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            signals: activeSignals,
+            telegramConfig: telegramConfig.isEnabled ? {
+              botToken: telegramConfig.botToken,
+              chatId: telegramConfig.chatId,
+              isEnabled: telegramConfig.isEnabled
+            } : undefined
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.changedCount > 0) {
+            const updated: TradingSignal[] = data.updatedSignals;
+            const stillActive = updated.filter((s: TradingSignal) => ['ACTIVE', 'TP1_HIT', 'TP2_HIT'].includes(s.status));
+            const newlyResolved = updated.filter((s: TradingSignal) => ['TP3_HIT', 'SL_HIT', 'EXPIRED'].includes(s.status));
+
+            setActiveSignals(stillActive);
+            try { localStorage.setItem('GT_ACTIVE_SIGNALS', JSON.stringify(stillActive)); } catch {}
+
+            if (newlyResolved.length > 0) {
+              setSignalHistoryState(prev => {
+                const combined = [...newlyResolved, ...prev.filter(p => !newlyResolved.some(nr => nr.id === p.id))].slice(0, 200);
+                try { localStorage.setItem('GT_SIGNAL_HISTORY', JSON.stringify(combined)); } catch {}
+                return combined;
+              });
+            }
+
+            for (const ev of (data.events || [])) {
+              const sym = ev.symbol;
+              if (ev.newStatus === 'TP1_HIT') {
+                soundFx.playTakeProfit();
+                appendLog('TELEGRAM', 'SUCCESS', `🎯 [TP1 HIT] $${sym} menyentuh Target 1 (+${ev.gainPct}%)! Modal awal aman.`);
+              } else if (ev.newStatus === 'TP2_HIT') {
+                soundFx.playTakeProfit();
+                appendLog('TELEGRAM', 'SUCCESS', `🏆 [TP2 HIT] $${sym} menyentuh Target 2 (+${ev.gainPct}%)! Profit utama terkunci.`);
+              } else if (ev.newStatus === 'TP3_HIT') {
+                soundFx.playTakeProfit();
+                appendLog('TELEGRAM', 'SUCCESS', `💎 [TP3 HIT] $${sym} menyentuh Moonshot Target (+${ev.gainPct}%)! Sinyal tuntas sempurna! 🚀`);
+              } else if (ev.newStatus === 'SL_HIT') {
+                soundFx.playEmergencyExit();
+                appendLog('TELEGRAM', 'WARN', `🛑 [SL HIT] $${sym} menyentuh batas Stop Loss (${ev.gainPct}%). Posisi ditutup.`);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[SignalTrackerLoop] Tracking failed:', err);
+      } finally {
+        isTrackingRef.current = false;
+      }
+    }, 12000);
+
+    return () => clearInterval(interval);
+  }, [activeSignals, telegramConfig, appendLog]);
+
   const value: TradingContextType = {
     engineStatus,
     dataSource,
@@ -2420,6 +2578,10 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     isHoldingsLoading,
     totalHoldingsValueUsd,
     totalHoldingsValueSol,
+    isSimulationMode,
+    // ─── Signal Provider ───
+    activeSignals,
+    signalHistory,
     setEngineStatus,
     toggleEngine,
     emergencyKillSwitch,
@@ -2447,12 +2609,17 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     dumpAllHoldingsToSol,
     unwrapWsolOrCloseAccount,
     emergencyStopAllTrading,
-    isSimulationMode,
     setIsSimulationMode,
     toggleSimulationMode,
     clearLogs,
     clearTrades,
-    appendLog
+    appendLog,
+    // ─── Signal Provider Actions ───
+    broadcastSignal,
+    clearSignals: () => {
+      setActiveSignals([]);
+      try { localStorage.removeItem('GT_ACTIVE_SIGNALS'); } catch {}
+    },
   };
 
   return <TradingContext.Provider value={value}>{children}</TradingContext.Provider>;

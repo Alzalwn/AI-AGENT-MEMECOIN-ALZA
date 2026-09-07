@@ -12,6 +12,10 @@ import DeskFeed from '../components/dashboard/DeskFeed';
 import ConsensusEvaluator from '../components/dashboard/ConsensusEvaluator';
 import ManualMintSniper from '../components/dashboard/ManualMintSniper';
 import CumulativeCurve from '../components/CumulativeCurve';
+import { SignalFeed } from '../components/signals/SignalFeed';
+import { SignalStats } from '../components/signals/SignalStats';
+import { SignalHistoryTable } from '../components/signals/SignalHistoryTable';
+import { SignalStats as SignalStatsType } from '../types/signal';
 
 // Modals
 import WalletConnectModal from '../components/WalletConnectModal';
@@ -63,7 +67,9 @@ function TerminalAppInner() {
     isAudioMuted,
     openLivePosition,
     refreshWalletBalance,
-    appendLog
+    appendLog,
+    activeSignals,
+    signalHistory,
   } = useTradingAgent();
 
   // Strategy thresholds — mirrors agentConfig; initialized from BALANCED preset
@@ -91,6 +97,33 @@ function TerminalAppInner() {
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState<boolean>(false);
   const [isSmartMoneyOpen, setIsSmartMoneyOpen] = useState<boolean>(false);
   const [isVpsBotOpen, setIsVpsBotOpen] = useState<boolean>(false);
+
+  // Signal Terminal tab: 'trading' | 'signals' | 'history'
+  const [dashTab, setDashTab] = useState<'trading' | 'signals' | 'history'>('trading');
+
+  // Compute signal stats from signalHistory
+  const signalStats: SignalStatsType = React.useMemo(() => {
+    const wins = signalHistory.filter((s) => ['TP1_HIT', 'TP2_HIT', 'TP3_HIT'].includes(s.status));
+    const losses = signalHistory.filter((s) => s.status === 'SL_HIT');
+    const resolved = [...wins, ...losses];
+    const today = Date.now() - 86400000;
+    const todaySignals = signalHistory.filter((s) => s.timestamp > today);
+    return {
+      totalSignals: signalHistory.length,
+      totalToday: todaySignals.length,
+      winCount: wins.length,
+      lossCount: losses.length,
+      winRate: resolved.length > 0 ? (wins.length / resolved.length) * 100 : 0,
+      tp2Rate: resolved.length > 0 ? (signalHistory.filter((s) => ['TP2_HIT', 'TP3_HIT'].includes(s.status)).length / resolved.length) * 100 : 0,
+      tp3Rate: resolved.length > 0 ? (signalHistory.filter((s) => s.status === 'TP3_HIT').length / resolved.length) * 100 : 0,
+      avgRR: wins.length > 0 ? wins.reduce((a, s) => a + s.riskRewardRatio, 0) / wins.length : 0,
+      avgDurationMin: 0,
+      supernovaCount: signalHistory.filter((s) => s.signalTier === 'SUPERNOVA').length,
+      highCount: signalHistory.filter((s) => s.signalTier === 'HIGH').length,
+      moderateCount: signalHistory.filter((s) => s.signalTier === 'MODERATE').length,
+      lastUpdated: Date.now(),
+    };
+  }, [signalHistory]);
 
   // Global Pro Trader Keyboard Shortcuts
   React.useEffect(() => {
@@ -175,6 +208,47 @@ function TerminalAppInner() {
       <main className="p-3.5 sm:p-5 flex-1 flex flex-col gap-4 max-w-[1920px] mx-auto w-full">
         {/* 2. KPI Metric Cards */}
         <MetricCards />
+
+        {/* 3. Dashboard Tab Switcher: Trading | Signal Feed | History */}
+        <div className="flex items-center gap-1 border border-white/5 bg-[#111111] rounded-xl p-1">
+          {[
+            { key: 'trading' as const, label: '📡 Trading Terminal', sub: 'Scanner & Positions' },
+            { key: 'signals' as const, label: '🚀 Signal Feed', sub: `${activeSignals.length} active` },
+            { key: 'history' as const, label: '📚 Signal History', sub: `${signalHistory.length} sinyal` },
+          ].map(({ key, label, sub }) => (
+            <button
+              key={key}
+              onClick={() => setDashTab(key)}
+              className={`flex-1 flex flex-col items-center py-2.5 px-3 rounded-lg text-sm font-medium transition-all duration-200 ${
+                dashTab === key
+                  ? 'bg-white/10 text-white shadow-sm'
+                  : 'text-white/40 hover:text-white/60 hover:bg-white/[0.03]'
+              }`}
+            >
+              <span>{label}</span>
+              <span className="text-xs text-white/30 mt-0.5">{sub}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Signal Terminal Tab */}
+        {dashTab === 'signals' && (
+          <div className="space-y-4">
+            <SignalStats stats={signalStats} />
+            <SignalFeed signals={activeSignals} isScanning={engineStatus === 'AUTONOMOUS'} />
+          </div>
+        )}
+
+        {/* Signal History Tab */}
+        {dashTab === 'history' && (
+          <div className="space-y-4">
+            <SignalStats stats={signalStats} />
+            <SignalHistoryTable signals={signalHistory} />
+          </div>
+        )}
+
+        {/* Trading Terminal Tab (existing layout) */}
+        {dashTab === 'trading' && (<>
 
         {/* 3. Manual Mint Address Sniper & On-Chain Lookup */}
         <ManualMintSniper 
@@ -264,9 +338,10 @@ function TerminalAppInner() {
           </div>
 
           <span className="text-zinc-600 hidden sm:inline">
-            Grok Trencher Solana Autonomous Engine • Zero-Leak MEV Security
+            Solana AI Alpha Signal Terminal • Powered by Multi-Agent AI Consensus
           </span>
         </footer>
+        </>)}
       </main>
 
       {/* 7. Modal Dialogs */}
