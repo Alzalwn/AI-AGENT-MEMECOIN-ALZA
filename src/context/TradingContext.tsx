@@ -420,12 +420,24 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setLogs((prev) => [newLog, ...prev.slice(0, 199)]);
   }, []);
 
-  // Hook up ExecutionManager Callbacks
+  // Hook up ExecutionManager Callbacks — CANONICAL state-sync bridge
+  // These callbacks ensure ExecutionManager's internal state is always mirrored
+  // into React state AND the refs used by the autonomous loop's mutex guard.
   useEffect(() => {
     if (!executionManagerRef.current) return;
     executionManagerRef.current.setCallbacks({
       onPositionOpened: (pos) => {
+        // Sync React state
         setActivePosition(pos);
+        // Sync refs used by autonomous loop mutex guard
+        activePositionRef.current = pos;
+        isPositionOpenRef.current = true;
+        isAutoSnipingRef.current = false; // Buy confirmed — release sniping lock
+        setTelemetry((prev) => ({
+          ...prev,
+          activePositionLocked: true,
+          currentBalanceSol: +(Math.max(0, prev.currentBalanceSol - pos.solInvested)).toFixed(4)
+        }));
         soundFx.playApproval();
         if (telegramConfig.isEnabled) {
           sendTelegramBuyAlert(pos.token, telegramConfig, pos.solInvested, pos.id, 0.000015);
@@ -436,16 +448,23 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       },
       onPositionUpdated: (pos) => {
         setActivePosition({ ...pos });
+        activePositionRef.current = { ...pos };
       },
       onPositionClosed: (trade) => {
+        // Sync React state
         setActivePosition(null);
         setClosedTrades((prev) => [trade, ...prev].slice(0, 200));
+        // Sync refs — critical: release mutex guard for next trade
+        activePositionRef.current = null;
+        isPositionOpenRef.current = false;
+        isAutoSnipingRef.current = false;
         setTelemetry((prev) => ({
           ...prev,
           totalPnlSol: +(prev.totalPnlSol + trade.pnlSol).toFixed(4),
           winCount: trade.pnlSol > 0 ? prev.winCount + 1 : prev.winCount,
           lossCount: trade.pnlSol <= 0 ? prev.lossCount + 1 : prev.lossCount,
-          activePositionLocked: false
+          activePositionLocked: false,
+          currentBalanceSol: +(prev.currentBalanceSol + trade.solInvested + trade.pnlSol).toFixed(4)
         }));
         if (trade.pnlSol > 0) {
           soundFx.playTakeProfit();
@@ -458,14 +477,23 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (discordConfig.isEnabled) {
           sendDiscordExitAlert(trade, discordConfig);
         }
+        // Refresh on-chain balance after a real trade closes
+        setTimeout(() => { refreshWalletBalance(); }, 3000);
       },
       onLog: (category, level, message) => {
         appendLog(category as any, level as any, message);
       },
       onError: (err, stage) => {
-        appendLog('EXECUTION', 'DANGER', `Execution error di tahap [${stage}]: ${err.message}`);
+        // On error, always ensure refs are unlocked so bot can retry
+        isAutoSnipingRef.current = false;
+        if (!activePositionRef.current) {
+          isPositionOpenRef.current = false;
+          setTelemetry((prev) => ({ ...prev, activePositionLocked: false }));
+        }
+        appendLog('EXECUTION', 'DANGER', `❌ Execution error di tahap [${stage}]: ${err.message}`);
       }
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setActivePosition, setClosedTrades, appendLog, telegramConfig, discordConfig]);
 
   // Restore live tracker if active position exists on initial mount
@@ -473,6 +501,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (activePosition && activePosition.status === 'OPEN' && executionManagerRef.current) {
       executionManagerRef.current.startPositionTracker(activePosition);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const clearLogs = useCallback(() => setLogs([]), []);
@@ -1643,224 +1672,66 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const baseTier = autoSnipeConfig.jitoTipTier || agentConfig.jitoTipTier || 'ECONOMY';
         const tipSol = Math.min(0.000025, JITO_TIP_TIERS[baseTier] || 0.000010);
 
-        // 5. Automated Execution Decision Engine with Synchronous Mutex Lock
+        // =====================================================================
+        // 5. UNIFIED EXECUTION PIPELINE — Single Path via ExecutionManager
+        //    (Eliminates dual-path race condition that caused multiple positions
+        //     and infinite buy loops)
+        // =====================================================================
+        if (!executionManagerRef.current) return;
+
         const consensusScore = consensus.moonshot?.moonshotScore || Math.round(consensus.token.narrativeCosineSim * 100);
 
-        // Autonomous Pipeline: Begitu skor koin mencapai >85%, picu triggerBuy() ExecutionManager langsung
-        if (consensusScore >= 85 && consensus.verdict === 'APPROVED' && executionManagerRef.current) {
-          appendLog(
-            'EXECUTION',
-            'SUCCESS',
-            `🚀 [AUTONOMOUS PIPELINE] Skor peluncuran ${consensusScore}% (>=85%) terdeteksi untuk ${consensus.token.symbol}! Memicu ExecutionManager.triggerBuy() otomatis tanpa interaksi UI.`
-          );
+        appendLog(
+          'EXECUTION',
+          'SUCCESS',
+          `🚀 [AUTONOMOUS PIPELINE] ${consensus.token.symbol} lolos semua filter (Skor: ${consensusScore}%). Mengirim ke ExecutionManager.triggerBuy() — ${isSimulationMode ? 'DRY-RUN' : 'ON-CHAIN LIVE'}...`
+        );
 
-          if (walletState.mode === 'LIVE_ON_CHAIN' || isSimulationMode) {
-            isPositionOpenRef.current = true;
-            isAutoSnipingRef.current = true;
-            setTelemetry((prev) => ({ ...prev, activePositionLocked: true }));
-
-            executionManagerRef.current
-              .triggerBuy(consensus.token, solInvest, {
-                isSimulation: isSimulationMode,
-                slippageBps: Math.round((agentConfig.slippagePct || 1.5) * 100),
-                jitoTipSol: tipSol,
-                targetTpPct: agentConfig.takeProfitPct || 100,
-                stopLossPct: agentConfig.stopLossPct || -25,
-                trailingStopLossPct: agentConfig.trailingStopLossPct || 15,
-                maxHoldTimeSec: agentConfig.maxHoldTimeSec || 180
-              })
-              .then((result) => {
-                if (result.success && result.position) {
-                  setAutoSnipeConfig((prev) => ({ ...prev, dailyTradesExecuted: prev.dailyTradesExecuted + 1 }));
-                }
-              })
-              .catch((err) => {
-                appendLog('EXECUTION', 'DANGER', `Auto-buy gagal untuk ${consensus.token.symbol}: ${err.message}`);
-              })
-              .finally(() => {
-                isAutoSnipingRef.current = false;
-              });
-
-            return;
-          }
-        }
-
-        if (walletState.mode === 'LIVE_ON_CHAIN') {
-          // SYNCHRONOUS MUTEX LOCK ACQUISITION
-          const lockAcquired = positionMutex.acquireLock(consensus.token.mint);
-          if (!lockAcquired) {
-            appendLog('RISK', 'WARN', `[MUTEX BLOCKED] Pembelian ${consensus.token.symbol} ditahan: Posisi lain aktif atau token dalam cooldown.`);
-            return;
-          }
-          isPositionOpenRef.current = true;
-          isAutoSnipingRef.current = true;
-          setTelemetry((prev) => ({ ...prev, activePositionLocked: true }));
-
-          if (isSimulationMode) {
-            // DRY-RUN SIMULATION INTERCEPTOR (Zero Real SOL spent!)
-            const tokenPrice = consensus.token.priceSol > 0 ? consensus.token.priceSol : 0.0001;
-            const simulatedTokens = +(solInvest / tokenPrice).toFixed(4);
-            const mockSig = `SIM_BUY_${Math.random().toString(36).slice(2, 10).toUpperCase()}_${Date.now().toString().slice(-6)}`;
-
-            appendLog(
-              'EXECUTION',
-              'SUCCESS',
-              `🧪 [DRY-RUN SIMULATION] Order beli ${consensus.token.symbol} (${solInvest} SOL) lolos analisis! Transaksi Phantom dicegat & disimulasikan sukses [SimTx: ${mockSig}]. 0 SOL riil dikeluarkan.`
-            );
-
-            const simulatedResult: SwapExecutionResult = {
-              signature: mockSig,
-              inAmountSol: solInvest,
-              outAmountFormatted: simulatedTokens.toLocaleString('en-US', { maximumFractionDigits: 4 }),
-              tokenAmountUi: simulatedTokens,
-              decimals: 6,
-              outputMint: consensus.token.mint,
-              symbol: consensus.token.symbol,
-              routeSummary: '[DRY-RUN SIMULATION] Intercepted Phantom RPC (Zero Real SOL Spent)',
-              priceImpactPct: 0.08,
-              jitoTipSol: 0,
-              slot: networkMetrics.currentSlot + 1,
-              isSimulated: true,
-              timestamp: Date.now()
-            };
-
-            positionMutex.markBuyCompleted(consensus.token.mint);
-            await openLivePosition(simulatedResult, consensus.token);
-            setAutoSnipeConfig((prev) => ({ ...prev, dailyTradesExecuted: prev.dailyTradesExecuted + 1 }));
-            isAutoSnipingRef.current = false;
-            return;
-          }
-
-          appendLog(
-            'EXECUTION',
-            'INFO',
-            `⚡ [DECISION ENGINE] Auto-snipe on-chain ${consensus.token.symbol} (${solInvest} SOL) • MUTEX LOCKED`
-          );
-
-          (async () => {
-            let buySucceeded = false;
-            try {
-              // Jalur A: Server-Side Autonomous Hot Wallet (jika private key terpasang di VPS)
-              const snipeRes = await fetch('/api/bot/execute-snipe', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  mint: consensus.token.mint,
-                  symbol: consensus.token.symbol,
-                  amountSol: solInvest,
-                  slippageBps: Math.round((agentConfig.slippagePct || 1.5) * 100),
-                  jitoTipSol: tipSol
-                })
-              });
-
-              const snipeData = await snipeRes.json();
-              if (snipeData.success && snipeData.signature) {
-                appendLog('JITO', 'SUCCESS', `⚡ [SERVER KEYPAIR AUTO-SNIPED] Tx: https://solscan.io/tx/${snipeData.signature}`);
-                positionMutex.markBuyCompleted(consensus.token.mint);
-                await openLivePosition(snipeData, consensus.token);
-                setAutoSnipeConfig((prev) => ({ ...prev, dailyTradesExecuted: prev.dailyTradesExecuted + 1 }));
-                buySucceeded = true;
-                return;
-              }
-
-              // Jalur B: Client-Side Phantom Wallet (otomatis memicu popup sign/approve tanpa klik manual)
-              let provider = typeof window !== 'undefined'
-                ? ((window as any).phantom?.solana || (window as any).solana || (window as any).solflare || (window as any).backpack)
-                : null;
-              const pubKey = walletState.fullPublicKey || provider?.publicKey?.toString();
-
-              if (provider && pubKey) {
-                appendLog(
-                  'EXECUTION',
-                  'INFO',
-                  `🟡 [AUTO-SNIPE PHANTOM] Meminta persetujuan swap di dompet Phantom untuk ${consensus.token.symbol}...`
-                );
-                const quote = await fetchJupiterQuote(
-                  consensus.token.mint,
-                  solInvest,
-                  Math.round((agentConfig.slippagePct || 1.5) * 100)
-                );
-                const swapResult = await executeJupiterSwap(
-                  quote,
-                  consensus.token.symbol,
-                  tipSol,
-                  networkMetrics.currentSlot,
-                  pubKey,
-                  provider
-                );
-                if (swapResult.signature) {
-                  positionMutex.markBuyCompleted(consensus.token.mint);
-                  await openLivePosition(swapResult, consensus.token);
-                  setAutoSnipeConfig((prev) => ({ ...prev, dailyTradesExecuted: prev.dailyTradesExecuted + 1 }));
-                  buySucceeded = true;
-                }
-              } else {
-                appendLog(
-                  'EXECUTION',
-                  'WARN',
-                  `⚠️ Dompet Phantom belum terhubung di browser untuk auto-snipe live ${consensus.token.symbol}. Hubungkan dompet via Wallet Connect.`
-                );
-              }
-            } catch (err: any) {
-              appendLog('EXECUTION', 'DANGER', `Auto-snipe gagal untuk ${consensus.token.symbol}: ${err.message}`);
-            } finally {
-              isAutoSnipingRef.current = false;
-              if (!buySucceeded) {
-                // If buy failed or aborted, release mutex with cooldown
-                positionMutex.releaseLock(consensus.token.mint, 60000);
-                isPositionOpenRef.current = false;
-                setTelemetry((prev) => ({ ...prev, activePositionLocked: false }));
-              }
-            }
-          })();
-          return;
-        }
-
-        // PAPER TRADING MODE: Eksekusi simulasi instan
-        const locked = positionMutex.acquireLock(consensus.token.mint);
-        if (!locked) return;
-        isPositionOpenRef.current = true;
+        // Lock isAutoSnipingRef SEBELUM await — ini mencegah loop berikutnya masuk
+        isAutoSnipingRef.current = true;
         setTelemetry((prev) => ({ ...prev, activePositionLocked: true }));
 
-        const bundleReceipt = createJitoBundleReceipt(
-          consensus.token,
-          tipSol,
-          networkMetrics.currentSlot,
-          'TOKYO'
-        );
-
-        appendLog(
-          'JITO',
-          'SUCCESS',
-          `⚡ JITO TOKYO BUNDLE LANDED: ${bundleReceipt.bundleId} (${bundleReceipt.latencyMs}ms) • Tip: ${tipSol} SOL [Slot #${bundleReceipt.targetSlot}]`
-        );
-
-        const tokenPrice = consensus.token.priceSol > 0 ? consensus.token.priceSol : 0.0001;
-        const simulatedTokens = +(solInvest / tokenPrice).toFixed(4);
-
-        const simulatedResult: SwapExecutionResult = {
-          signature: bundleReceipt.txHash,
-          inAmountSol: solInvest,
-          outAmountFormatted: simulatedTokens.toLocaleString('en-US', { maximumFractionDigits: 4 }),
-          tokenAmountUi: simulatedTokens,
-          decimals: 6,
-          outputMint: consensus.token.mint,
-          symbol: consensus.token.symbol,
-          routeSummary: 'Raydium CPMM + Jito Tokyo Bundle',
-          priceImpactPct: 0.12,
-          jitoTipSol: tipSol,
-          slot: networkMetrics.currentSlot + 1,
-          isSimulated: true,
-          timestamp: Date.now()
-        };
-
-        positionMutex.markBuyCompleted(consensus.token.mint);
-        openLivePosition(simulatedResult, consensus.token);
+        // ExecutionManager.triggerBuy() adalah SATU-SATUNYA jalur eksekusi.
+        // Ia menangani: Mutex lock, honeypot check, server-side signing (Keypair),
+        // Jito MEV submission, confirmTransaction, dan memanggil onPositionOpened callback.
+        // Callback onPositionOpened di atas akan meng-update semua refs + React state.
+        executionManagerRef.current
+          .triggerBuy(consensus.token, solInvest, {
+            isSimulation: isSimulationMode,
+            slippageBps: Math.round((agentConfig.slippagePct || 1.5) * 100),
+            jitoTipSol: tipSol,
+            targetTpPct: agentConfig.takeProfitPct || 100,
+            stopLossPct: agentConfig.stopLossPct || -25,
+            trailingStopLossPct: agentConfig.trailingStopLossPct || 15,
+            maxHoldTimeSec: agentConfig.maxHoldTimeSec || 180
+          })
+          .then((result) => {
+            if (result.success && result.position) {
+              setAutoSnipeConfig((prev) => ({ ...prev, dailyTradesExecuted: prev.dailyTradesExecuted + 1 }));
+              appendLog('EXECUTION', 'SUCCESS', `✅ [POSISI DIBUKA] ${consensus.token.symbol} | ${isSimulationMode ? 'SimTx' : 'Tx'}: ${result.signature?.slice(0, 16)}...`);
+            } else {
+              // triggerBuy failed internally — onError callback handles ref cleanup
+              appendLog('EXECUTION', 'DANGER', `❌ ExecutionManager.triggerBuy() gagal: ${result.error}`);
+              isAutoSnipingRef.current = false;
+              isPositionOpenRef.current = false;
+              setTelemetry((prev) => ({ ...prev, activePositionLocked: false }));
+            }
+          })
+          .catch((err: any) => {
+            appendLog('EXECUTION', 'DANGER', `❌ Auto-buy tidak terduga gagal untuk ${consensus.token.symbol}: ${err.message}`);
+            isAutoSnipingRef.current = false;
+            isPositionOpenRef.current = false;
+            setTelemetry((prev) => ({ ...prev, activePositionLocked: false }));
+          });
+        // PENTING: jangan await di sini — biarkan loop interval berlanjut
+        // isAutoSnipingRef = true akan memblokir iterasi berikutnya sampai
+        // onPositionOpened atau onError callback mereset-nya.
       }
     }, 2800);
 
     return () => clearInterval(interval);
-  }, [engineStatus, appendLog, agentConfig, autoSnipeConfig, telemetry, walletState, openLivePosition, networkMetrics.currentSlot]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engineStatus, appendLog, agentConfig, autoSnipeConfig, telemetry, walletState, isSimulationMode]);
 
   // Real-Time On-Chain Price Stream & Exit Agent Evaluator
   useEffect(() => {
