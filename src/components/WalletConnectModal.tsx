@@ -205,7 +205,7 @@ export default function WalletConnectModal({
     { id: 'ECONOMY', name: 'Economy', tip: '0.00005 SOL', speed: '~65ms', badge: 'Normal' },
     { id: 'STANDARD', name: 'Standard', tip: '0.00010 SOL', speed: '~25ms', badge: 'PRD' },
     { id: 'FAST', name: 'Fast MEV', tip: '0.00050 SOL', speed: '~15ms', badge: 'Priority' },
-    { id: 'TURBO', name: 'TURBO', tip: '0.00200 SOL', speed: '< 8ms', badge: '🔥 Live Sniper' },
+    { id: 'TURBO', name: 'TURBO', tip: '0.00200 SOL', speed: '< 8ms', badge: '⚡ Ultra Fast' },
     { id: 'ULTRA_DEGEN', name: 'Ultra Degen', tip: '0.00500 SOL', speed: '< 5ms', badge: '⚡ Sub-Slot' },
   ];
 
@@ -353,7 +353,7 @@ export default function WalletConnectModal({
                 Jika membuka lewat Chrome/Safari di HP, klik tombol di bawah untuk membuka langsung di <strong>Aplikasi Phantom HP</strong> agar wallet otomatis terhubung:
               </p>
               <a
-                href={`https://phantom.app/ul/browse/${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : 'https://alzasniped.my.id')}`}
+                href={`https://phantom.app/ul/browse/${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : 'https://alzasignal.my.id')}`}
                 className="flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-[11px] transition-all text-center cursor-pointer shadow-sm"
               >
                 <span>Buka di Aplikasi Phantom HP</span>

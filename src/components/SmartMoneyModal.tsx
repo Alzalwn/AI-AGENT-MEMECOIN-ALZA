@@ -102,7 +102,7 @@ export default function SmartMoneyModal({
           onLogMessage(
             'EXECUTION',
             'SUCCESS',
-            `[COPY-TRADE] Auto-sniped ${newAct.tokenSymbol} following ${newAct.walletLabel} (${(config.baseBuyAmountSol * (wallets.find(w => w.id === newAct.walletId)?.copyMultiplier || 1)).toFixed(2)} SOL via Jito)`
+            `[COPY-SIGNAL] Sinyal terdeteksi untuk ${newAct.tokenSymbol} mengikuti ${newAct.walletLabel} (${(config.baseBuyAmountSol * (wallets.find(w => w.id === newAct.walletId)?.copyMultiplier || 1)).toFixed(2)} SOL via Jito)`
           );
         }
       }
@@ -227,7 +227,7 @@ export default function SmartMoneyModal({
       onLogMessage(
         'JITO',
         'SUCCESS',
-        `⚡ INSTANT COPY SNIPE: Meniru ${act.walletLabel} beli ${act.tokenSymbol} via Jito Bundle #${bundle.bundleId} (Tip: ${config.preferredJitoTipSol} SOL)`
+        `⚡ INSTANT COPY SIGNAL: Deteksi ${act.walletLabel} akumulasi ${act.tokenSymbol} via Jito Bundle #${bundle.bundleId} (Tip: ${config.preferredJitoTipSol} SOL)`
       );
     }
 
@@ -660,7 +660,7 @@ export default function SmartMoneyModal({
                     >
                       <option value="WHALE">Whale Trader</option>
                       <option value="INSIDER_DEV">Insider Developer</option>
-                      <option value="KOL_SNIPER">KOL / Influencer Sniper</option>
+                      <option value="KOL_SNIPER">KOL / Influencer Early Buyer</option>
                       <option value="EARLY_ACCUMULATOR">Early Accumulator</option>
                     </select>
                   </div>

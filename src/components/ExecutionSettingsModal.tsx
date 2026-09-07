@@ -144,7 +144,7 @@ export default function ExecutionSettingsModal({
               onClick={() => handleApplyPreset('AGGRESSIVE_SNIPER')}
               className="p-2.5 rounded-xl bg-terminal-card hover:bg-terminal-card/80 border border-terminal-border hover:border-terminal-red transition-all text-center cursor-pointer space-y-0.5"
             >
-              <span className="text-xs font-bold text-terminal-red block">Ultra Sniper</span>
+              <span className="text-xs font-bold text-terminal-red block">Ultra Fast</span>
               <span className="text-[9px] text-terminal-muted block">4.5% Slip • 500k Fee</span>
             </button>
           </div>

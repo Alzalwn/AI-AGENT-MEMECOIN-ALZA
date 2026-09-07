@@ -108,14 +108,14 @@ export const VpsBotModal: React.FC<VpsBotModalProps> = ({ isOpen, onClose }) => 
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-black text-sm tracking-wider text-terminal-text">
-                  VPS 24/7 AUTONOMOUS SNIPER BOT
+                  VPS 24/7 AUTONOMOUS SIGNAL BOT
                 </span>
                 <span className={`text-[10px] px-2 py-0.5 rounded font-bold border ${isOnline ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-amber-500/20 text-amber-400 border-amber-500/40'}`}>
                   {isOnline ? 'ONLINE (PM2)' : 'STANDBY'}
                 </span>
               </div>
               <p className="text-[10px] text-terminal-muted">
-                Background service on-chain sniper di AlmaLinux VPS • Jito Tokyo MEV Sub-Slot
+                Background service on-chain scanner & broadcaster di AlmaLinux VPS • Jito Tokyo MEV Sub-Slot
               </p>
             </div>
           </div>
@@ -184,7 +184,7 @@ export const VpsBotModal: React.FC<VpsBotModalProps> = ({ isOpen, onClose }) => 
                     <span>OPSI B: VPS 24/7 Autonomous</span>
                   </div>
                   <p className="text-[10px] text-zinc-400 leading-relaxed">
-                    Bot berjalan 24 jam di VPS. Menggunakan <strong>Hot Wallet Khusus</strong>, auto-snipe uang asli tanpa perlu buka website atau klik approve.
+                    Bot berjalan 24 jam di VPS. Menggunakan <strong>Hot Wallet Khusus</strong>, pemindaian sinyal otomatis tanpa perlu buka website.
                   </p>
                 </div>
               </div>
@@ -193,7 +193,7 @@ export const VpsBotModal: React.FC<VpsBotModalProps> = ({ isOpen, onClose }) => 
               <div className="p-3.5 rounded-xl bg-terminal-card border border-terminal-border space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] text-terminal-muted font-bold uppercase tracking-wider">
-                    DEDICATED SNIPER HOT WALLET (VPS)
+                    DEDICATED BOT HOT WALLET (VPS)
                   </span>
                   <span className="text-[10px] text-terminal-cyan">
                     Jito Tokyo Block Engine: Online
@@ -236,9 +236,9 @@ export const VpsBotModal: React.FC<VpsBotModalProps> = ({ isOpen, onClose }) => 
                   </div>
 
                   <div className="p-2.5 rounded-lg bg-zinc-900/90 border border-zinc-800">
-                    <span className="text-[9px] text-terminal-muted block">PENGATURAN BELI</span>
+                    <span className="text-[9px] text-terminal-muted block">PENGATURAN TRADING</span>
                     <span className="text-[11px] font-bold text-terminal-text mt-0.5 block">
-                      {botData?.settings?.buyAmountSol || 0.02} SOL / Snipe (Min Score: {botData?.settings?.minViralityScore || 80})
+                      {botData?.settings?.buyAmountSol || 0.02} SOL / Trade (Min Score: {botData?.settings?.minViralityScore || 80})
                     </span>
                   </div>
                 </div>
@@ -350,14 +350,14 @@ export const VpsBotModal: React.FC<VpsBotModalProps> = ({ isOpen, onClose }) => 
                 <div className="p-3 rounded-xl bg-terminal-card border border-terminal-border space-y-1">
                   <span className="text-[10px] text-terminal-cyan font-bold block">LANGKAH 1: Buat Akun Khusus di Phantom</span>
                   <p className="text-[10px] text-zinc-400">
-                    Buka Phantom di HP atau browser &gt; Tambah Wallet &gt; Buat Akun Baru (beri nama misalnya <strong>&quot;Grok Sniper VPS&quot;</strong>).
+                    Buka Phantom di HP atau browser &gt; Tambah Wallet &gt; Buat Akun Baru (beri nama misalnya <strong>&quot;Grok Signal VPS&quot;</strong>).
                   </p>
                 </div>
 
                 <div className="p-3 rounded-xl bg-terminal-card border border-terminal-border space-y-1">
                   <span className="text-[10px] text-terminal-cyan font-bold block">LANGKAH 2: Isi Saldo Uji Coba</span>
                   <p className="text-[10px] text-zinc-400">
-                    Transfer <strong>0.05 - 0.1 SOL</strong> ke wallet tersebut untuk modal awal bot membeli token.
+                    Transfer <strong>0.05 - 0.1 SOL</strong> ke wallet tersebut untuk modal awal bot atau gas fee.
                   </p>
                 </div>
 
@@ -373,7 +373,7 @@ export const VpsBotModal: React.FC<VpsBotModalProps> = ({ isOpen, onClose }) => 
                     Tambahkan baris berikut di baris paling bawah:
                   </p>
                   <pre className="p-2 rounded bg-black/60 border border-zinc-800 text-[10px] text-cyan-300 overflow-x-auto mt-1">
-                    AUTONOMOUS_SNIPER_PRIVATE_KEY=PASTE_PRIVATE_KEY_KAMU_DISINI
+                    AUTONOMOUS_BOT_PRIVATE_KEY=PASTE_PRIVATE_KEY_KAMU_DISINI
                   </pre>
                 </div>
 
@@ -383,7 +383,7 @@ export const VpsBotModal: React.FC<VpsBotModalProps> = ({ isOpen, onClose }) => 
                     Jalankan daemon agar bot bekerja otomatis 24 jam nonstop:
                   </p>
                   <pre className="p-2 rounded bg-black/60 border border-zinc-800 text-[10px] text-purple-300 overflow-x-auto mt-1">
-                    pm2 start scripts/sniper-daemon.mjs --name &quot;grok-sniper&quot;
+                    pm2 start scripts/signal-daemon.mjs --name &quot;grok-signal&quot;
                   </pre>
                   <pre className="p-2 rounded bg-black/60 border border-zinc-800 text-[10px] text-zinc-400 overflow-x-auto mt-1">
                     pm2 save
@@ -394,7 +394,7 @@ export const VpsBotModal: React.FC<VpsBotModalProps> = ({ isOpen, onClose }) => 
               <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2 text-[10px] text-amber-300">
                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
                 <p>
-                  <strong>Tips Keamanan:</strong> Jangan gunakan private key dari dompet utama Anda yang berisi aset besar. Selalu gunakan dompet cadangan (burner wallet) dengan saldo yang cukup untuk testing strategi sniping.
+                  <strong>Tips Keamanan:</strong> Jangan gunakan private key dari dompet utama Anda yang berisi aset besar. Selalu gunakan dompet cadangan (burner wallet) dengan saldo yang cukup untuk testing strategi sinyal.
                 </p>
               </div>
             </div>

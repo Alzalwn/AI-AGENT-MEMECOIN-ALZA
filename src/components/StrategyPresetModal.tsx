@@ -84,7 +84,7 @@ export default function StrategyPresetModal({
             <p className="text-[10px] text-terminal-muted">PRD Default (LP &ge; $5k, Sim &ge; 0.85, Top10 &le; 15%)</p>
           </div>
 
-          {/* 2. Degen Sniper */}
+          {/* 2. Degen Alpha */}
           <div
             onClick={() => handleSelectPreset('DEGEN')}
             className={`p-3 rounded-xl border transition-all cursor-pointer space-y-1 ${

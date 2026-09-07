@@ -1051,7 +1051,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
     isAutoSnipingRef.current = false;
     soundFx.playEmergencyExit();
-    appendLog('SYSTEM', 'WARN', '🛑 [EMERGENCY STOP] Seluruh bot otomatis, auto-snipe, dan transaksi telah DIMATIKAN seketika.');
+    appendLog('SYSTEM', 'WARN', '🛑 [EMERGENCY STOP] Engine pemindai sinyal otomatis telah DIJEDA seketika.');
   }, [appendLog]);
 
   const unwrapWsolOrCloseAccount = useCallback(async (mint: string, isToken2022: boolean = false): Promise<boolean> => {
@@ -1555,7 +1555,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       ...prev,
       activePositionLocked: false
     }));
-    appendLog('SYSTEM', 'WARN', '🔓 [MUTEX RESET] Mutex posisi aktif berhasil di-reset & dikosongkan. Slot sniper kini siap untuk koin baru.');
+    appendLog('SYSTEM', 'WARN', '🔓 [MUTEX RESET] Mutex posisi aktif berhasil di-reset & dikosongkan. Slot kini siap untuk sinyal baru.');
   }, [setActivePosition, appendLog]);
 
   // Snipe Manual Mint CA
@@ -1626,16 +1626,10 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         appendLog('RISK', 'SUCCESS', `Manual target ${foundToken.symbol} PASSED 5/5 consensus & Honeypot Shield!`);
         soundFx.playApproval();
 
-        // If no active position, prompt user confirmation dialog before opening (Fix #12)
-        if (!activePosition) {
-          setPendingSnipeConfirmation({
-            token: foundToken,
-            consensus,
-            solInvest: 0.62
-          });
-          setSniperStatus(`Menunggu konfirmasi buka posisi ${foundToken.symbol}...`);
-          setTimeout(() => setSniperStatus(null), 8000);
-        }
+        // In Signal Terminal, manual lookup generates verified signal without snipe popup
+        setPendingSnipeConfirmation(null);
+        setSniperStatus(`✅ Sinyal lolos: ${foundToken.symbol} siap di feed sinyal!`);
+        setTimeout(() => setSniperStatus(null), 8000);
       } else {
         appendLog('RISK', 'WARN', `Manual target ${foundToken.symbol} VETOED by ${consensus.vetoAgent}: ${consensus.vetoReason}`);
         soundFx.playVeto();
@@ -1987,128 +1981,11 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
           console.warn('[SignalBroadcast] Error generating signal:', sigErr);
         }
 
-        // 1. Synchronous Mutex Guard Check & Anti-Spam Repeat Buy Cooldown
-        if (positionMutex.isPositionOpen() || isPositionOpenRef.current || activePositionRef.current !== null || isAutoSnipingRef.current) {
-          appendLog(
-            'RISK',
-            'WARN',
-            `[MUTEX GUARD ACTIVE] Token ${consensus.token.symbol} lolos 5/5 konsensus, namun Single Position Mutex Guard sedang MENGUNCI slot. Pembelian otomatis ditahan.`
-          );
-          return;
-        }
-
-        if (positionMutex.isCooldownActive(consensus.token.mint)) {
-          appendLog(
-            'RISK',
-            'WARN',
-            `[ANTI-SPAM COOLDOWN] Token ${consensus.token.symbol} baru saja dibeli/dijual. Mencegah infinite buy loop.`
-          );
-          return;
-        }
-
-        // 2. Auto-Snipe Guard & Daily Limits
-        // ─────────────────────────────────────────────────────────────────────
-        // KRITIS: autoSnipeConfig.isEnabled HARUS true agar bot eksekusi beli.
-        // Default-nya false (safety). Aktifkan via AutoSnipe Modal (tekan N).
-        // ─────────────────────────────────────────────────────────────────────
-        if (!autoSnipeConfig.isEnabled) {
-          appendLog(
-            'EXECUTION',
-            'WARN',
-            `⚠️ [AUTO-SNIPE NON-AKTIF] ${consensus.token.symbol} lolos 5/5 konsensus NAMUN auto-snipe dimatikan. Tekan [N] buka AutoSnipe Modal → aktifkan toggle "Aktifkan Auto-Snipe" untuk mulai beli otomatis.`
-          );
-          return;
-        }
-
-        if (engineStatus !== 'AUTONOMOUS') {
-          return;
-        }
-
-        if (autoSnipeConfig.dailyTradesExecuted >= autoSnipeConfig.maxDailyTrades) {
-          appendLog('EXECUTION', 'WARN', `[AUTO-SNIPE] Batas harian ${autoSnipeConfig.maxDailyTrades} transaksi tercapai.`);
-          return;
-        }
-
-        // 3. Dynamic Fractional Kelly Sizing (PRD Section 6)
-        let solInvest = autoSnipeConfig.buyAmountSol || agentConfig.maxBuyAmountSol || 0.1;
-        const isKellyActive = agentConfig.useKellySizing || autoSnipeConfig.useKellySizing;
-
-        if (isKellyActive) {
-          const currentBal = telemetry.currentBalanceSol || walletState.balanceSol || 5;
-          const totalPastTrades = telemetry.winCount + telemetry.lossCount;
-          const liveWinRate = totalPastTrades > 0 ? telemetry.winCount / totalPastTrades : 0.60;
-          const p = Math.max(0.45, Math.min(0.85, liveWinRate));
-          const b = 3.0; // 3.0R target payoff ratio
-          const fullKelly = Math.max(0, (p * (b + 1) - 1) / b);
-          const fracKelly = 0.25 * fullKelly; // Quarter-Kelly
-          const kellyAmountSol = currentBal * fracKelly;
-          const maxCapSol = currentBal * 0.062;
-          solInvest = +(Math.min(maxCapSol, Math.max(0.02, kellyAmountSol))).toFixed(3);
-        }
-
-        // 4. Ultra-Low Tip Guard (Prevent fee drainage)
-        const baseTier = autoSnipeConfig.jitoTipTier || agentConfig.jitoTipTier || 'ECONOMY';
-        const tipSol = Math.min(0.000025, JITO_TIP_TIERS[baseTier] || 0.000010);
-
-        // =====================================================================
-        // 5. UNIFIED EXECUTION PIPELINE — Single Path via ExecutionManager
-        //    (Eliminates dual-path race condition that caused multiple positions
-        //     and infinite buy loops)
-        // =====================================================================
-        if (!executionManagerRef.current) return;
-
-        const consensusScore = consensus.moonshot?.moonshotScore || Math.round(consensus.token.narrativeCosineSim * 100);
-
-        const isDryRun = walletState.mode === 'PAPER_TRADING' || isSimulationMode;
-
         appendLog(
-          'EXECUTION',
+          'SCAN',
           'SUCCESS',
-          `🚀 [AUTONOMOUS PIPELINE] ${consensus.token.symbol} lolos semua filter (Skor: ${consensusScore}%). Mengirim ke ExecutionManager.triggerBuy() — ${isDryRun ? 'DRY-RUN (SIMULASI)' : 'ON-CHAIN REAL LIVE'}...`
+          `🎯 [SIGNAL LIVE] $${consensus.token.symbol} disiarkan. Cek tab Sinyal Alpha Live untuk target Entry, TP, dan SL.`
         );
-
-        // Lock isAutoSnipingRef SEBELUM await — ini mencegah loop berikutnya masuk
-        isAutoSnipingRef.current = true;
-        setTelemetry((prev) => ({ ...prev, activePositionLocked: true }));
-
-        // ExecutionManager.triggerBuy() adalah SATU-SATUNYA jalur eksekusi.
-        // Ia menangani: Mutex lock, honeypot check, server-side signing (Keypair),
-        // Jito MEV submission, confirmTransaction, dan memanggil onPositionOpened callback.
-        // Callback onPositionOpened di atas akan meng-update semua refs + React state.
-        executionManagerRef.current
-          .triggerBuy(consensus.token, solInvest, {
-            isSimulation: isDryRun,
-            slippageBps: Math.round((agentConfig.slippagePct || 1.5) * 100),
-            jitoTipSol: tipSol,
-            targetTpPct: agentConfig.takeProfitPct ?? autoSnipeConfig.takeProfitPct ?? 100,
-            stopLossPct: agentConfig.stopLossPct ?? autoSnipeConfig.stopLossPct ?? -25,
-            trailingStopLossPct: agentConfig.trailingStopLossPct ?? autoSnipeConfig.trailingStopLossPct ?? 15,
-            maxHoldTimeSec: agentConfig.maxHoldTimeSec ?? autoSnipeConfig.maxHoldTimeSec ?? 180,
-            tradingStyle: autoSnipeConfig.tradingStyle || 'SCALPING',
-            ttlUnlimited: autoSnipeConfig.ttlUnlimited ?? false,
-            autoSellEnabled: autoSnipeConfig.autoSellEnabled ?? true
-          })
-          .then((result) => {
-            if (result.success && result.position) {
-              setAutoSnipeConfig((prev) => ({ ...prev, dailyTradesExecuted: prev.dailyTradesExecuted + 1 }));
-              appendLog('EXECUTION', 'SUCCESS', `✅ [POSISI DIBUKA] ${consensus.token.symbol} | ${isDryRun ? 'SimTx' : 'Tx'}: ${result.signature?.slice(0, 16)}...`);
-            } else {
-              // triggerBuy failed internally — onError callback handles ref cleanup
-              appendLog('EXECUTION', 'DANGER', `❌ ExecutionManager.triggerBuy() gagal: ${result.error}`);
-              isAutoSnipingRef.current = false;
-              isPositionOpenRef.current = false;
-              setTelemetry((prev) => ({ ...prev, activePositionLocked: false }));
-            }
-          })
-          .catch((err: any) => {
-            appendLog('EXECUTION', 'DANGER', `❌ Auto-buy tidak terduga gagal untuk ${consensus.token.symbol}: ${err.message}`);
-            isAutoSnipingRef.current = false;
-            isPositionOpenRef.current = false;
-            setTelemetry((prev) => ({ ...prev, activePositionLocked: false }));
-          });
-        // PENTING: jangan await di sini — biarkan loop interval berlanjut
-        // isAutoSnipingRef = true akan memblokir iterasi berikutnya sampai
-        // onPositionOpened atau onError callback mereset-nya.
       }
     }, 2800);
 

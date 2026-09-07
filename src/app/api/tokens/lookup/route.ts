@@ -146,9 +146,9 @@ export async function GET(req: NextRequest) {
     if (!solanaPair) {
       const isPump = cleanMint.toLowerCase().endsWith('pump');
       const fallbackSignal: TokenSignal = {
-        id: `SNIPE-${cleanMint.slice(0, 6)}`,
+        id: `SIGNAL-${cleanMint.slice(0, 6)}`,
         mint: cleanMint,
-        symbol: '$SNIPED',
+        symbol: '$ALPHA',
         name: `Token ${cleanMint.slice(0, 8)}...`,
         platform: isPump ? 'Pump.fun' : 'Raydium',
         initialLpUsd: 12500,
@@ -159,7 +159,7 @@ export async function GET(req: NextRequest) {
         volumeDelta15s: 4.2,
         uniqueBuyersCount: 7,
         narrativeCosineSim: 0.88,
-        narrativeTheme: 'Manual Sniper Target',
+        narrativeTheme: 'Manual Alpha Signal Target',
         priceSol: 0.000028,
         detectedAt: Date.now(),
         isRealData: true,

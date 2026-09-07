@@ -221,7 +221,7 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
               }`}
             >
               <Target className="w-3.5 h-3.5" />
-              <span>Sniper Slot</span>
+              <span>Posisi Aktif</span>
               {activePosition && (
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
               )}
@@ -510,10 +510,10 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
               <div className="p-6 text-center space-y-3 bg-zinc-950/40 rounded-xl border border-zinc-800/60 font-mono">
                 <Clock className="w-8 h-8 mx-auto text-zinc-600 animate-pulse" />
                 <p className="font-bold text-zinc-300 text-xs uppercase tracking-wider">
-                  Tidak Ada Posisi Terbuka di Sniper Slot
+                  Tidak Ada Posisi Terbuka
                 </p>
                 <p className="text-[11px] text-zinc-500 max-w-sm mx-auto leading-relaxed">
-                  Single Position Mutex Guard siap mengeksekusi order baru saat 5/5 konsensus agen setuju.
+                  Engine siap memantau dan mencatat posisi saat ada sinyal yang dieksekusi.
                 </p>
 
                 {memeHoldings.length > 0 && (

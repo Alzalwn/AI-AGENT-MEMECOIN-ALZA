@@ -32,7 +32,7 @@ export const ManualMintSniper: React.FC<ManualMintSniperProps> = ({ onOpenJitoTr
           <Crosshair className="w-4 h-4" />
         </div>
         <span className="text-[11px] font-bold tracking-wider text-zinc-400 uppercase whitespace-nowrap hidden sm:inline">
-          SNIPE MINT CA:
+          PINDAI TOKEN CA:
         </span>
         <div className="relative flex-1">
           <input

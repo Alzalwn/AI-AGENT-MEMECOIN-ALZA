@@ -373,7 +373,7 @@ export const JupiterSwapModal: React.FC<JupiterSwapModalProps> = ({
                 Browser Chrome/Safari HP <strong>tidak memiliki ekstensi Phantom</strong>. Agar pop-up tanda tangan & saldo asli SOL Anda bisa Approve, website ini wajib dibuka di <strong>Browser dalam aplikasi Phantom</strong> (ikon bola dunia 🌐 di kanan bawah Phantom).
               </p>
               <a
-                href={`https://phantom.app/ul/browse/${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : 'https://alzasniped.my.id')}`}
+                href={`https://phantom.app/ul/browse/${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : 'https://alzasignal.my.id')}`}
                 className="inline-flex items-center justify-center gap-2 w-full py-2 px-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs shadow-lg transition-all"
               >
                 <span>Buka Otomatis di Aplikasi Phantom</span>

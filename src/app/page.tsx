@@ -33,7 +33,7 @@ import JitoBundleTrackerModal from '../components/JitoBundleTrackerModal';
 import KeyboardShortcutsModal from '../components/KeyboardShortcutsModal';
 import RpcManagerModal from '../components/RpcManagerModal';
 import SolConverterModal from '../components/SolConverterModal';
-import ConfirmSnipeModal from '../components/ConfirmSnipeModal';
+// ConfirmSnipeModal removed (sniping feature disabled in favor of signal terminal)
 import ChangePasswordModal from '../components/ChangePasswordModal';
 import SmartMoneyModal from '../components/SmartMoneyModal';
 import { VpsBotModal } from '../components/VpsBotModal';
@@ -502,8 +502,6 @@ function TerminalAppInner() {
           appendLog('SYSTEM', 'SUCCESS', 'Master Admin Passcode berhasil diubah via web terminal.');
         }}
       />
-
-      <ConfirmSnipeModal />
 
       <SmartMoneyModal
         isOpen={isSmartMoneyOpen}

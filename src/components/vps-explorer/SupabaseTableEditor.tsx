@@ -259,7 +259,7 @@ export const SupabaseTableEditor: React.FC<SupabaseTableEditorProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `supabase_sniping_history_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `supabase_signals_history_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -277,7 +277,7 @@ export const SupabaseTableEditor: React.FC<SupabaseTableEditorProps> = ({
           <span className="text-zinc-600">/</span>
           <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-[#3ecf8e]/10 border border-[#3ecf8e]/30 text-xs font-mono text-[#3ecf8e] font-semibold">
             <TableIcon className="w-3.5 h-3.5" />
-            <span>sniping_history</span>
+            <span>signals_history</span>
           </div>
           <span className="text-[11px] font-mono text-zinc-500 hidden sm:inline">
             ({filteredRecords.length} rows)

@@ -297,7 +297,7 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               onClick={onOpenVpsBot}
               className="hidden lg:flex p-2 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 hover:text-purple-200 transition-all cursor-pointer items-center gap-1.5 text-xs shadow-[0_0_10px_rgba(168,85,247,0.15)]"
-              title="VPS 24/7 Autonomous Sniper Bot (Hot Wallet & PM2)"
+              title="VPS 24/7 Autonomous Signal Bot (Hot Wallet & PM2)"
               aria-label="Buka VPS Bot Status"
             >
               <Server className="w-4 h-4 text-purple-400" />
