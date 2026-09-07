@@ -219,6 +219,9 @@ export interface WalletState {
   balanceSol: number;
   walletName: 'Phantom' | 'Solflare' | 'Backpack' | null;
   mode: 'PAPER_TRADING' | 'LIVE_ON_CHAIN';
+  balanceFlashState?: 'up' | 'down' | 'neutral';
+  isBalanceLive?: boolean;
+  lastBalanceUpdate?: number;
 }
 
 export interface AutoSnipeConfig {

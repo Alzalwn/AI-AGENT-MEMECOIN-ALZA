@@ -106,11 +106,11 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [engineStatus, setEngineStatusState] = useState<'AUTONOMOUS' | 'IDLE' | 'PAUSED'>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('GT_ENGINE_STATUS');
-      if (saved === 'AUTONOMOUS' || saved === 'IDLE' || saved === 'PAUSED') {
+      if (saved === 'AUTONOMOUS' || saved === 'IDLE') {
         return saved;
       }
     }
-    return 'PAUSED'; // Safety default: never start auto-buying without explicit user action
+    return 'AUTONOMOUS'; // Langsung aktif otomatis (Autonomous Bot)
   });
 
   const setEngineStatus = useCallback((status: 'AUTONOMOUS' | 'IDLE' | 'PAUSED' | ((prev: 'AUTONOMOUS' | 'IDLE' | 'PAUSED') => 'AUTONOMOUS' | 'IDLE' | 'PAUSED')) => {
@@ -139,6 +139,12 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (saved) {
           const parsed = JSON.parse(saved);
           if (parsed && parsed.token && parsed.token.mint) {
+            const ageSec = (Date.now() - (parsed.entryTimestamp || 0)) / 1000;
+            // Jika posisi lama berstatus CLOSED, atau TP 10000% dari sesi testing lama (>5 menit lalu), jangan kunci slot
+            if (parsed.status === 'CLOSED' || (parsed.pnlPct >= 100 && ageSec > 300)) {
+              localStorage.removeItem('GT_ACTIVE_POSITION');
+              return null;
+            }
             positionMutex.restoreLock(parsed.token.mint);
             return parsed;
           }
@@ -355,7 +361,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const [autoSnipeConfig, setAutoSnipeConfig] = useState<AutoSnipeConfig>(() => {
     const defaults: AutoSnipeConfig = {
-      isEnabled: false, // Default OFF to prevent unwanted automatic transactions
+      isEnabled: true, // AUTO-SNIPE ON OTOMATIS: Bot langsung eksekusi beli saat 5/5 APPROVED!
       buyAmountSol: 0.02, // Safe small buy amount
       minGrokViralityScore: 85,
       minLiquidityUsd: 10000,
@@ -377,7 +383,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (saved) {
           const parsed = JSON.parse(saved);
           if (parsed && typeof parsed === 'object') {
-            return { ...defaults, ...parsed };
+            return { ...defaults, ...parsed, isEnabled: true };
           }
         }
       } catch {}
@@ -568,7 +574,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
   }, [appendLog]);
 
-  // Instant On-Chain Wallet Balance Refresh (Requirement 2)
+  // Instant On-Chain Wallet Balance Refresh (manual fallback)
   const refreshWalletBalance = useCallback(async () => {
     const fullKey =
       walletState.fullPublicKey ||
@@ -617,6 +623,178 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [walletState.fullPublicKey, appendLog]);
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // HOT WALLET REAL-TIME BALANCE — connection.onAccountChange() WebSocket
+  // Event-driven. Tidak ada polling. Sesuai arsitektur @solana/web3.js.
+  // Lifecycle: getBalance() awal saat mount, onAccountChange() untuk streaming real-time,
+  // dan cleanup otomatis via removeAccountChangeListener() saat unmount/ganti wallet.
+  // ═══════════════════════════════════════════════════════════════════════════
+  const onChainBalanceSubIdRef = useRef<number | null>(null);
+  const onChainConnectionRef = useRef<Connection | null>(null);
+  const balanceFlashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const fullKey =
+      walletState.fullPublicKey ||
+      (typeof window !== 'undefined'
+        ? (window as any).phantom?.solana?.publicKey?.toString() ||
+          (window as any).solflare?.publicKey?.toString() ||
+          (window as any).backpack?.publicKey?.toString()
+        : null);
+
+    if (!fullKey || fullKey.length < 32) {
+      return;
+    }
+
+    const rpcUrl =
+      process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
+      'https://mainnet.helius-rpc.com/?api-key=b1346052-9ac3-47b8-89ec-2ce7e88fa91b';
+
+    // Gunakan Connection terpisah dengan wsEndpoint eksplisit
+    const wsUrl = rpcUrl.replace('https://', 'wss://').replace('http://', 'ws://');
+    const subscriptionConnection = new Connection(rpcUrl, {
+      commitment: 'confirmed',
+      wsEndpoint: wsUrl
+    });
+    onChainConnectionRef.current = subscriptionConnection;
+
+    let subId: number | null = null;
+    let isCleaned = false;
+
+    const subscribe = async () => {
+      // Validasi PublicKey sebelum query / subscribe
+      let pubKey: PublicKey;
+      try {
+        pubKey = new PublicKey(fullKey);
+      } catch {
+        appendLog('SYSTEM', 'WARN', `⚠️ Public key wallet tidak valid untuk subscription: ${fullKey.slice(0, 8)}`);
+        return;
+      }
+
+      // 1. Ambil saldo awal langsung dari blockchain via connection.getBalance('confirmed')
+      try {
+        const initialLamports = await subscriptionConnection.getBalance(pubKey, 'confirmed');
+        if (!isCleaned) {
+          const initialSol = +(initialLamports / 1_000_000_000).toFixed(4);
+          setWalletState((prev) => {
+            const updated: WalletState = {
+              ...prev,
+              isConnected: true,
+              fullPublicKey: fullKey,
+              publicKey: prev.publicKey || `${fullKey.slice(0, 4)}...${fullKey.slice(-4)}`,
+              balanceSol: initialSol,
+              isBalanceLive: true
+            };
+            if (typeof window !== 'undefined') {
+              try { localStorage.setItem('GT_WALLET_STATE', JSON.stringify(updated)); } catch {}
+            }
+            return updated;
+          });
+          setTelemetry((prev) => ({ ...prev, currentBalanceSol: initialSol }));
+        }
+      } catch (err: any) {
+        console.warn('[TradingContext] getBalance awal via RPC gagal:', err.message);
+      }
+
+      // 2. Daftarkan onAccountChange WebSocket subscription
+      try {
+        subId = subscriptionConnection.onAccountChange(
+          pubKey,
+          (accountInfo) => {
+            if (isCleaned) return;
+
+            // Konversi lamports → SOL (1 SOL = 10^9 lamports)
+            const newBalanceSol = +(accountInfo.lamports / 1_000_000_000).toFixed(4);
+
+            setWalletState((prev) => {
+              const oldBal = prev.balanceSol;
+              // Hanya update jika ada perubahan nyata (> 0.000001 SOL)
+              if (Math.abs(newBalanceSol - oldBal) < 0.000001) return prev;
+
+              const flashDir: 'up' | 'down' = newBalanceSol > oldBal ? 'up' : 'down';
+
+              // Reset animasi flash setelah 1200ms
+              if (balanceFlashTimeoutRef.current) {
+                clearTimeout(balanceFlashTimeoutRef.current);
+              }
+              balanceFlashTimeoutRef.current = setTimeout(() => {
+                setWalletState((current) => ({
+                  ...current,
+                  balanceFlashState: 'neutral'
+                }));
+                balanceFlashTimeoutRef.current = null;
+              }, 1200);
+
+              const updated: WalletState = {
+                ...prev,
+                balanceSol: newBalanceSol,
+                balanceFlashState: flashDir,
+                isBalanceLive: true,
+                lastBalanceUpdate: Date.now()
+              };
+
+              if (typeof window !== 'undefined') {
+                try { localStorage.setItem('GT_WALLET_STATE', JSON.stringify(updated)); } catch {}
+              }
+              return updated;
+            });
+
+            setTelemetry((prev) => ({
+              ...prev,
+              currentBalanceSol: newBalanceSol
+            }));
+
+            appendLog(
+              'SYSTEM',
+              'INFO',
+              `🔴 [ON-CHAIN LIVE] Saldo hot wallet diperbarui instan: ${newBalanceSol.toFixed(4)} SOL (${accountInfo.lamports.toLocaleString()} lamports)`
+            );
+          },
+          'confirmed'
+        );
+
+        onChainBalanceSubIdRef.current = subId;
+
+        if (!isCleaned) {
+          setWalletState((prev) => ({ ...prev, isBalanceLive: true }));
+          appendLog(
+            'SYSTEM',
+            'SUCCESS',
+            `🔴 [LIVE BALANCE LISTENER] onAccountChange WebSocket aktif untuk ${fullKey.slice(0, 4)}...${fullKey.slice(-4)} | Mode: real-time (bukan polling)`
+          );
+        }
+      } catch (wsErr: any) {
+        if (!isCleaned) {
+          setWalletState((prev) => ({ ...prev, isBalanceLive: false }));
+          console.warn('[TradingContext] onAccountChange subscription gagal, fallback ke manual refresh:', wsErr.message);
+          appendLog(
+            'SYSTEM',
+            'WARN',
+            `⚠️ [BALANCE LISTENER] WebSocket gagal. Saldo akan diperbarui setelah setiap transaksi (fallback mode).`
+          );
+        }
+      }
+    };
+
+    subscribe();
+
+    // CLEANUP: Hapus listener saat wallet disconnect atau publicKey berubah
+    return () => {
+      isCleaned = true;
+      if (balanceFlashTimeoutRef.current) {
+        clearTimeout(balanceFlashTimeoutRef.current);
+        balanceFlashTimeoutRef.current = null;
+      }
+      if (subId !== null && subscriptionConnection) {
+        subscriptionConnection
+          .removeAccountChangeListener(subId)
+          .catch((e) => console.warn('[TradingContext] removeAccountChangeListener error:', e));
+        onChainBalanceSubIdRef.current = null;
+        onChainConnectionRef.current = null;
+      }
+    };
+  }, [walletState.fullPublicKey, appendLog]);
+
   // Wallet Holdings State (Tokens held in user's on-chain wallet)
   const [walletHoldings, setWalletHoldings] = useState<TokenHolding[]>([]);
   const [isHoldingsLoading, setIsHoldingsLoading] = useState<boolean>(false);
@@ -645,6 +823,28 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
           setWalletHoldings(data.holdings);
           setTotalHoldingsValueUsd(data.totalValueUsd || 0);
           setTotalHoldingsValueSol(data.totalValueSol || 0);
+
+          // Auto-reconcile phantom / ghost active position
+          const currentPos = activePositionRef.current;
+          if (currentPos && walletState.mode === 'LIVE_ON_CHAIN' && !isSimulationMode) {
+            const holding = data.holdings.find((h: any) => h.mint === currentPos.token.mint);
+            const posAgeSec = (Date.now() - currentPos.entryTimestamp) / 1000;
+            if ((!holding || holding.uiAmount <= 0) && posAgeSec > 20) {
+              appendLog(
+                'SYSTEM',
+                'WARN',
+                `ℹ️ [AUTO-RECONCILE] Posisi ${currentPos.token.symbol} tidak ditemukan di dompet on-chain (saldo 0). Posisi dibersihkan & Mutex slot dibuka kembali.`
+              );
+              positionMutex.releaseLock(currentPos.token.mint, 0);
+              setActivePosition(null);
+              activePositionRef.current = null;
+              isPositionOpenRef.current = false;
+              if (typeof window !== 'undefined') {
+                try { localStorage.removeItem('GT_ACTIVE_POSITION'); } catch {}
+              }
+              setTelemetry((prev) => ({ ...prev, activePositionLocked: false }));
+            }
+          }
         }
       }
     } catch (err: any) {
@@ -652,7 +852,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } finally {
       setIsHoldingsLoading(false);
     }
-  }, [walletState.fullPublicKey]);
+  }, [walletState.fullPublicKey, walletState.mode, isSimulationMode, appendLog, setActivePosition]);
 
   const sellTokenHolding = useCallback(
     async (mint: string, percentage: number = 100): Promise<boolean> => {
@@ -1080,12 +1280,42 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
               isSoldOnChain = false;
             }
           } else {
-            appendLog('EXECUTION', 'WARN', `Sell on-chain gagal: ${sellData.error || 'Unknown error'}. Posisi tetap berstatus OPEN.`);
-            isSoldOnChain = false;
+            const errStr = sellData?.error || '';
+            const isOrphan =
+              errStr.includes('tidak memiliki token account') ||
+              errStr.includes('Saldo token di dompet 0') ||
+              errStr.includes('sudah terjual');
+
+            if (isOrphan) {
+              appendLog(
+                'EXECUTION',
+                'WARN',
+                `ℹ️ [ORPHAN POSITION AUTO-CLEARED] Token ${pos.token.symbol} tidak ditemukan di dompet on-chain (saldo 0). Posisi ditutup & Mutex slot dibebaskan.`
+              );
+              isSoldOnChain = true;
+            } else {
+              appendLog('EXECUTION', 'WARN', `Sell on-chain gagal: ${errStr || 'Unknown error'}. Posisi tetap berstatus OPEN.`);
+              isSoldOnChain = false;
+            }
           }
         } catch (sellErr: any) {
-          appendLog('EXECUTION', 'DANGER', `❌ Error saat executeSell: ${sellErr.message}. Posisi tetap berstatus OPEN.`);
-          isSoldOnChain = false;
+          const errStr = sellErr?.message || '';
+          const isOrphan =
+            errStr.includes('tidak memiliki token account') ||
+            errStr.includes('Saldo token di dompet 0') ||
+            errStr.includes('sudah terjual');
+
+          if (isOrphan) {
+            appendLog(
+              'EXECUTION',
+              'WARN',
+              `ℹ️ [ORPHAN POSITION AUTO-CLEARED] Token ${pos.token.symbol} tidak ada di dompet on-chain. Posisi ditutup & Mutex dibebaskan.`
+            );
+            isSoldOnChain = true;
+          } else {
+            appendLog('EXECUTION', 'DANGER', `❌ Error saat executeSell: ${errStr}. Posisi tetap berstatus OPEN.`);
+            isSoldOnChain = false;
+          }
         }
       }
     } else {
@@ -1219,6 +1449,25 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (!activePositionRef.current) return;
     executeSell(activePositionRef.current, 'Manual Full Dump (100%)', 100);
   }, [executeSell]);
+
+  const resetPositionMutex = useCallback(() => {
+    const currentMint = activePositionRef.current?.token.mint;
+    positionMutex.releaseLock(currentMint, 0);
+    setActivePosition(null);
+    activePositionRef.current = null;
+    isPositionOpenRef.current = false;
+    priceSamplesRef.current = [];
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('GT_ACTIVE_POSITION');
+      } catch {}
+    }
+    setTelemetry((prev) => ({
+      ...prev,
+      activePositionLocked: false
+    }));
+    appendLog('SYSTEM', 'WARN', '🔓 [MUTEX RESET] Mutex posisi aktif berhasil di-reset & dikosongkan. Slot sniper kini siap untuk koin baru.');
+  }, [setActivePosition, appendLog]);
 
   // Snipe Manual Mint CA
   const snipeManualMint = useCallback(async (mint: string) => {
@@ -1642,7 +1891,20 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
 
         // 2. Auto-Snipe Guard & Daily Limits
-        if (!autoSnipeConfig.isEnabled || engineStatus !== 'AUTONOMOUS') {
+        // ─────────────────────────────────────────────────────────────────────
+        // KRITIS: autoSnipeConfig.isEnabled HARUS true agar bot eksekusi beli.
+        // Default-nya false (safety). Aktifkan via AutoSnipe Modal (tekan N).
+        // ─────────────────────────────────────────────────────────────────────
+        if (!autoSnipeConfig.isEnabled) {
+          appendLog(
+            'EXECUTION',
+            'WARN',
+            `⚠️ [AUTO-SNIPE NON-AKTIF] ${consensus.token.symbol} lolos 5/5 konsensus NAMUN auto-snipe dimatikan. Tekan [N] buka AutoSnipe Modal → aktifkan toggle "Aktifkan Auto-Snipe" untuk mulai beli otomatis.`
+          );
+          return;
+        }
+
+        if (engineStatus !== 'AUTONOMOUS') {
           return;
         }
 
@@ -1681,10 +1943,12 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
         const consensusScore = consensus.moonshot?.moonshotScore || Math.round(consensus.token.narrativeCosineSim * 100);
 
+        const isDryRun = walletState.mode === 'PAPER_TRADING' || isSimulationMode;
+
         appendLog(
           'EXECUTION',
           'SUCCESS',
-          `🚀 [AUTONOMOUS PIPELINE] ${consensus.token.symbol} lolos semua filter (Skor: ${consensusScore}%). Mengirim ke ExecutionManager.triggerBuy() — ${isSimulationMode ? 'DRY-RUN' : 'ON-CHAIN LIVE'}...`
+          `🚀 [AUTONOMOUS PIPELINE] ${consensus.token.symbol} lolos semua filter (Skor: ${consensusScore}%). Mengirim ke ExecutionManager.triggerBuy() — ${isDryRun ? 'DRY-RUN (SIMULASI)' : 'ON-CHAIN REAL LIVE'}...`
         );
 
         // Lock isAutoSnipingRef SEBELUM await — ini mencegah loop berikutnya masuk
@@ -1697,7 +1961,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         // Callback onPositionOpened di atas akan meng-update semua refs + React state.
         executionManagerRef.current
           .triggerBuy(consensus.token, solInvest, {
-            isSimulation: isSimulationMode,
+            isSimulation: isDryRun,
             slippageBps: Math.round((agentConfig.slippagePct || 1.5) * 100),
             jitoTipSol: tipSol,
             targetTpPct: agentConfig.takeProfitPct || 100,
@@ -1708,7 +1972,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
           .then((result) => {
             if (result.success && result.position) {
               setAutoSnipeConfig((prev) => ({ ...prev, dailyTradesExecuted: prev.dailyTradesExecuted + 1 }));
-              appendLog('EXECUTION', 'SUCCESS', `✅ [POSISI DIBUKA] ${consensus.token.symbol} | ${isSimulationMode ? 'SimTx' : 'Tx'}: ${result.signature?.slice(0, 16)}...`);
+              appendLog('EXECUTION', 'SUCCESS', `✅ [POSISI DIBUKA] ${consensus.token.symbol} | ${isDryRun ? 'SimTx' : 'Tx'}: ${result.signature?.slice(0, 16)}...`);
             } else {
               // triggerBuy failed internally — onError callback handles ref cleanup
               appendLog('EXECUTION', 'DANGER', `❌ ExecutionManager.triggerBuy() gagal: ${result.error}`);
@@ -2041,98 +2305,12 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   }, [appendLog]);
 
-  // Real-Time Hot Wallet Balance Synchronization via Solana WebSocket connection.onAccountChange
+  // Sync on-chain token holdings when wallet connects or switches
   useEffect(() => {
-    const fullKey =
-      walletState.fullPublicKey ||
-      (typeof window !== 'undefined'
-        ? (window as any).phantom?.solana?.publicKey?.toString() ||
-          (window as any).solflare?.publicKey?.toString() ||
-          (window as any).backpack?.publicKey?.toString()
-        : null);
-
-    if (!fullKey) return;
-
-    let subId: number | null = null;
-    let rpcConnection: Connection | null = null;
-
-    try {
-      const rpcUrl =
-        process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
-        'https://mainnet.helius-rpc.com/?api-key=b1346052-9ac3-47b8-89ec-2ce7e88fa91b';
-      rpcConnection = new Connection(rpcUrl, 'processed');
-      const pubkey = new PublicKey(fullKey);
-
-      // 1. Initial fast on-chain balance query
-      rpcConnection
-        .getBalance(pubkey)
-        .then((lamports) => {
-          const liveBal = +(lamports / 1_000_000_000).toFixed(4);
-          setWalletState((prev) => {
-            const updated: WalletState = {
-              ...prev,
-              isConnected: true,
-              fullPublicKey: fullKey,
-              publicKey: `${fullKey.slice(0, 4)}...${fullKey.slice(-4)}`,
-              balanceSol: liveBal,
-              walletName: prev.walletName || 'Phantom',
-              mode: 'LIVE_ON_CHAIN'
-            };
-            if (typeof window !== 'undefined') {
-              localStorage.setItem('GT_WALLET_STATE', JSON.stringify(updated));
-            }
-            return updated;
-          });
-          setTelemetry((prev) => ({ ...prev, currentBalanceSol: liveBal }));
-        })
-        .catch(() => {});
-
-      // 2. Sub-second WebSocket Listener via connection.onAccountChange
-      subId = rpcConnection.onAccountChange(
-        pubkey,
-        (accountInfo) => {
-          const liveBal = +(accountInfo.lamports / 1_000_000_000).toFixed(4);
-          setWalletState((prev) => {
-            const updated: WalletState = {
-              ...prev,
-              isConnected: true,
-              fullPublicKey: fullKey,
-              publicKey: `${fullKey.slice(0, 4)}...${fullKey.slice(-4)}`,
-              balanceSol: liveBal,
-              walletName: prev.walletName || 'Phantom',
-              mode: 'LIVE_ON_CHAIN'
-            };
-            if (typeof window !== 'undefined') {
-              localStorage.setItem('GT_WALLET_STATE', JSON.stringify(updated));
-            }
-            return updated;
-          });
-          setTelemetry((prev) => ({
-            ...prev,
-            currentBalanceSol: liveBal
-          }));
-          appendLog(
-            'SYSTEM',
-            'INFO',
-            `⚡ [WEBSOCKET BALANCE SYNC] Saldo hot wallet diperbarui instan: ${liveBal} SOL`
-          );
-        },
-        'processed'
-      );
-    } catch (err: any) {
-      console.warn('Gagal mengaktifkan onAccountChange WebSocket:', err.message);
+    if (walletState.fullPublicKey) {
+      refreshHoldings();
     }
-
-    refreshHoldings();
-
-    return () => {
-      if (subId !== null && rpcConnection) {
-        try {
-          rpcConnection.removeAccountChangeListener(subId);
-        } catch {}
-      }
-    };
-  }, [walletState.isConnected, walletState.fullPublicKey, refreshHoldings, appendLog]);
+  }, [walletState.fullPublicKey, refreshHoldings]);
 
   const value: TradingContextType = {
     engineStatus,
@@ -2165,6 +2343,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     executeSell,
     quickSellPosition,
     manualExitPosition,
+    resetPositionMutex,
     snipeManualMint,
     confirmSnipe,
     cancelSnipe,

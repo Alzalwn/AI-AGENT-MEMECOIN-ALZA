@@ -95,6 +95,7 @@ export interface TradingActions {
   emergencyKillSwitch: () => void;
   quickSellPosition: (percentage: number) => void;
   manualExitPosition: () => void;
+  resetPositionMutex: () => void;
   executeSell: (pos: ActivePosition, reason: string, percentage?: number) => Promise<void>;
   snipeManualMint: (mint: string) => Promise<void>;
   confirmSnipe: () => void;

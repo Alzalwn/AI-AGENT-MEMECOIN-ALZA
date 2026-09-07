@@ -39,6 +39,7 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
     activePosition,
     quickSellPosition,
     manualExitPosition,
+    resetPositionMutex,
     agentConfig,
     updateAgentConfig,
     appendLog,
@@ -145,9 +146,9 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
           {activePosition && (
             <button
               type="button"
-              onClick={() => manualExitPosition()}
+              onClick={() => resetPositionMutex()}
               className="text-[10px] px-2 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 transition-all font-bold cursor-pointer flex items-center gap-1"
-              title="Tutup posisi ini dan kosongkan slot mutex"
+              title="Tutup paksa posisi ini dan kosongkan slot mutex agar bot bisa mencari koin baru"
             >
               <RotateCcw className="w-3 h-3" />
               <span className="hidden sm:inline">Reset Mutex</span>
@@ -462,7 +463,7 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
                 </div>
 
                 {/* Quick Action Button Bar */}
-                <div className="grid grid-cols-3 gap-2 pt-1">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
                   <Button
                     variant="outline"
                     size="sm"
@@ -480,6 +481,17 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
                     glow
                   >
                     Dump 100%
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => resetPositionMutex()}
+                    className="border-rose-500/40 text-rose-400 hover:bg-rose-500/10"
+                    leftIcon={<RotateCcw className="w-3.5 h-3.5 text-rose-400" />}
+                    title="Kosongkan slot mutex jika posisi macet atau saldo di dompet 0"
+                  >
+                    Reset Mutex
                   </Button>
 
                   {onSharePnl && (

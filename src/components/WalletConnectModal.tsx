@@ -290,7 +290,15 @@ export default function WalletConnectModal({
               </div>
               <div>
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-terminal-muted block">RPC BALANCE</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-terminal-muted block">RPC BALANCE</span>
+                    {walletState.isBalanceLive && (
+                      <span className="flex items-center gap-1 text-[8px] font-bold text-terminal-green bg-terminal-green/10 border border-terminal-green/30 px-1 py-0.2 rounded-full">
+                        <span className="w-1.5 h-1.5 rounded-full bg-terminal-green animate-ping" />
+                        LIVE
+                      </span>
+                    )}
+                  </div>
                   <button
                     type="button"
                     onClick={refreshBalance}
@@ -302,7 +310,15 @@ export default function WalletConnectModal({
                     <span className="text-[9px] font-bold">{isRefreshing ? 'Syncing...' : 'Sync'}</span>
                   </button>
                 </div>
-                <span className="font-bold text-terminal-green">
+                <span
+                  className={`font-bold transition-all duration-300 block ${
+                    walletState.balanceFlashState === 'up'
+                      ? 'text-emerald-400 scale-105 inline-block drop-shadow-[0_0_8px_rgba(16,185,129,0.8)]'
+                      : walletState.balanceFlashState === 'down'
+                      ? 'text-rose-400 scale-105 inline-block drop-shadow-[0_0_8px_rgba(244,63,94,0.8)]'
+                      : 'text-terminal-green'
+                  }`}
+                >
                   {walletState.balanceSol < 1 && walletState.balanceSol > 0
                     ? walletState.balanceSol.toFixed(4)
                     : walletState.balanceSol.toFixed(2)} SOL

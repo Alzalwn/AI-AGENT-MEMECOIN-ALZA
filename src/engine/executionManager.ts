@@ -1,8 +1,9 @@
 import { Connection, PublicKey } from '@solana/web3.js';
 import { TokenSignal, ActivePosition, ClosedTrade } from '../types/terminal';
 import { positionMutex } from './mutex';
-import { lamportsToSol, parseRawTokenUnits } from '../lib/solanaMath';
+import { lamportsToSol } from '../lib/solanaMath';
 import { verifySafeToSell } from '../lib/honeypot';
+import { fetchJupiterQuote, fetchJupiterSellQuote, executeJupiterSwap } from '../lib/jupiter';
 
 export interface BuyOptions {
   slippageBps?: number;
@@ -171,29 +172,56 @@ export class ExecutionManager {
         const data = await response.json();
 
         if (!data.success || !data.signature) {
-          throw new Error(data.error || 'Server hot wallet gagal memproses transaksi beli');
-        }
-
-        signature = data.signature;
-
-        // 1.3 Verifikasi Konfirmasi On-Chain Wajib
-        this.log('EXECUTION', 'INFO', `🔍 Menunggu konfirmasi on-chain untuk signature: ${signature.slice(0, 16)}...`);
-        try {
-          const conf = await this.connection.confirmTransaction(signature, 'confirmed');
-          if (conf.value.err) {
-            throw new Error(`Transaksi on-chain gagal: ${JSON.stringify(conf.value.err)}`);
+          if (data.requiresClientSign && typeof window !== 'undefined') {
+            const provider = (window as any).phantom?.solana || (window as any).solflare || (window as any).solana;
+            if (provider && (provider.isConnected || provider.isPhantom)) {
+              this.log('EXECUTION', 'INFO', `🔑 Meminta konfirmasi transaksi di dompet browser untuk ${token.symbol}...`);
+              const quote = await fetchJupiterQuote(token.mint, amountSol, options.slippageBps || 200);
+              if (!quote) throw new Error('Quote likuiditas Jupiter tidak ditemukan untuk token ini');
+              const userPubKey = provider.publicKey?.toString();
+              const swapResult = await executeJupiterSwap(
+                quote,
+                token.symbol,
+                options.jitoTipSol || 0.00002,
+                0,
+                userPubKey,
+                provider,
+                false
+              );
+              if (!swapResult.signature) throw new Error('Transaksi dibatalkan atau signature tidak diterima dari dompet');
+              signature = swapResult.signature;
+              if (swapResult.tokenAmountUi && swapResult.tokenAmountUi > 0) {
+                tokenAmount = swapResult.tokenAmountUi;
+              }
+              entryPriceSol = +(amountSol / tokenAmount).toFixed(8);
+            } else {
+              throw new Error('Private key server belum disetel di .env.local dan dompet Phantom belum terhubung');
+            }
+          } else {
+            throw new Error(data.error || 'Server hot wallet gagal memproses transaksi beli');
           }
-        } catch (confErr: any) {
-          this.log('EXECUTION', 'WARN', `⚠️ Konfirmasi timeout, memeriksa status via slot... (${confErr.message})`);
-        }
+        } else {
+          signature = data.signature;
 
-        if (data.tokenAmountUi && data.tokenAmountUi > 0) {
-          tokenAmount = data.tokenAmountUi;
+          // 1.3 Verifikasi Konfirmasi On-Chain Wajib
+          this.log('EXECUTION', 'INFO', `🔍 Menunggu konfirmasi on-chain untuk signature: ${signature.slice(0, 16)}...`);
+          try {
+            const conf = await this.connection.confirmTransaction(signature, 'confirmed');
+            if (conf.value.err) {
+              throw new Error(`Transaksi on-chain gagal: ${JSON.stringify(conf.value.err)}`);
+            }
+          } catch (confErr: any) {
+            this.log('EXECUTION', 'WARN', `⚠️ Konfirmasi timeout, memeriksa status via slot... (${confErr.message})`);
+          }
+
+          if (data.tokenAmountUi && data.tokenAmountUi > 0) {
+            tokenAmount = data.tokenAmountUi;
+          }
+          if (data.decimals) {
+            decimals = data.decimals;
+          }
+          entryPriceSol = +(amountSol / tokenAmount).toFixed(8);
         }
-        if (data.decimals) {
-          decimals = data.decimals;
-        }
-        entryPriceSol = +(amountSol / tokenAmount).toFixed(8);
       }
 
       clearTimeout(timeoutId);
@@ -462,22 +490,67 @@ export class ExecutionManager {
 
         const data = await res.json();
         if (!data.success || !data.signature) {
-          throw new Error(data.error || 'Eksekusi jual di server gagal');
-        }
+          if (data.requiresClientSign && typeof window !== 'undefined') {
+            const provider = (window as any).phantom?.solana || (window as any).solflare || (window as any).solana;
+            if (provider && (provider.isConnected || provider.isPhantom)) {
+              this.log('EXECUTION', 'INFO', `🔑 Meminta konfirmasi transaksi jual di dompet browser untuk ${position.token.symbol}...`);
+              const decimals = position.token.decimals || 6;
+              const rawUnits = Math.floor(position.tokenAmount * 10 ** decimals).toString();
+              const quote = await fetchJupiterSellQuote(mint, rawUnits, 300);
+              if (!quote) throw new Error('Quote jual Jupiter tidak tersedia untuk token ini');
+              const userPubKey = provider.publicKey?.toString();
+              const swapResult = await executeJupiterSwap(
+                quote,
+                position.token.symbol,
+                priorityFeeSol,
+                0,
+                userPubKey,
+                provider,
+                false
+              );
+              if (!swapResult.signature) throw new Error('Transaksi jual dibatalkan di dompet');
+              signature = swapResult.signature;
+              solReceived = quote.tokenAmountUi || lamportsToSol(quote.outAmountRaw) || +(position.solInvested * (1 + position.pnlPct / 100)).toFixed(6);
+              if (position.tokenAmount > 0) {
+                exitPriceSol = +(solReceived / position.tokenAmount).toFixed(8);
+              }
+            } else {
+              throw new Error('Server private key kosong dan dompet Phantom tidak terhubung untuk eksekusi jual');
+            }
+          } else {
+            const errStr = data.error || '';
+            const isOrphan =
+              errStr.includes('tidak memiliki token account') ||
+              errStr.includes('Saldo token di dompet 0') ||
+              errStr.includes('sudah terjual');
 
-        signature = data.signature;
+            if (isOrphan) {
+              this.log(
+                'EXECUTION',
+                'WARN',
+                `ℹ️ [ORPHAN POSITION AUTO-CLEARED] Token ${position.token.symbol} tidak ditemukan di dompet on-chain (saldo 0). Posisi ditutup & Mutex slot dibebaskan.`
+              );
+              signature = `CLEARED_ORPHAN_${Date.now().toString().slice(-6)}`;
+              solReceived = 0;
+            } else {
+              throw new Error(errStr || 'Eksekusi jual di server gagal');
+            }
+          }
+        } else {
+          signature = data.signature;
 
-        // Tunggu konfirmasi on-chain
-        this.log('EXECUTION', 'INFO', `🔍 Menunggu konfirmasi sell on-chain: ${signature.slice(0, 16)}...`);
-        try {
-          await this.connection.confirmTransaction(signature, 'confirmed');
-        } catch (confErr: any) {
-          this.log('EXECUTION', 'WARN', `⚠️ Konfirmasi sell timeout: ${confErr.message}`);
-        }
+          // Tunggu konfirmasi on-chain
+          this.log('EXECUTION', 'INFO', `🔍 Menunggu konfirmasi sell on-chain: ${signature.slice(0, 16)}...`);
+          try {
+            await this.connection.confirmTransaction(signature, 'confirmed');
+          } catch (confErr: any) {
+            this.log('EXECUTION', 'WARN', `⚠️ Konfirmasi sell timeout: ${confErr.message}`);
+          }
 
-        solReceived = data.solReceived || +(position.currentPriceSol * position.tokenAmount).toFixed(6);
-        if (position.tokenAmount > 0) {
-          exitPriceSol = +(solReceived / position.tokenAmount).toFixed(8);
+          solReceived = data.solReceived || +(position.currentPriceSol * position.tokenAmount).toFixed(6);
+          if (position.tokenAmount > 0) {
+            exitPriceSol = +(solReceived / position.tokenAmount).toFixed(8);
+          }
         }
       }
 

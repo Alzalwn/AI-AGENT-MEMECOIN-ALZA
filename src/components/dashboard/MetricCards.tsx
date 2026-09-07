@@ -67,28 +67,73 @@ export const MetricCards: React.FC = () => {
     >
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 font-mono">
         {/* 1. Hot Wallet Balance */}
-        <div className="bg-zinc-950/70 border border-zinc-800/80 rounded-xl p-3.5 flex flex-col justify-between shadow-md relative overflow-hidden group hover:border-zinc-700 transition-all duration-200">
+        <div
+          className={`bg-zinc-950/70 border rounded-xl p-3.5 flex flex-col justify-between shadow-md relative overflow-hidden group transition-all duration-300 ${
+            walletState.balanceFlashState === 'up'
+              ? 'border-emerald-500/80 shadow-[0_0_20px_rgba(16,185,129,0.35)] bg-emerald-950/20'
+              : walletState.balanceFlashState === 'down'
+              ? 'border-rose-500/80 shadow-[0_0_20px_rgba(244,63,94,0.35)] bg-rose-950/20'
+              : 'border-zinc-800/80 hover:border-zinc-700'
+          }`}
+        >
           <div className="flex items-center justify-between text-xs text-zinc-400">
-            <span className="font-bold tracking-wider text-[11px] uppercase">
-              Hot Wallet Balance
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="font-bold tracking-wider text-[11px] uppercase text-zinc-300">
+                Hot Wallet Balance
+              </span>
+              {walletState.isBalanceLive ? (
+                <span
+                  className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[9px] font-black bg-emerald-500/15 text-emerald-400 border border-emerald-500/40"
+                  title="Real-time WebSocket connection.onAccountChange (@solana/web3.js) aktif"
+                >
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+                  </span>
+                  LIVE
+                </span>
+              ) : (
+                <span
+                  className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold bg-zinc-800/90 text-zinc-500 border border-zinc-700/50"
+                  title="Menunggu WebSocket subscription on-chain"
+                >
+                  RPC
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={handleManualRefresh}
                 className="p-1 rounded-lg bg-zinc-900/80 hover:bg-zinc-800 text-zinc-400 hover:text-emerald-400 border border-zinc-700/60 transition-all cursor-pointer"
-                title="Sinkronkan saldo on-chain sekarang"
+                title="Sinkronkan saldo on-chain sekarang (manual fallback)"
               >
                 <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin text-emerald-400' : ''}`} />
               </button>
-              <div className="p-1.5 rounded-lg bg-zinc-900 text-emerald-400 border border-zinc-700/60">
+              <div
+                className={`p-1.5 rounded-lg border transition-all duration-300 ${
+                  walletState.balanceFlashState === 'up'
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60'
+                    : walletState.balanceFlashState === 'down'
+                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/60'
+                    : 'bg-zinc-900 text-emerald-400 border-zinc-700/60'
+                }`}
+              >
                 <Wallet className="w-3.5 h-3.5" />
               </div>
             </div>
           </div>
           <div className="mt-2.5">
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-black text-zinc-100 tracking-tight">
+              <span
+                className={`text-2xl font-black tracking-tight transition-all duration-300 ${
+                  walletState.balanceFlashState === 'up'
+                    ? 'text-emerald-300 scale-105 inline-block drop-shadow-[0_0_10px_rgba(16,185,129,0.8)]'
+                    : walletState.balanceFlashState === 'down'
+                    ? 'text-rose-400 scale-105 inline-block drop-shadow-[0_0_10px_rgba(244,63,94,0.8)]'
+                    : 'text-zinc-100'
+                }`}
+              >
                 {formattedBalance}
               </span>
               <span className="text-xs font-bold text-zinc-400">SOL</span>
@@ -109,7 +154,15 @@ export const MetricCards: React.FC = () => {
               </span>
             </div>
           </div>
-          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-emerald-500/40 via-emerald-500/20 to-transparent" />
+          <div
+            className={`absolute bottom-0 left-0 right-0 h-0.5 transition-all duration-500 ${
+              walletState.balanceFlashState === 'up'
+                ? 'bg-emerald-400 shadow-[0_0_10px_#10b981]'
+                : walletState.balanceFlashState === 'down'
+                ? 'bg-rose-500 shadow-[0_0_10px_#f43f5e]'
+                : 'bg-gradient-to-r from-emerald-500/40 via-emerald-500/20 to-transparent'
+            }`}
+          />
         </div>
 
         {/* 2. 24h Realized Net PnL */}
