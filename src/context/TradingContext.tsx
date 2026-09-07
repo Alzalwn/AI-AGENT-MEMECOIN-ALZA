@@ -99,7 +99,28 @@ const TradingContext = createContext<TradingContextType | null>(null);
 
 export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Core Engine & Visual States
-  const [engineStatus, setEngineStatus] = useState<'AUTONOMOUS' | 'IDLE' | 'PAUSED'>('AUTONOMOUS');
+  const [engineStatus, setEngineStatusState] = useState<'AUTONOMOUS' | 'IDLE' | 'PAUSED'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('GT_ENGINE_STATUS');
+      if (saved === 'AUTONOMOUS' || saved === 'IDLE' || saved === 'PAUSED') {
+        return saved;
+      }
+    }
+    return 'AUTONOMOUS';
+  });
+
+  const setEngineStatus = useCallback((status: 'AUTONOMOUS' | 'IDLE' | 'PAUSED' | ((prev: 'AUTONOMOUS' | 'IDLE' | 'PAUSED') => 'AUTONOMOUS' | 'IDLE' | 'PAUSED')) => {
+    setEngineStatusState((prev) => {
+      const next = typeof status === 'function' ? status(prev) : status;
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('GT_ENGINE_STATUS', next);
+        } catch {}
+      }
+      return next;
+    });
+  }, []);
+
   const [dataSource, setDataSource] = useState<'REAL_SOLANA' | 'SIMULATOR'>('REAL_SOLANA');
   const [visualMode, setVisualMode] = useState<'radar' | 'cluster' | 'kelly' | 'ledger' | 'chart' | 'grid'>('radar');
 
@@ -114,7 +135,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (saved) {
           const parsed = JSON.parse(saved);
           if (parsed && parsed.token && parsed.token.mint) {
-            positionMutex.acquireLock(parsed.token.mint);
+            positionMutex.restoreLock(parsed.token.mint);
             return parsed;
           }
         }
@@ -280,8 +301,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const saved = localStorage.getItem('GT_WALLET_STATE');
         if (saved) {
           const parsed: WalletState = JSON.parse(saved);
-          // Validate saved state has required fields before trusting it
-          if (parsed && typeof parsed.isConnected === 'boolean' && parsed.mode) {
+          if (parsed && (parsed.mode === 'LIVE_ON_CHAIN' || parsed.mode === 'PAPER_TRADING')) {
             return parsed;
           }
         }
@@ -297,7 +317,21 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   });
 
   // Configurations
-  const [agentConfig, setAgentConfig] = useState<AgentConfig>(DEFAULT_AGENT_CONFIG);
+  const [agentConfig, setAgentConfig] = useState<AgentConfig>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('GT_AGENT_CONFIG');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && typeof parsed === 'object') {
+            return { ...DEFAULT_AGENT_CONFIG, ...parsed };
+          }
+        }
+      } catch {}
+    }
+    return DEFAULT_AGENT_CONFIG;
+  });
+
   const [executionConfig, setExecutionConfig] = useState<ExecutionConfig>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('GT_EXECUTION_CONFIG');
@@ -310,22 +344,36 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return DEFAULT_EXECUTION_CONFIG;
   });
 
-  const [autoSnipeConfig, setAutoSnipeConfig] = useState<AutoSnipeConfig>({
-    isEnabled: true,
-    buyAmountSol: 0.5,
-    minGrokViralityScore: 80,
-    minLiquidityUsd: 10000,
-    maxTop10HoldersPct: 20,
-    jitoTipTier: 'STANDARD',
-    takeProfitMultiplierR: 3.0,
-    stopLossMultiplierR: 0.33,
-    maxDailyTrades: 20,
-    dailyTradesExecuted: 3,
-    takeProfitPct: 100,
-    stopLossPct: -25,
-    trailingStopLossPct: 15,
-    maxHoldTimeSec: 180,
-    enableMomentumExit: true
+  const [autoSnipeConfig, setAutoSnipeConfig] = useState<AutoSnipeConfig>(() => {
+    const defaults: AutoSnipeConfig = {
+      isEnabled: true,
+      buyAmountSol: 0.5,
+      minGrokViralityScore: 80,
+      minLiquidityUsd: 10000,
+      maxTop10HoldersPct: 20,
+      jitoTipTier: 'STANDARD',
+      takeProfitMultiplierR: 3.0,
+      stopLossMultiplierR: 0.33,
+      maxDailyTrades: 20,
+      dailyTradesExecuted: 0,
+      takeProfitPct: 100,
+      stopLossPct: -25,
+      trailingStopLossPct: 15,
+      maxHoldTimeSec: 180,
+      enableMomentumExit: true
+    };
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('GT_AUTOSNIPE_CONFIG');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && typeof parsed === 'object') {
+            return { ...defaults, ...parsed };
+          }
+        }
+      } catch {}
+    }
+    return defaults;
   });
 
   // Webhook Configs (centralized in context so all components share the same config)
@@ -461,9 +509,12 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         ? result.tokenAmountUi
         : (parseFloat((result.outAmountFormatted || '1').replace(/,/g, '')) || 1);
       
-      let entryPrice = +(solInvest / tokenAmt).toFixed(8);
-      if (tokenSignal && tokenSignal.priceSol > 0 && (entryPrice <= 0 || entryPrice > 1000)) {
+      let entryPrice = solInvest / tokenAmt;
+      if (tokenSignal && tokenSignal.priceSol > 0 && (entryPrice <= 0 || !isFinite(entryPrice) || entryPrice > 1000)) {
         entryPrice = tokenSignal.priceSol;
+      }
+      if (!entryPrice || entryPrice <= 0 || !isFinite(entryPrice)) {
+        entryPrice = 0.0001;
       }
 
       // 2. Resolve token metadata
@@ -502,9 +553,9 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const slPct = agentConfig.stopLossPct ?? autoSnipeConfig.stopLossPct ?? -25;
       const trailingDist = agentConfig.trailingStopLossPct ?? autoSnipeConfig.trailingStopLossPct ?? 15;
       const maxTtl = agentConfig.maxHoldTimeSec ?? autoSnipeConfig.maxHoldTimeSec ?? 180;
-      const targetTpPrice = +(entryPrice * (1 + tpPct / 100)).toFixed(8);
-      const slPrice = +(entryPrice * (1 + slPct / 100)).toFixed(8);
-      const trailingStop = +(entryPrice * (1 - trailingDist / 100)).toFixed(8);
+      const targetTpPrice = +(entryPrice * (1 + tpPct / 100));
+      const slPrice = +(entryPrice * (1 + slPct / 100));
+      const trailingStop = +(entryPrice * (1 - trailingDist / 100));
 
       const newPos: ActivePosition = {
         id: `POS-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -1488,7 +1539,15 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [activePosition, appendLog, executeSell, agentConfig, autoSnipeConfig]);
 
   const updateAgentConfig = useCallback((updates: Partial<AgentConfig>) => {
-    setAgentConfig((prev) => ({ ...prev, ...updates }));
+    setAgentConfig((prev) => {
+      const next = { ...prev, ...updates };
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('GT_AGENT_CONFIG', JSON.stringify(next));
+        } catch {}
+      }
+      return next;
+    });
   }, []);
 
   const updateExecutionConfig = useCallback((updates: Partial<ExecutionConfig>) => {
@@ -1502,7 +1561,15 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, []);
 
   const updateAutoSnipeConfig = useCallback((updates: Partial<AutoSnipeConfig>) => {
-    setAutoSnipeConfig((prev) => ({ ...prev, ...updates }));
+    setAutoSnipeConfig((prev) => {
+      const next = { ...prev, ...updates };
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('GT_AUTOSNIPE_CONFIG', JSON.stringify(next));
+        } catch {}
+      }
+      return next;
+    });
   }, []);
 
   const updateTelegramConfig = useCallback((updates: Partial<WebhookTelegramConfig>) => {
@@ -1529,13 +1596,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setWalletState(w);
     if (typeof window !== 'undefined') {
       try {
-        if (w.isConnected) {
-          // Persist connected wallet state across page refreshes
-          localStorage.setItem('GT_WALLET_STATE', JSON.stringify(w));
-        } else {
-          // Clear persisted state on disconnect
-          localStorage.removeItem('GT_WALLET_STATE');
-        }
+        localStorage.setItem('GT_WALLET_STATE', JSON.stringify(w));
       } catch {}
     }
   }, []);

@@ -59,6 +59,20 @@ class PositionMutex {
   }
 
   /**
+   * Restore lock for an existing active position loaded from storage on page refresh.
+   */
+  public restoreLock(mint: string): void {
+    const cleanMint = mint.trim();
+    this.isLocked = true;
+    this.isExecutingBuy = false;
+    this.isExecutingSell = false;
+    this.activeTokenMint = cleanMint;
+    this.lockTimestamp = Date.now();
+    this.notify();
+    console.log(`[MUTEX] 🔄 Mutex lock restored for ${cleanMint} on page load.`);
+  }
+
+  /**
    * Release mutex lock upon successful sell confirmation or explicit cancellation.
    */
   public releaseLock(mint?: string, cooldownMs: number = 600000): boolean {

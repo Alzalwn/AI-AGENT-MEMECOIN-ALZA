@@ -28,13 +28,11 @@ export const TakeProfitProgressBar: React.FC<TakeProfitProgressBarProps> = ({
   defaultStopLossPct = -25,
   defaultMaxHoldTimeSec = 180
 }) => {
-  const {
-    entryPriceSol,
-    currentPriceSol,
-    pnlPct,
-    pnlSol,
-    entryTimestamp
-  } = position;
+  const entryPriceSol = position?.entryPriceSol || 0.0001;
+  const currentPriceSol = position?.currentPriceSol || entryPriceSol;
+  const pnlPct = position?.pnlPct ?? 0;
+  const pnlSol = position?.pnlSol ?? 0;
+  const entryTimestamp = position?.entryTimestamp || Date.now();
 
   // 1. Resolve Targets & Risk Parameters
   const targetTpPct = position.targetTpPct ?? defaultTargetTpPct;

@@ -39,13 +39,22 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
     setTimeout(() => setCopiedCa(false), 2000);
   };
 
+  const safeEntryPrice = activePosition?.entryPriceSol || 0.0001;
+  const safeCurrentPrice = activePosition?.currentPriceSol || safeEntryPrice;
+  const safeHighestPrice = activePosition?.highestPriceSol || safeCurrentPrice;
+  const safeTrailingStopPrice = activePosition?.trailingStopPriceSol || +(safeEntryPrice * 0.85);
+  const safePnlPct = activePosition?.pnlPct ?? 0;
+  const safePnlSol = activePosition?.pnlSol ?? 0;
+  const safeRMultiplier = activePosition?.rMultiplier ?? 0;
+  const safeEntryTime = activePosition?.entryTimestamp || Date.now();
+
   return (
     <CollapsibleCard
       title="Active Position (Single Mutex)"
       subtitle={activePosition ? activePosition.token.name : undefined}
       badge={
         activePosition
-          ? `MUTEX ACTIVE • ${activePosition.token.symbol} (${activePosition.pnlPct >= 0 ? '+' : ''}${activePosition.pnlPct}%)`
+          ? `MUTEX ACTIVE • ${activePosition.token.symbol} (${safePnlPct >= 0 ? '+' : ''}${safePnlPct}%)`
           : 'MUTEX READY'
       }
       badgeVariant={
@@ -152,21 +161,21 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
               <div className="flex items-baseline justify-end gap-1.5">
                 <span
                   className={`text-xl font-black ${
-                    activePosition.pnlPct >= 0
+                    safePnlPct >= 0
                       ? 'text-emerald-400 drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]'
                       : 'text-rose-400 drop-shadow-[0_0_8px_rgba(244,63,94,0.5)]'
                   }`}
                 >
-                  {activePosition.pnlPct >= 0 ? '+' : ''}
-                  {activePosition.pnlPct}%
+                  {safePnlPct >= 0 ? '+' : ''}
+                  {safePnlPct}%
                 </span>
                 <span className="text-xs text-zinc-400">
-                  (+{activePosition.rMultiplier}R)
+                  (+{safeRMultiplier}R)
                 </span>
               </div>
               <span className="text-xs text-zinc-400 block font-mono">
-                {activePosition.pnlSol >= 0 ? '+' : ''}
-                {activePosition.pnlSol} SOL
+                {safePnlSol >= 0 ? '+' : ''}
+                {safePnlSol} SOL
               </span>
             </div>
           </div>
@@ -176,28 +185,28 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
             <div className="bg-zinc-950/60 p-2.5 rounded-xl border border-zinc-800/80">
               <span className="text-zinc-500 block text-[10px]">Invested (SOL)</span>
               <span className="font-bold text-zinc-200">
-                {activePosition.solInvested} SOL
+                {activePosition.solInvested || 0} SOL
               </span>
             </div>
 
             <div className="bg-zinc-950/60 p-2.5 rounded-xl border border-zinc-800/80">
               <span className="text-zinc-500 block text-[10px]">Entry Price</span>
               <span className="font-bold text-zinc-300">
-                {activePosition.entryPriceSol.toFixed(8)} SOL
+                {safeEntryPrice.toFixed(8)} SOL
               </span>
             </div>
 
             <div className="bg-zinc-950/60 p-2.5 rounded-xl border border-zinc-800/80">
               <span className="text-zinc-500 block text-[10px]">Live Price (DEX)</span>
               <span className="font-black text-emerald-400">
-                {activePosition.currentPriceSol.toFixed(8)} SOL
+                {safeCurrentPrice.toFixed(8)} SOL
               </span>
             </div>
 
             <div className="bg-zinc-950/60 p-2.5 rounded-xl border border-zinc-800/80">
               <span className="text-zinc-500 block text-[10px]">Peak / High-Water</span>
               <span className="font-bold text-cyan-400">
-                {activePosition.highestPriceSol.toFixed(8)} SOL
+                {safeHighestPrice.toFixed(8)} SOL
               </span>
             </div>
           </div>
@@ -240,31 +249,31 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ onSharePnl }) =>
                 <div className="bg-zinc-900/60 p-2 rounded-lg border border-zinc-800">
                   <span className="text-zinc-500 block">Take Profit Target:</span>
                   <span className="font-mono text-emerald-400 font-bold">
-                    +{activePosition.targetTpPct ?? agentConfig.takeProfitPct ?? 100}% ({(activePosition.targetTpPriceSol ?? activePosition.entryPriceSol * 2).toFixed(8)} SOL)
+                    +{activePosition.targetTpPct ?? agentConfig.takeProfitPct ?? 100}% ({(activePosition.targetTpPriceSol ?? safeEntryPrice * 2).toFixed(8)} SOL)
                   </span>
                 </div>
                 <div className="bg-zinc-900/60 p-2 rounded-lg border border-zinc-800">
                   <span className="text-zinc-500 block">Stop Loss Level:</span>
                   <span className="font-mono text-rose-400 font-bold">
-                    {activePosition.stopLossPct ?? agentConfig.stopLossPct ?? -25}% ({(activePosition.stopLossPriceSol ?? activePosition.entryPriceSol * 0.75).toFixed(8)} SOL)
+                    {activePosition.stopLossPct ?? agentConfig.stopLossPct ?? -25}% ({(activePosition.stopLossPriceSol ?? safeEntryPrice * 0.75).toFixed(8)} SOL)
                   </span>
                 </div>
                 <div className="bg-zinc-900/60 p-2 rounded-lg border border-zinc-800">
                   <span className="text-zinc-500 block">Trailing Stop Floor:</span>
                   <span className="font-mono text-amber-400 font-bold">
-                    {activePosition.trailingStopPriceSol.toFixed(8)} SOL
+                    {safeTrailingStopPrice.toFixed(8)} SOL
                   </span>
                 </div>
                 <div className="bg-zinc-900/60 p-2 rounded-lg border border-zinc-800">
                   <span className="text-zinc-500 block">Entry Timestamp:</span>
                   <span className="font-mono text-zinc-300 font-bold">
-                    {new Date(activePosition.entryTimestamp).toLocaleTimeString('id-ID')}
+                    {new Date(safeEntryTime).toLocaleTimeString('id-ID')}
                   </span>
                 </div>
                 <div className="bg-zinc-900/60 p-2 rounded-lg border border-zinc-800">
                   <span className="text-zinc-500 block">Hold Duration / TTL:</span>
                   <span className="font-mono text-cyan-300 font-bold">
-                    {Math.round((Date.now() - activePosition.entryTimestamp) / 1000)}s / Max {activePosition.maxHoldTimeSec ?? agentConfig.maxHoldTimeSec ?? 180}s
+                    {Math.max(0, Math.round((Date.now() - safeEntryTime) / 1000))}s / Max {activePosition.maxHoldTimeSec ?? agentConfig.maxHoldTimeSec ?? 180}s
                   </span>
                 </div>
                 <div className="bg-zinc-900/60 p-2 rounded-lg border border-zinc-800">

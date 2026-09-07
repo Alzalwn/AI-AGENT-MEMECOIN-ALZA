@@ -321,8 +321,8 @@ function TerminalAppInner() {
         currentSlot={telemetry.currentSlot}
         defaultSlippageBps={Math.round(executionConfig.slippagePct * 100)}
         walletState={walletState}
-        onSwapSuccess={async (result) => {
-          await openLivePosition(result, targetToken);
+        onSwapSuccess={async (result, tokenInfo) => {
+          await openLivePosition(result, tokenInfo || targetToken);
           setIsJupiterModalOpen(false);
           setCustomSwapMint(undefined);
         }}

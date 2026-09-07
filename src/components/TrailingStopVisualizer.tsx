@@ -9,15 +9,13 @@ interface TrailingStopVisualizerProps {
 }
 
 export const TrailingStopVisualizer: React.FC<TrailingStopVisualizerProps> = ({ position }) => {
-  const {
-    entryPriceSol,
-    currentPriceSol,
-    highestPriceSol,
-    trailingStopPriceSol,
-    rMultiplier,
-    pnlPct,
-    pnlSol
-  } = position;
+  const entryPriceSol = position?.entryPriceSol || 0.0001;
+  const currentPriceSol = position?.currentPriceSol || entryPriceSol;
+  const highestPriceSol = position?.highestPriceSol || currentPriceSol;
+  const trailingStopPriceSol = position?.trailingStopPriceSol || +(entryPriceSol * 0.85);
+  const rMultiplier = position?.rMultiplier ?? 0;
+  const pnlPct = position?.pnlPct ?? 0;
+  const pnlSol = position?.pnlSol ?? 0;
 
   // Calculate percentage distances
   const isStopInProfit = trailingStopPriceSol > entryPriceSol;

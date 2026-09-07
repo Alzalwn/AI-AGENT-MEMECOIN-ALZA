@@ -10,24 +10,36 @@ interface DexProfile {
   links?: { type?: string; label?: string; url: string }[];
 }
 
+// In-memory cache to guarantee instant response and avoid ETIMEDOUT on VPS
+let cachedTokens: TokenSignal[] = [];
+let lastFetchTime = 0;
+
 export async function fetchLiveSolanaTokens(): Promise<TokenSignal[]> {
+  const now = Date.now();
+  // Return cached signals if fetched within last 12 seconds
+  if (cachedTokens.length > 0 && now - lastFetchTime < 12000) {
+    return cachedTokens;
+  }
+
   try {
-    // 1. Fetch latest token profiles on Solana from DexScreener
+    // 1. Fetch latest token profiles on Solana from DexScreener with strict timeout
     const res = await fetch('https://api.dexscreener.com/token-profiles/latest/v1', {
-      headers: { 'User-Agent': 'GrokTrencher-Terminal/1.0' },
-      next: { revalidate: 15 } // cache 15 seconds
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) GrokTrencher/1.0' },
+      signal: AbortSignal.timeout(3500)
     });
 
-    if (!res.ok) return [];
+    if (!res.ok) return cachedTokens;
 
     const data: DexProfile[] = await res.json();
     const solanaTokens = data.filter((t) => t.chainId === 'solana').slice(0, 8);
 
-    if (solanaTokens.length === 0) return [];
+    if (solanaTokens.length === 0) return cachedTokens;
 
-    // 2. Fetch pair detail data for these tokens
+    // 2. Fetch pair detail data for these tokens with strict timeout
     const addresses = solanaTokens.map((t) => t.tokenAddress).join(',');
-    const pairRes = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${addresses}`);
+    const pairRes = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${addresses}`, {
+      signal: AbortSignal.timeout(3500)
+    });
     const pairData = pairRes.ok ? await pairRes.json() : null;
     const pairsMap = new Map<string, any>();
 
@@ -94,9 +106,13 @@ export async function fetchLiveSolanaTokens(): Promise<TokenSignal[]> {
       });
     }
 
-    return signals;
-  } catch (err) {
-    console.error('Failed to fetch live Solana tokens:', err);
-    return [];
+    if (signals.length > 0) {
+      cachedTokens = signals;
+      lastFetchTime = Date.now();
+    }
+    return signals.length > 0 ? signals : cachedTokens;
+  } catch (err: any) {
+    console.warn('Live Solana token ingestion fallback (network timeout):', err?.message || err);
+    return cachedTokens;
   }
 }
