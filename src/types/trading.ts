@@ -133,6 +133,9 @@ export interface TradingActions {
   // ─── Signal Provider Actions ───
   broadcastSignal: (signal: TradingSignal, config: WebhookTelegramConfig) => Promise<void>;
   clearSignals: () => void;
+  deleteSignalHistoryItem: (id: string) => void;
+  clearSignalHistoryByFilter: (option: 'all' | 'older_1h' | 'older_24h' | 'older_7d' | 'older_30d' | 'last_1h' | 'last_24h' | 'last_7d' | 'last_30d' | 'sl_only') => number;
+  restoreSeedSignals: () => void;
 }
 
 export type TradingContextType = TradingState & TradingActions;

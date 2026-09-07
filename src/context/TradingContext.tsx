@@ -251,14 +251,68 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem('GT_SIGNAL_HISTORY');
-        if (saved) {
+        if (saved !== null) {
           const parsed = JSON.parse(saved) as TradingSignal[];
-          if (parsed && parsed.length > 0) return parsed;
+          if (Array.isArray(parsed)) return parsed;
         }
       } catch {}
     }
     return getInitialSeedSignals().historySignals;
   });
+
+  const deleteSignalHistoryItem = useCallback((id: string) => {
+    setSignalHistoryState((prev) => {
+      const next = prev.filter((s) => s.id !== id);
+      try { localStorage.setItem('GT_SIGNAL_HISTORY', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+
+  const clearSignalHistoryByFilter = useCallback((
+    option: 'all' | 'older_1h' | 'older_24h' | 'older_7d' | 'older_30d' | 'last_1h' | 'last_24h' | 'last_7d' | 'last_30d' | 'sl_only' = 'all'
+  ): number => {
+    const now = Date.now();
+    const HOUR = 3600 * 1000;
+    const DAY = 24 * HOUR;
+    const WEEK = 7 * DAY;
+    const MONTH = 30 * DAY;
+
+    let count = 0;
+    setSignalHistoryState((prev) => {
+      let next = prev;
+      if (option === 'all') {
+        next = [];
+      } else if (option === 'older_1h') {
+        next = prev.filter((s) => (now - s.timestamp) <= HOUR);
+      } else if (option === 'older_24h') {
+        next = prev.filter((s) => (now - s.timestamp) <= DAY);
+      } else if (option === 'older_7d') {
+        next = prev.filter((s) => (now - s.timestamp) <= WEEK);
+      } else if (option === 'older_30d') {
+        next = prev.filter((s) => (now - s.timestamp) <= MONTH);
+      } else if (option === 'last_1h') {
+        next = prev.filter((s) => (now - s.timestamp) > HOUR);
+      } else if (option === 'last_24h') {
+        next = prev.filter((s) => (now - s.timestamp) > DAY);
+      } else if (option === 'last_7d') {
+        next = prev.filter((s) => (now - s.timestamp) > WEEK);
+      } else if (option === 'last_30d') {
+        next = prev.filter((s) => (now - s.timestamp) > MONTH);
+      } else if (option === 'sl_only') {
+        next = prev.filter((s) => s.status !== 'SL_HIT');
+      }
+      count = prev.length - next.length;
+      try { localStorage.setItem('GT_SIGNAL_HISTORY', JSON.stringify(next)); } catch {}
+      return next;
+    });
+    return count;
+  }, []);
+
+  const restoreSeedSignals = useCallback(() => {
+    const seeds = getInitialSeedSignals().historySignals;
+    setSignalHistoryState(seeds);
+    try { localStorage.setItem('GT_SIGNAL_HISTORY', JSON.stringify(seeds)); } catch {}
+  }, []);
 
   const addSignalToHistory = useCallback((signal: TradingSignal) => {
     setSignalHistoryState((prev) => {
@@ -2497,6 +2551,9 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setActiveSignals([]);
       try { localStorage.removeItem('GT_ACTIVE_SIGNALS'); } catch {}
     },
+    deleteSignalHistoryItem,
+    clearSignalHistoryByFilter,
+    restoreSeedSignals,
   };
 
   return <TradingContext.Provider value={value}>{children}</TradingContext.Provider>;
