@@ -91,8 +91,31 @@ export async function executeJupiterSwap(
   jitoTipSol: number = 0.00005,
   currentSlot: number = 284192000,
   userPublicKey?: string,
-  walletProvider?: any
+  walletProvider?: any,
+  isSimulationMode: boolean = false
 ): Promise<SwapExecutionResult> {
+  // 0. Dry-Run Interceptor: Intercept and mock transaction without touching real wallet RPC or spending SOL
+  if (isSimulationMode) {
+    const mockSig = `SIM_DRYRUN_${Math.random().toString(36).slice(2, 10).toUpperCase()}_${Date.now().toString().slice(-6)}`;
+    const inSol = quote.inAmountSol || 0;
+    const outTokens = parseFloat(quote.outAmountFormatted || '0') || 0;
+    return {
+      signature: mockSig,
+      inAmountSol: inSol,
+      outAmountFormatted: quote.outAmountFormatted || outTokens.toLocaleString(),
+      tokenAmountUi: outTokens,
+      decimals: 6,
+      outputMint: quote.outputMint,
+      symbol,
+      routeSummary: `[DRY-RUN] ${quote.routes?.[0]?.label || 'Raydium/Orca Route'} (0 Real SOL Spent)`,
+      priceImpactPct: quote.priceImpactPct || 0.05,
+      jitoTipSol: 0,
+      slot: currentSlot,
+      isSimulated: true,
+      timestamp: Date.now()
+    };
+  }
+
   const res = await fetch('/api/jupiter/swap', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

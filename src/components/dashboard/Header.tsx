@@ -72,7 +72,9 @@ export const Header: React.FC<HeaderProps> = ({
     isAudioMuted,
     toggleAudio,
     activePosition,
-    executionConfig
+    executionConfig,
+    isSimulationMode,
+    toggleSimulationMode
   } = useTradingAgent();
 
   const { rate, formatIdrShort, formatUsd } = useSolRate();
@@ -285,6 +287,26 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <SlidersHorizontal className="w-4 h-4 text-cyan-400" />
             <span className="hidden xl:inline text-[11px] font-bold">Slip: {executionConfig.slippagePct}%</span>
+          </button>
+
+          {/* Dry-Run / Simulation Mode Toggle (Anti-Loss Guarantee) */}
+          <button
+            type="button"
+            onClick={toggleSimulationMode}
+            title={
+              isSimulationMode
+                ? '🧪 Dry-Run Mode AKTIF: Transaksi Phantom dicegat, 0 SOL berkurang. Klik untuk beralih ke Mode Riil.'
+                : '⚠️ Mode Riil AKTIF: Transaksi akan memotong saldo SOL asli! Klik untuk beralih ke Dry-Run.'
+            }
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[10px] font-mono font-bold border transition-all cursor-pointer ${
+              isSimulationMode
+                ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300 shadow-[0_0_10px_rgba(6,182,212,0.25)]'
+                : 'bg-amber-500/15 border-amber-500/40 text-amber-400'
+            }`}
+          >
+            <span className="text-xs">🧪</span>
+            <span>{isSimulationMode ? 'DRY-RUN (SIMULASI)' : 'LIVE REAL DANA'}</span>
+            <span className={`w-2 h-2 rounded-full ${isSimulationMode ? 'bg-cyan-400 animate-pulse' : 'bg-amber-400'}`} />
           </button>
 
           {/* Mode Indicator: LIVE ON-CHAIN vs PAPER TRADING */}

@@ -95,6 +95,34 @@ export interface AgentVerdict {
   latencyMs: number;
 }
 
+export interface DecisionTrace {
+  liquidity: {
+    passed: boolean;
+    initialLpUsd: number;
+    burntLiquidityPct: number;
+    reason: string;
+  };
+  honeypot: {
+    passed: boolean;
+    mintRevoked: boolean;
+    freezeRevoked: boolean;
+    top10HolderPct: number;
+    rugcheckScore: string;
+    transferFeeDetected: boolean;
+    reason: string;
+  };
+  momentum: {
+    passed: boolean;
+    volumeDelta15s: number;
+    uniqueBuyersCount: number;
+    narrativeCosineSim: number;
+    txVelocityPerSec: number;
+    buySellRatio: number;
+    reason: string;
+  };
+  summary: string;
+}
+
 export interface ConsensusResult {
   token: TokenSignal;
   verdict: 'APPROVED' | 'VETOED';
@@ -105,6 +133,7 @@ export interface ConsensusResult {
   timestamp: number;
   moonshot?: MoonshotVerdict;
   honeypotCheck?: import('../lib/honeypot').HoneypotCheckResult;
+  decisionTrace?: DecisionTrace;
 }
 
 export interface ActivePosition {

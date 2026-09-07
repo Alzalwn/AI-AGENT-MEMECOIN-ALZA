@@ -13,7 +13,7 @@ import { ExecutionConfig } from '../components/ExecutionSettingsModal';
 import type { WebhookTelegramConfig, WebhookDiscordConfig } from '../context/TradingContext';
 
 export type LogLevel = 'INFO' | 'SUCCESS' | 'WARN' | 'DANGER';
-export type LogCategory = 'SCAN' | 'RISK' | 'JITO' | 'EXECUTION' | 'SYSTEM' | 'TELEGRAM';
+export type LogCategory = 'SCAN' | 'RISK' | 'JITO' | 'EXECUTION' | 'SYSTEM' | 'TELEGRAM' | 'DECISION';
 
 export interface LogMessage {
   id: string;
@@ -86,6 +86,7 @@ export interface TradingState {
   isHoldingsLoading: boolean;
   totalHoldingsValueUsd: number;
   totalHoldingsValueSol: number;
+  isSimulationMode: boolean; // Dry-Run Mode: Intercepts Phantom RPC transactions with mock execution
 }
 
 export interface TradingActions {
@@ -114,6 +115,8 @@ export interface TradingActions {
   dumpAllHoldingsToSol: () => Promise<void>;
   unwrapWsolOrCloseAccount: (mint: string, isToken2022?: boolean) => Promise<boolean>;
   emergencyStopAllTrading: () => void;
+  setIsSimulationMode: (enabled: boolean) => void;
+  toggleSimulationMode: () => void;
   clearLogs: () => void;
   clearTrades: () => void;
   appendLog: (category: LogCategory, level: LogLevel, message: string, data?: any) => void;

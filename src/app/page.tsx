@@ -5,6 +5,7 @@ import { TradingProvider, useTradingAgent } from '../context/TradingContext';
 import Header from '../components/dashboard/Header';
 import MetricCards from '../components/dashboard/MetricCards';
 import PositionsTable from '../components/dashboard/PositionsTable';
+import MiniTerminalFeed from '../components/dashboard/MiniTerminalFeed';
 import TerminalLogs from '../components/dashboard/TerminalLogs';
 import ConfigPanel from '../components/dashboard/ConfigPanel';
 import DeskFeed from '../components/dashboard/DeskFeed';
@@ -215,7 +216,7 @@ function TerminalAppInner() {
             />
           </div>
 
-          {/* Right Column: Positions, Logs, and Configuration Controls */}
+          {/* Right Column: Positions, Decision Terminal Feed, Logs, and Configuration Controls */}
           <div className="lg:col-span-3 flex flex-col gap-4">
             <PositionsTable
               onSharePnl={() => {
@@ -223,6 +224,7 @@ function TerminalAppInner() {
                 setIsShareModalOpen(true);
               }}
             />
+            <MiniTerminalFeed />
             <TerminalLogs />
             <ConfigPanel onOpenPasswordModal={() => setIsPasswordModalOpen(true)} />
           </div>

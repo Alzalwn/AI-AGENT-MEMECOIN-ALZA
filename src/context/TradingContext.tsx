@@ -431,6 +431,36 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     appendLog('SYSTEM', 'INFO', 'Riwayat transaksi & PnL berhasil direset.');
   }, [setClosedTrades, appendLog]);
 
+  const [isSimulationMode, setIsSimulationModeState] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('GT_SIMULATION_MODE');
+      if (saved !== null) {
+        return saved === 'true';
+      }
+    }
+    return true; // Default TRUE: Zero financial risk guarantee!
+  });
+
+  const setIsSimulationMode = useCallback((enabled: boolean) => {
+    setIsSimulationModeState(enabled);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('GT_SIMULATION_MODE', String(enabled));
+      } catch {}
+    }
+    appendLog(
+      'SYSTEM',
+      enabled ? 'SUCCESS' : 'WARN',
+      enabled
+        ? '🧪 [DRY-RUN SIMULASI AKTIF] Transaksi Phantom akan dicegat. 0 SOL asli dipotong.'
+        : '⚠️ [MODE RIIL DIAKTIFKAN] PERHATIAN: Transaksi akan mengirim order langsung ke dompet Phantom.'
+    );
+  }, [appendLog]);
+
+  const toggleSimulationMode = useCallback(() => {
+    setIsSimulationMode(!isSimulationMode);
+  }, [isSimulationMode, setIsSimulationMode]);
+
   const toggleAudio = useCallback(() => {
     setIsAudioMuted((prev) => {
       const next = !prev;
@@ -573,13 +603,25 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
           `🟡 [PHANTOM POPUP] Menunggu persetujuan swap di dompet untuk ${holding.symbol} -> SOL...`
         );
 
+        if (isSimulationMode) {
+          const mockSig = `SIM_SELL_${Math.random().toString(36).slice(2, 10).toUpperCase()}_${Date.now().toString().slice(-6)}`;
+          appendLog(
+            'EXECUTION',
+            'SUCCESS',
+            `🧪 [DRY-RUN SIMULATION] Penjualan token ${holding.symbol} dicegat! Disimulasikan terjual ke SOL [SimTx: ${mockSig}]. 0 SOL riil dikeluarkan.`
+          );
+          soundFx.playTakeProfit();
+          return true;
+        }
+
         const swapRes = await executeJupiterSwap(
           quote,
           'SOL',
           0.0001,
           networkMetrics.currentSlot,
           pubKey,
-          provider
+          provider,
+          isSimulationMode
         );
 
         if (swapRes.signature) {
@@ -829,14 +871,24 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         ? `${result.signature.slice(0, 8)}...${result.signature.slice(-6)}`
         : 'On-Chain';
 
-      appendLog(
-        'EXECUTION',
-        'SUCCESS',
-        `🎯 [ON-CHAIN CONFIRMED] Posisi aktif dibuka: ${token.symbol} (${tokenAmt.toLocaleString()} token) @ ${entryPrice.toFixed(8)} SOL [Tx: ${shortSig}] • MUTEX GUARD LOCKED`
-      );
+      if (isSimulationMode || result.isSimulated) {
+        appendLog(
+          'EXECUTION',
+          'SUCCESS',
+          `🧪 [DRY-RUN SIMULATION] Posisi aktif dibuka: ${token.symbol} (${tokenAmt.toLocaleString()} token) @ ${entryPrice.toFixed(8)} SOL [SimTx: ${shortSig}] • ZERO REAL SOL SPENT`
+        );
+      } else {
+        appendLog(
+          'EXECUTION',
+          'SUCCESS',
+          `🎯 [ON-CHAIN CONFIRMED] Posisi aktif dibuka: ${token.symbol} (${tokenAmt.toLocaleString()} token) @ ${entryPrice.toFixed(8)} SOL [Tx: ${shortSig}] • MUTEX GUARD LOCKED`
+        );
+      }
 
-      // 4. Refresh live on-chain balance immediately
-      await refreshWalletBalance();
+      // 4. Refresh live on-chain balance immediately (only if live real mode)
+      if (!isSimulationMode && !result.isSimulated) {
+        await refreshWalletBalance();
+      }
 
       // 5. Omnichannel webhooks
       if (telegramConfig.isEnabled) {
@@ -864,8 +916,18 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       let isSoldOnChain = false;
 
       if (walletState.mode === 'LIVE_ON_CHAIN') {
-        try {
-          // Jalur A: Server Hot Wallet via /api/bot/execute-sell
+        if (isSimulationMode) {
+          // DRY-RUN SIMULATION INTERCEPTOR
+          const mockSig = `SIM_SELL_${Math.random().toString(36).slice(2, 10).toUpperCase()}_${Date.now().toString().slice(-6)}`;
+          appendLog(
+            'EXECUTION',
+            'SUCCESS',
+            `🧪 [DRY-RUN SIMULATION] Transaksi jual Phantom dicegat! Posisi ${pos.token.symbol} disimulasikan terjual @ ${exitPriceSol.toFixed(8)} SOL [SimTx: ${mockSig}] tanpa memotong SOL riil.`
+          );
+          isSoldOnChain = true;
+        } else {
+          try {
+            // Jalur A: Server Hot Wallet via /api/bot/execute-sell
           const sellRes = await fetch('/api/bot/execute-sell', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -930,10 +992,11 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
           appendLog('EXECUTION', 'DANGER', `❌ Error saat executeSell: ${sellErr.message}. Posisi tetap berstatus OPEN.`);
           isSoldOnChain = false;
         }
-      } else {
-        // Paper trading mode
-        isSoldOnChain = true;
       }
+    } else {
+      // Paper trading mode
+      isSoldOnChain = true;
+    }
 
       if (!isSoldOnChain) {
         setActivePosition((prev) => (prev ? { ...prev, status: 'OPEN' } : null));
@@ -1421,6 +1484,18 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       // Keep rolling feed of 96 items for the PRD 96-cell Scan Grid Matrix
       setConsensusFeed((prev) => [consensus, ...prev.slice(0, 95)]);
 
+      // Emit verbose sequential decision logs to UI terminal feed for every coin scanned
+      if (consensus.decisionTrace) {
+        const dt = consensus.decisionTrace;
+        const sym = consensus.token.symbol;
+        const verdictTag = consensus.verdict === 'APPROVED' ? '✅ APPROVED (5/5 PASS)' : `🛑 VETOED [${consensus.vetoAgent?.toUpperCase()}]`;
+        appendLog(
+          'DECISION',
+          consensus.verdict === 'APPROVED' ? 'SUCCESS' : 'WARN',
+          `🔎 [DECISION] ${sym} ➔ 1. Likuiditas: ${dt.liquidity.passed ? '✅' : '🛑'} ($${dt.liquidity.initialLpUsd.toLocaleString()}) | 2. Honeypot: ${dt.honeypot.passed ? '✅' : '🛑'} (Mint:${dt.honeypot.mintRevoked ? 'Rev' : 'Act'} Frz:${dt.honeypot.freezeRevoked ? 'Rev' : 'Act'}) | 3. Momentum: ${dt.momentum.passed ? '✅' : '🛑'} (Vol:${dt.momentum.volumeDelta15s > 0 ? '+' : ''}${dt.momentum.volumeDelta15s} SOL) ➔ ${verdictTag}`
+        );
+      }
+
       setTelemetry((prev) => ({
         ...prev,
         scannedCount: prev.scannedCount + 1,
@@ -1504,6 +1579,41 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
           isPositionOpenRef.current = true;
           isAutoSnipingRef.current = true;
           setTelemetry((prev) => ({ ...prev, activePositionLocked: true }));
+
+          if (isSimulationMode) {
+            // DRY-RUN SIMULATION INTERCEPTOR (Zero Real SOL spent!)
+            const tokenPrice = consensus.token.priceSol > 0 ? consensus.token.priceSol : 0.0001;
+            const simulatedTokens = +(solInvest / tokenPrice).toFixed(4);
+            const mockSig = `SIM_BUY_${Math.random().toString(36).slice(2, 10).toUpperCase()}_${Date.now().toString().slice(-6)}`;
+
+            appendLog(
+              'EXECUTION',
+              'SUCCESS',
+              `🧪 [DRY-RUN SIMULATION] Order beli ${consensus.token.symbol} (${solInvest} SOL) lolos analisis! Transaksi Phantom dicegat & disimulasikan sukses [SimTx: ${mockSig}]. 0 SOL riil dikeluarkan.`
+            );
+
+            const simulatedResult: SwapExecutionResult = {
+              signature: mockSig,
+              inAmountSol: solInvest,
+              outAmountFormatted: simulatedTokens.toLocaleString('en-US', { maximumFractionDigits: 4 }),
+              tokenAmountUi: simulatedTokens,
+              decimals: 6,
+              outputMint: consensus.token.mint,
+              symbol: consensus.token.symbol,
+              routeSummary: '[DRY-RUN SIMULATION] Intercepted Phantom RPC (Zero Real SOL Spent)',
+              priceImpactPct: 0.08,
+              jitoTipSol: 0,
+              slot: networkMetrics.currentSlot + 1,
+              isSimulated: true,
+              timestamp: Date.now()
+            };
+
+            positionMutex.markBuyCompleted(consensus.token.mint);
+            await openLivePosition(simulatedResult, consensus.token);
+            setAutoSnipeConfig((prev) => ({ ...prev, dailyTradesExecuted: prev.dailyTradesExecuted + 1 }));
+            isAutoSnipingRef.current = false;
+            return;
+          }
 
           appendLog(
             'EXECUTION',
@@ -1944,6 +2054,9 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     dumpAllHoldingsToSol,
     unwrapWsolOrCloseAccount,
     emergencyStopAllTrading,
+    isSimulationMode,
+    setIsSimulationMode,
+    toggleSimulationMode,
     clearLogs,
     clearTrades,
     appendLog
