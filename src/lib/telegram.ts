@@ -314,6 +314,9 @@ export interface HighConvictionCandidate {
   freezeAuthorityRevoked: boolean;
   burntLiquidityPct: number;
   isHoneypot?: boolean;
+  marketCapUsd?: number;
+  tokenAgeMinutes?: number;
+  pricePumpPct?: number;
 }
 
 /**
@@ -350,6 +353,17 @@ export async function sendPersonalActionAlert(
   }
   if (token.isHoneypot === true) {
     return { success: false, reason: 'Ditolak: Terdeteksi indikasi honeypot' };
+  }
+
+  // 1b. FILTER EARLY-ENTRY GUARD (Batas MC <= $30k, Usia <= 10m, Spike <= +300%)
+  if (token.marketCapUsd && token.marketCapUsd > 30000) {
+    return { success: false, reason: `Ditolak Early-Entry Guard: Market Cap $${Math.round(token.marketCapUsd).toLocaleString()} > $30,000 (Already Pumped)` };
+  }
+  if (token.tokenAgeMinutes && token.tokenAgeMinutes > 10) {
+    return { success: false, reason: `Ditolak Early-Entry Guard: Usia koin ${token.tokenAgeMinutes.toFixed(1)} menit > Cutoff 10 menit` };
+  }
+  if (token.pricePumpPct && token.pricePumpPct > 300) {
+    return { success: false, reason: `Ditolak Early-Entry Guard: Lonjakan harga +${token.pricePumpPct.toFixed(0)}% > +300% (MISSED_ENTRY)` };
   }
 
   // 2. FILTER 2: Anti-Spam Personal (6-Hour Deduplication Cache)

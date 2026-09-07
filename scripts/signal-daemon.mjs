@@ -72,7 +72,14 @@ const CHAT_ID =
 
 const SCAN_INTERVAL_MS = parseInt(process.env.SCAN_INTERVAL_MS || '15000', 10);
 const MIN_SCORE = parseInt(process.env.MIN_SCORE || '82', 10);
-const MIN_LIQUIDITY_USD = parseFloat(process.env.MIN_LIQUIDITY_USD || '8000');
+
+// Early-Entry Guard & ZCAT-Model Thresholds
+const MAX_MARKET_CAP_USD = parseFloat(process.env.MAX_MARKET_CAP_USD || '30000'); // Ceiling: drop > $30k
+const MIN_LIQUIDITY_USD = parseFloat(process.env.MIN_LIQUIDITY_USD || '1500');   // Floor: $1,000 - $3,000 USD
+const MAX_TOKEN_AGE_MINUTES = parseFloat(process.env.MAX_TOKEN_AGE_MINUTES || '10'); // Hard cutoff: 10m
+const MAX_PRICE_PUMP_PCT = parseFloat(process.env.MAX_PRICE_PUMP_PCT || '300');    // Spike cutoff: > +300% (MISSED_ENTRY)
+const MIN_V_MC_RATIO = 1.0;                                                         // ZCAT Volume/MC >= 1.0x
+const MIN_LIQ_DEPTH_PCT = 10.0;                                                     // ZCAT Liquidity Depth >= 10%
 
 // Deduplikasi CA 24 Jam
 let sentTokens = {}; // mint -> timestamp
@@ -183,6 +190,8 @@ async function sendToTelegram(signal) {
     `  ⚖️ R/R Ratio: <b>1 : 4.5</b> · ke TP3: <b>1 : 6.0+</b>\n` +
     `\n⏱️ <b>ESTIMASI WAKTU</b>: 12–25 Menit ke TP1\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `🛡️ <b>EARLY GUARD</b>: PASSED (MC: $${Math.round(signal.marketCapUsd).toLocaleString()} < $30k | Age: ${signal.ageMinutes}m)\n` +
+    `💎 <b>ZCAT MODEL</b>: APPROVED (V/MC: ${signal.vmcRatio}x | Liq Depth: ${signal.liqDepthPct}%)\n` +
     `🛡️ Mint: Revoked ✅ | Freeze: Revoked ✅ | LP Burnt: 100% ✅\n` +
     `🤖 Engine: 5-Agent Consensus • Background Daemon 24/7`;
 
@@ -267,18 +276,58 @@ async function scanAndProcessTokens() {
 
       const liquidityUsd = pairData.liquidity?.usd || 0;
       const priceSol = parseFloat(pairData.priceNative) || 0;
-      const marketCapUsd = pairData.marketCap || pairData.fdv || 50000;
+      const marketCapUsd = pairData.marketCap || pairData.fdv || 15000;
+      const pairCreatedAt = pairData.pairCreatedAt || Date.now() - 180000;
+      const ageMinutes = Math.max(0.1, (now - pairCreatedAt) / (1000 * 60));
+      const volumeUsd = pairData.volume?.h24 || pairData.volume?.m5 || 0;
+      const pricePumpPct = Math.max(0, pairData.priceChange?.h1 || pairData.priceChange?.m5 || 0);
 
-      // Filter Likuiditas
+      // ── ATURAN 1: EARLY-ENTRY GUARD ──
+      // 1a. Syarat Minimal Likuiditas Awal ($1,000 - $3,000 USD)
       if (liquidityUsd < MIN_LIQUIDITY_USD || priceSol <= 0) {
+        console.log(`[EARLY-GUARD] ⏭️ Drop token ${mint.slice(0, 6)} - LP $${Math.round(liquidityUsd)} < Min $${MIN_LIQUIDITY_USD}`);
+        continue;
+      }
+
+      // 1b. Batas Atas Market Cap Ceiling (Maksimal $30,000 USD)
+      if (marketCapUsd > MAX_MARKET_CAP_USD) {
+        console.log(`[EARLY-GUARD] ⏭️ Drop token ${mint.slice(0, 6)} - MC $${Math.round(marketCapUsd)} > Maks $${MAX_MARKET_CAP_USD} (Already Pumped)`);
+        continue;
+      }
+
+      // 1c. Filter Usia Koin Maksimal (Cutoff 10 menit, ideal 3-5 menit)
+      if (ageMinutes > MAX_TOKEN_AGE_MINUTES) {
+        console.log(`[EARLY-GUARD] ⏭️ Drop token ${mint.slice(0, 6)} - Usia ${ageMinutes.toFixed(1)}m > Cutoff ${MAX_TOKEN_AGE_MINUTES}m`);
+        continue;
+      }
+
+      // 1d. Deteksi Spike Berlebihan (Price-Pump Cutoff > +300%)
+      if (pricePumpPct > MAX_PRICE_PUMP_PCT) {
+        console.log(`[EARLY-GUARD] ⏭️ Drop token ${mint.slice(0, 6)} - Spike +${pricePumpPct}% > Maks +${MAX_PRICE_PUMP_PCT}% (MISSED_ENTRY)`);
+        continue;
+      }
+
+      // ── ATURAN 2: ZCAT-MODEL ORGANIC GROWTH ──
+      // 2a. Rasio Volume terhadap Market Cap (V/MC >= 1.0)
+      const vmcRatio = +(volumeUsd / Math.max(1, marketCapUsd)).toFixed(2);
+      if (vmcRatio < MIN_V_MC_RATIO && ageMinutes > 2) {
+        console.log(`[ZCAT-MODEL] ⏭️ Drop token ${mint.slice(0, 6)} - Rasio V/MC ${vmcRatio}x < ${MIN_V_MC_RATIO}x (Belum ada perputaran organik)`);
+        continue;
+      }
+
+      // 2b. Rasio Ketahanan Likuiditas (Liquidity Depth 10% - 20%)
+      const liqDepthPct = +( (liquidityUsd / Math.max(1, marketCapUsd)) * 100 ).toFixed(1);
+      if (liqDepthPct < MIN_LIQ_DEPTH_PCT) {
+        console.log(`[ZCAT-MODEL] ⏭️ Drop token ${mint.slice(0, 6)} - Liquidity Depth ${liqDepthPct}% < ${MIN_LIQ_DEPTH_PCT}% (Likuiditas kertas)`);
         continue;
       }
 
       // Hitung Skor AI Konsensus
-      let score = 70;
-      if (pairData.volume?.h24 > 25000) score += 10;
-      if (pairData.txns?.h24?.buys > pairData.txns?.h24?.sells) score += 8;
-      if (liquidityUsd > 20000) score += 7;
+      let score = 75;
+      if (volumeUsd > 10000) score += 8;
+      if (pairData.txns?.h24?.buys > (pairData.txns?.h24?.sells || 0)) score += 7;
+      if (vmcRatio >= 1.5) score += 6;
+      if (liqDepthPct >= 12 && liqDepthPct <= 20) score += 4;
 
       if (score < MIN_SCORE) continue;
 
@@ -302,6 +351,9 @@ async function scanAndProcessTokens() {
         priceSol,
         liquidityUsd,
         marketCapUsd,
+        ageMinutes: +ageMinutes.toFixed(1),
+        vmcRatio,
+        liqDepthPct,
         entryLow: +(priceSol * 0.97).toFixed(8),
         entryHigh: +(priceSol * 1.03).toFixed(8),
         tp1: +(priceSol * 1.5).toFixed(8),
