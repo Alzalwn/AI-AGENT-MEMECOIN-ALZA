@@ -1,7 +1,8 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import { useTradingAgent } from '../../hooks/useTradingAgent';
+import { useSupabaseRealtime } from '../../hooks/useSupabaseRealtime';
 import {
   Activity,
   Zap,
@@ -139,10 +140,10 @@ export const Header: React.FC<HeaderProps> = ({
                   : 'text-emerald-400'
               }`}>
                 {autoSnipeConfig.tradingStyle === 'HODL'
-                  ? '💎 MOONBAG'
+                  ? 'ðŸ’Ž MOONBAG'
                   : autoSnipeConfig.tradingStyle === 'SWING'
-                  ? '📈 SWING'
-                  : '⚡ SCALP'}
+                  ? 'ðŸ“ˆ SWING'
+                  : 'âš¡ SCALP'}
               </span>
             </button>
           </div>
@@ -152,7 +153,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="hidden lg:flex items-center gap-5 text-[11px] bg-zinc-900/60 border border-zinc-800/80 px-3.5 py-1.5 rounded-xl">
           <button
             onClick={() => (onOpenRpc ? onOpenRpc() : rpcFailoverInstance.triggerFailover('Manual failover test'))}
-            title="Klik untuk membuka RPC Manager & Latency Benchmark (PRD §7.2)"
+            title="Klik untuk membuka RPC Manager & Latency Benchmark (PRD Â§7.2)"
             className="flex items-center gap-1.5 text-zinc-400 hover:text-zinc-100 transition-all cursor-pointer group"
           >
             <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse group-hover:scale-110" />
@@ -179,10 +180,15 @@ export const Header: React.FC<HeaderProps> = ({
 
           <div className="h-3 w-px bg-zinc-800" />
 
+          {/* Supabase Realtime Connection Indicator */}
+          <SupabaseRealtimeIndicator />
+
+          <div className="h-3 w-px bg-zinc-800" />
+
           {/* Live SOL Price in Rupiah & USD */}
           <button
             onClick={() => onOpenConverter?.()}
-            title="Klik untuk membuka Kalkulator Kurs SOL ⇄ Rupiah (IDR) & USD"
+            title="Klik untuk membuka Kalkulator Kurs SOL â‡„ Rupiah (IDR) & USD"
             aria-label="Kalkulator Kurs SOL ke Rupiah dan USD"
             className="flex items-center gap-1.5 text-zinc-300 hover:text-purple-300 transition-all cursor-pointer group"
           >
@@ -325,7 +331,7 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Send className={`w-3.5 h-3.5 ${telegramConfig?.isEnabled && telegramConfig?.botToken && telegramConfig?.chatId ? 'text-blue-400 animate-pulse' : 'text-zinc-500'}`} />
             <span className="hidden sm:inline text-zinc-400">TG:</span>
-            <span>{telegramConfig?.isEnabled && telegramConfig?.botToken && telegramConfig?.chatId ? 'Aktif ✅' : 'Setup'}</span>
+            <span>{telegramConfig?.isEnabled && telegramConfig?.botToken && telegramConfig?.chatId ? 'Aktif âœ…' : 'Setup'}</span>
           </button>
 
           {/* AI Consensus Live Scanner Indicator */}
@@ -503,5 +509,73 @@ export const Header: React.FC<HeaderProps> = ({
     </>
   );
 };
+
+
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// SUB-COMPONENT: Supabase Realtime Connection Indicator
+// Titik berwarna berkedip di header menampilkan status DB realtime
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function SupabaseRealtimeIndicator() {
+  const { status, lastEventAt, eventCount } = useSupabaseRealtime();
+  const [showTooltip, setShowTooltip] = useState(false);
+
+  const dotConfig = (
+    status === 'CONNECTED'    ? { color: 'bg-emerald-400', shadow: 'shadow-[0_0_6px_rgba(52,211,153,0.8)]', pulse: true,  label: 'CONNECTED' }
+    : status === 'CONNECTING' ? { color: 'bg-amber-400',   shadow: 'shadow-[0_0_6px_rgba(251,191,36,0.6)]', pulse: false, label: 'CONNECTING...' }
+    : status === 'DISCONNECTED' ? { color: 'bg-rose-500',  shadow: 'shadow-[0_0_6px_rgba(239,68,68,0.7)]',  pulse: false, label: 'DISCONNECTED' }
+    : { color: 'bg-zinc-600', shadow: '', pulse: false, label: 'UNAVAILABLE' }
+  );
+
+  const timeAgo = lastEventAt
+    ? `${Math.round((Date.now() - lastEventAt) / 1000)}s lalu`
+    : 'Belum ada event';
+
+  return (
+    <div
+      className="relative flex items-center gap-1.5 cursor-default"
+      onMouseEnter={() => setShowTooltip(true)}
+      onMouseLeave={() => setShowTooltip(false)}
+    >
+      {/* Pulsing dot indicator */}
+      <span
+        className={`w-2 h-2 rounded-full ${dotConfig.color} ${dotConfig.shadow} ${dotConfig.pulse ? 'animate-pulse' : ''} shrink-0`}
+      />
+      <span className="text-zinc-500 text-[11px] font-mono hidden xl:inline select-none">
+        DB
+      </span>
+
+      {/* Tooltip on hover */}
+      {showTooltip && (
+        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-3 z-50 w-52 bg-zinc-900 border border-zinc-700/80 rounded-xl p-3 shadow-2xl text-[10px] font-mono pointer-events-none">
+          <div className="flex items-center gap-2 mb-2">
+            <span className={`w-2 h-2 rounded-full ${dotConfig.color} shrink-0`} />
+            <span className="text-zinc-200 font-bold tracking-wide">Supabase Realtime</span>
+          </div>
+          <div className="text-zinc-400 space-y-1">
+            <div className="flex justify-between">
+              <span>Status:</span>
+              <span className={`font-bold ${status === 'CONNECTED' ? 'text-emerald-400' : status === 'DISCONNECTED' ? 'text-rose-400' : 'text-amber-400'}`}>
+                {dotConfig.label}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span>Event Masuk:</span>
+              <span className="text-zinc-200">{eventCount}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Terakhir:</span>
+              <span className="text-zinc-200">{timeAgo}</span>
+            </div>
+            {status === 'UNAVAILABLE' && (
+              <div className="text-amber-400 mt-1.5 text-[9px] leading-tight">
+                âš  Set NEXT_PUBLIC_SUPABASE_URL di .env.local
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default Header;

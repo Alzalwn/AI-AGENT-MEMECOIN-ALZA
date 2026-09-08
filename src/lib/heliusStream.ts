@@ -2,6 +2,12 @@
  * Helius / Solana WebSocket Streamer
  * Menghubungkan WebSocket on-chain secara langsung ke Helius RPC untuk streaming sub-slot,
  * deteksi program Raydium / Pump.fun, dan pembaruan slot instan.
+ *
+ * [v2 — QA Reliability Update]
+ * + Event counter per menit untuk monitoring throughput stream
+ * + Watchdog timer: deteksi zombie connection (WS OPEN tapi 0 event > 3 menit) → force reconnect
+ * + Log [CRITICAL] saat koneksi terputus atau stream membeku
+ * + getStreamHealth() publik untuk health check API endpoint
  */
 
 export interface PoolCreationEvent {
@@ -21,6 +27,16 @@ export interface BlockchainStreamCallbacks {
   onStatusChange?: (status: 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING') => void;
 }
 
+export interface StreamHealthReport {
+  status: 'HEALTHY' | 'DEGRADED' | 'CRITICAL' | 'OFFLINE';
+  wsReadyState: 'CONNECTING' | 'OPEN' | 'CLOSING' | 'CLOSED' | 'UNAVAILABLE';
+  eventsLastMinute: number;
+  reconnectCount: number;
+  uptimeSec: number;
+  lastEventAt: string | null; // ISO 8601
+  frozenMinutes: number; // Berapa menit tidak ada event (watchdog counter)
+}
+
 // Program IDs untuk Sniping Detik ke-0 (Block 0/1 Sniffer)
 export const SOLANA_DEX_PROGRAMS = {
   PUMP_FUN: '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
@@ -28,13 +44,26 @@ export const SOLANA_DEX_PROGRAMS = {
   RAYDIUM_CPMM: 'CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C'
 };
 
+// Watchdog: Batas menit tanpa event sebelum dianggap zombie connection
+const WATCHDOG_FROZEN_THRESHOLD_MINUTES = 3;
+const WATCHDOG_CHECK_INTERVAL_MS = 60 * 1000; // Cek setiap 1 menit
+
 export class HeliusBlockchainStream {
   private ws: any = null;
   private rpcUrl: string;
   private wsUrl: string;
   private callbacks: BlockchainStreamCallbacks = {};
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private watchdogTimer: NodeJS.Timeout | null = null;
   private isDestroyed = false;
+
+  // — Stream Health Metrics —
+  private eventsThisMinute = 0;
+  private eventsLastMinute = 0;
+  private reconnectCount = 0;
+  private startedAt: number = Date.now();
+  private lastEventAt: number | null = null;
+  private frozenMinutes = 0; // Berapa menit berturut-turut tanpa event
 
   constructor(rpcHttpUrl?: string) {
     this.rpcUrl =
@@ -47,7 +76,44 @@ export class HeliusBlockchainStream {
   public connect(callbacks: BlockchainStreamCallbacks) {
     this.callbacks = callbacks;
     this.isDestroyed = false;
+    this.startedAt = Date.now();
     this.initWebSocket();
+    this.startWatchdog();
+  }
+
+  /**
+   * Mengembalikan laporan kesehatan stream saat ini.
+   * Digunakan oleh /api/health/rpc-stream endpoint.
+   */
+  public getStreamHealth(): StreamHealthReport {
+    let wsReadyState: StreamHealthReport['wsReadyState'] = 'UNAVAILABLE';
+    if (this.ws) {
+      const states = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'] as const;
+      wsReadyState = states[this.ws.readyState] ?? 'UNAVAILABLE';
+    }
+
+    let status: StreamHealthReport['status'] = 'OFFLINE';
+    if (this.isDestroyed) {
+      status = 'OFFLINE';
+    } else if (wsReadyState === 'OPEN' && this.eventsLastMinute > 0) {
+      status = 'HEALTHY';
+    } else if (wsReadyState === 'OPEN' && this.frozenMinutes >= 1 && this.frozenMinutes < WATCHDOG_FROZEN_THRESHOLD_MINUTES) {
+      status = 'DEGRADED';
+    } else if (this.frozenMinutes >= WATCHDOG_FROZEN_THRESHOLD_MINUTES || wsReadyState === 'CLOSED') {
+      status = 'CRITICAL';
+    } else if (wsReadyState === 'CONNECTING') {
+      status = 'DEGRADED';
+    }
+
+    return {
+      status,
+      wsReadyState,
+      eventsLastMinute: this.eventsLastMinute,
+      reconnectCount: this.reconnectCount,
+      uptimeSec: Math.round((Date.now() - this.startedAt) / 1000),
+      lastEventAt: this.lastEventAt ? new Date(this.lastEventAt).toISOString() : null,
+      frozenMinutes: this.frozenMinutes,
+    };
   }
 
   private getWebSocketConstructor(): any {
@@ -70,6 +136,7 @@ export class HeliusBlockchainStream {
 
       this.ws.onopen = () => {
         this.callbacks.onStatusChange?.('CONNECTED');
+        this.frozenMinutes = 0; // Reset frozen counter on successful reconnect
 
         // 1. Subscribe ke live slot updates
         this.ws?.send(
@@ -124,6 +191,10 @@ export class HeliusBlockchainStream {
         try {
           const rawText = typeof event.data === 'string' ? event.data : event.data.toString();
           const data = JSON.parse(rawText);
+
+          // — Track event activity untuk watchdog & health report —
+          this.eventsThisMinute++;
+          this.lastEventAt = Date.now();
 
           if (data.method === 'slotNotification' && data.params?.result?.slot) {
             this.callbacks.onSlot?.(data.params.result.slot);
@@ -186,6 +257,7 @@ export class HeliusBlockchainStream {
       };
 
       this.ws.onclose = () => {
+        console.error(`[CRITICAL] RPC Stream Disconnected - Reconnecting... (Reconnect #${this.reconnectCount + 1})`);
         this.callbacks.onStatusChange?.('DISCONNECTED');
         if (!this.isDestroyed) {
           this.scheduleReconnect();
@@ -198,15 +270,60 @@ export class HeliusBlockchainStream {
 
   private scheduleReconnect() {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectCount++;
+    // Backoff eksponensial: 6s, 12s, 24s... maks 60s
+    const backoffMs = Math.min(6000 * Math.pow(1.5, Math.min(this.reconnectCount - 1, 5)), 60000);
     this.reconnectTimer = setTimeout(() => {
       if (!this.isDestroyed) {
         this.initWebSocket();
       }
-    }, 6000);
+    }, backoffMs);
+  }
+
+  /**
+   * Watchdog Timer: Berjalan setiap menit untuk memantau keaktifan stream.
+   * Jika stream OPEN tapi tidak ada event masuk selama N menit → zombie connection.
+   */
+  private startWatchdog() {
+    this.stopWatchdog();
+    this.watchdogTimer = setInterval(() => {
+      // Rekam event menit terakhir dan reset counter
+      this.eventsLastMinute = this.eventsThisMinute;
+      this.eventsThisMinute = 0;
+
+      // Deteksi zombie connection
+      if (this.ws && this.ws.readyState === 1 /* OPEN */) {
+        if (this.eventsLastMinute === 0) {
+          this.frozenMinutes++;
+          if (this.frozenMinutes >= WATCHDOG_FROZEN_THRESHOLD_MINUTES) {
+            console.error(
+              `[CRITICAL] RPC Stream Frozen — ${this.frozenMinutes} menit tanpa event. Force reconnecting... (Uptime: ${Math.round((Date.now() - this.startedAt) / 1000)}s)`
+            );
+            try { this.ws.close(); } catch {}
+            this.ws = null;
+            this.frozenMinutes = 0;
+            this.scheduleReconnect();
+          } else {
+            console.warn(`[WARN] RPC Stream belum aktif menerima event selama ${this.frozenMinutes} menit. Memantau...`);
+          }
+        } else {
+          // Ada event masuk → stream sehat, reset frozen counter
+          this.frozenMinutes = 0;
+        }
+      }
+    }, WATCHDOG_CHECK_INTERVAL_MS);
+  }
+
+  private stopWatchdog() {
+    if (this.watchdogTimer) {
+      clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
   }
 
   public disconnect() {
     this.isDestroyed = true;
+    this.stopWatchdog();
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.ws) {
       try {
