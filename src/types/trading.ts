@@ -139,7 +139,7 @@ export interface TradingActions {
   deleteSignalHistoryItem: (id: string) => void;
   clearSignalHistoryByFilter: (option: 'all' | 'older_1h' | 'older_24h' | 'older_7d' | 'older_30d' | 'last_1h' | 'last_24h' | 'last_7d' | 'last_30d' | 'sl_only') => number;
   restoreSeedSignals: () => void;
-  scanSolanaLiveNow: (mode?: 'ALL' | 'SNIPER' | 'GRADUATING_PUMP' | 'BREAKOUT' | 'VOLUME_SURGE' | 'WHALE' | 'SUPERNOVA') => Promise<number>;
+  scanSolanaLiveNow: (mode?: 'ALL' | 'SNIPER' | 'GRADUATING_PUMP' | 'BREAKOUT' | 'VOLUME_SURGE' | 'WHALE' | 'SUPERNOVA' | 'SUB_100K') => Promise<number>;
   promoteTokenToAlphaSignal: (token: any) => Promise<boolean>;
 }
 

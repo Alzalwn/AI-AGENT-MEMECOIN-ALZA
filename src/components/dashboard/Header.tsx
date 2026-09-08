@@ -26,7 +26,8 @@ import {
   Users,
   Server,
   Database,
-  Send
+  Send,
+  Sparkles
 } from 'lucide-react';
 import Link from 'next/link';
 import { rpcFailoverInstance } from '../../lib/rpcFailover';
@@ -272,15 +273,15 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden xl:inline text-[11px] font-bold">Alerts</span>
           </button>
 
-          {/* Performance Analytics (Desktop) */}
+          {/* Early Gems Hunter (<$100k MC) */}
           <button
             onClick={onOpenAnalytics}
-            className="hidden lg:flex p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer items-center gap-1.5 text-xs"
-            title="Performance Stats ($E[R]$ Expectancy & Winrate)"
-            aria-label="Buka Performance Analytics"
+            className="hidden lg:flex p-2 rounded-xl bg-gradient-to-r from-emerald-500/10 via-cyan-500/10 to-teal-500/10 hover:from-emerald-500/20 hover:to-cyan-500/20 border border-emerald-500/40 text-emerald-400 hover:text-emerald-300 transition-all cursor-pointer items-center gap-1.5 text-xs shadow-[0_0_12px_rgba(16,185,129,0.18)]"
+            title="Radar Koin Early Sub-$100k Market Cap (Potensi 5x - 50x)"
+            aria-label="Buka Radar Koin Early Sub-$100k"
           >
-            <BarChart3 className="w-4 h-4 text-amber-400" />
-            <span className="hidden xl:inline text-[11px] font-bold">Analytics</span>
+            <Sparkles className="w-4 h-4 text-emerald-400 animate-pulse" />
+            <span className="hidden xl:inline text-[11px] font-black tracking-wide">Gems &lt;$100k</span>
           </button>
 
           {/* Smart Money Copy-Trading (Desktop) */}
@@ -430,13 +431,13 @@ export const Header: React.FC<HeaderProps> = ({
               <span>Alerts</span>
             </button>
 
-            {/* Analytics */}
+            {/* Early Gems Hunter */}
             <button
               onClick={() => { onOpenAnalytics(); setIsMobileMenuOpen(false); }}
-              className="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800 hover:border-amber-500/50 flex items-center gap-2 text-zinc-300 hover:text-amber-300 transition-all cursor-pointer"
+              className="p-2.5 rounded-xl bg-zinc-900/90 border border-emerald-500/40 hover:border-emerald-500/80 flex items-center gap-2 text-emerald-300 transition-all cursor-pointer"
             >
-              <BarChart3 className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>Analytics</span>
+              <Sparkles className="w-4 h-4 text-emerald-400 shrink-0 animate-pulse" />
+              <span className="font-bold">Gems &lt;$100k MC</span>
             </button>
 
             {/* Smart Money Whale Tracker */}

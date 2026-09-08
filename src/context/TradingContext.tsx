@@ -726,11 +726,11 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
    * Menganalisis koin secara instan sesuai Discovery Mode dan langsung menerbitkan sinyal yang lolos
    */
   const scanSolanaLiveNow = useCallback(async (
-    discoveryMode: 'ALL' | 'SNIPER' | 'GRADUATING_PUMP' | 'BREAKOUT' | 'VOLUME_SURGE' | 'WHALE' | 'SUPERNOVA' = 'ALL'
+    discoveryMode: 'ALL' | 'SNIPER' | 'GRADUATING_PUMP' | 'BREAKOUT' | 'VOLUME_SURGE' | 'WHALE' | 'SUPERNOVA' | 'SUB_100K' = 'ALL'
   ): Promise<number> => {
     appendLog('SCAN', 'INFO', `🔍 [SCAN ON-DEMAND] Memulai pemindaian live Solana DEX (Channel: ${discoveryMode})...`);
     try {
-      const res = await fetch('/api/tokens/real');
+      const res = await fetch(`/api/tokens/real?mode=${discoveryMode}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (!data.success || !Array.isArray(data.tokens) || data.tokens.length === 0) {
@@ -741,7 +741,13 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       let candidateTokens: TokenSignal[] = [...data.tokens];
 
       // Terapkan filter khusus berdasarkan Discovery Mode
-      if (discoveryMode === 'SNIPER') {
+      if (discoveryMode === 'SUB_100K') {
+        // Mode Koin Early Sub-$100k Market Cap
+        candidateTokens = candidateTokens.filter((t) => {
+          const estMc = (t.initialLpUsd || 5000) * 5.5;
+          return estMc <= 100000 || t.platform === 'Pump.fun';
+        });
+      } else if (discoveryMode === 'SNIPER') {
         // Microcap Sniper: MC <= $40k, Early stage
         candidateTokens = candidateTokens.filter((t) => {
           const estMc = (t.initialLpUsd || 5000) * 5.5;

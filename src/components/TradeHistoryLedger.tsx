@@ -124,9 +124,9 @@ export default function TradeHistoryLedger({
             <button
               onClick={onOpenAnalytics}
               className="px-2.5 py-1 rounded bg-terminal-green/15 hover:bg-terminal-green/25 border border-terminal-green/40 text-terminal-green text-[10px] font-bold flex items-center gap-1.5 transition-all cursor-pointer"
-              title="Buka Quantitative Performance Analytics (PRD §6)"
+              title="Buka Radar Koin Early (Sub-$100k Market Cap Gems)"
             >
-              <BarChart3 className="w-3.5 h-3.5" /> Analytics
+              <TrendingUp className="w-3.5 h-3.5" /> Gems &lt;$100k
             </button>
           )}
           {onClearTrades && (

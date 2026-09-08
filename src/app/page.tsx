@@ -20,7 +20,7 @@ import StrategyPresetModal from '../components/StrategyPresetModal';
 import TelegramSettingsModal from '../components/TelegramSettingsModal';
 import { JupiterSwapModal } from '../components/JupiterSwapModal';
 import { AutoSnipeModal } from '../components/AutoSnipeModal';
-import PerformanceStatsModal from '../components/PerformanceStatsModal';
+import { EarlyGemsModal } from '../components/EarlyGemsModal';
 import ExecutionSettingsModal from '../components/ExecutionSettingsModal';
 import GeminiNarrativeModal from '../components/GeminiNarrativeModal';
 import PnlShareModal from '../components/PnlShareModal';
@@ -78,7 +78,7 @@ function TerminalAppInner() {
   const [isWalletModalOpen, setIsWalletModalOpen] = useState<boolean>(false);
   const [isStrategyModalOpen, setIsStrategyModalOpen] = useState<boolean>(false);
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState<boolean>(false);
-  const [isStatsModalOpen, setIsStatsModalOpen] = useState<boolean>(false);
+  const [isEarlyGemsOpen, setIsEarlyGemsOpen] = useState<boolean>(false);
   const [isExecutionModalOpen, setIsExecutionModalOpen] = useState<boolean>(false);
   const [isJupiterModalOpen, setIsJupiterModalOpen] = useState<boolean>(false);
   const [customSwapMint, setCustomSwapMint] = useState<string | undefined>(undefined);
@@ -151,7 +151,7 @@ function TerminalAppInner() {
       } else if (e.key.toLowerCase() === 'a') {
         setIsTelegramModalOpen((prev) => !prev);
       } else if (e.key.toLowerCase() === 'p') {
-        setIsStatsModalOpen((prev) => !prev);
+        setIsEarlyGemsOpen((prev) => !prev);
       } else if (e.key.toLowerCase() === 'e') {
         setIsExecutionModalOpen((prev) => !prev);
       } else if (e.key.toLowerCase() === 'w') {
@@ -188,7 +188,7 @@ function TerminalAppInner() {
         onOpenWallet={() => setIsWalletModalOpen(true)}
         onOpenStrategy={() => setIsStrategyModalOpen(true)}
         onOpenAlerts={() => setIsTelegramModalOpen(true)}
-        onOpenAnalytics={() => setIsStatsModalOpen(true)}
+        onOpenAnalytics={() => setIsEarlyGemsOpen(true)}
         onOpenExecution={() => setIsExecutionModalOpen(true)}
         onOpenJupiter={() => setIsJupiterModalOpen(true)}
         onOpenRpc={() => setIsRpcModalOpen(true)}
@@ -290,7 +290,7 @@ function TerminalAppInner() {
                 setShareTrade(trade);
                 setIsShareModalOpen(true);
               }}
-              onOpenAnalytics={() => setIsStatsModalOpen(true)}
+              onOpenAnalytics={() => setIsEarlyGemsOpen(true)}
             />
           </div>
 
@@ -410,11 +410,9 @@ function TerminalAppInner() {
         currentBalanceSol={walletState.isConnected ? walletState.balanceSol : telemetry.currentBalanceSol}
       />
 
-      <PerformanceStatsModal
-        isOpen={isStatsModalOpen}
-        onClose={() => setIsStatsModalOpen(false)}
-        trades={closedTrades}
-        telemetry={telemetry}
+      <EarlyGemsModal
+        isOpen={isEarlyGemsOpen}
+        onClose={() => setIsEarlyGemsOpen(false)}
       />
 
       <ExecutionSettingsModal

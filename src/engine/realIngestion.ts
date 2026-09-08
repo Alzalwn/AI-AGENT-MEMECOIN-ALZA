@@ -111,7 +111,9 @@ export async function fetchLiveSolanaTokens(mode: string = 'ALL'): Promise<Token
       safeFetchJson<any[]>('https://api.dexscreener.com/token-boosts/top/v1', 6000)
     ];
 
-    if (mode === 'SUPERNOVA') {
+    if (mode === 'SUB_100K') {
+      fetchPromises.push(safeFetchJson<any>('https://api.dexscreener.com/latest/dex/search?q=pump', 6000));
+    } else if (mode === 'SUPERNOVA') {
       fetchPromises.push(safeFetchJson<any>('https://api.dexscreener.com/latest/dex/search?q=ai', 6000));
     } else if (mode === 'GRADUATING_PUMP') {
       fetchPromises.push(safeFetchJson<any>('https://api.dexscreener.com/latest/dex/search?q=pump', 6000));
@@ -224,26 +226,34 @@ export async function fetchLiveSolanaTokens(mode: string = 'ALL'): Promise<Token
       // ─── TIER SELECTION (Early Gem vs Breakout Runner) ───
       let scanTier: 'EARLY_GEM' | 'BREAKOUT_RUNNER' = 'EARLY_GEM';
 
-      // Pola Nasduck (Breakout Runner): MC $150k - $5M, Volume aktif, ada akumulasi pembeli
-      const isBreakoutCandidate = mc > 150000 && mc <= 5000000;
-      if (isBreakoutCandidate) {
-        const hasBreakoutVolume = vol1h >= 15000 || vol5m >= 3500;
-        const hasAccumulation = buySellRatio >= 1.4;
-        const hasHealthyLp = initialLpUsd >= 15000;
-
-        if (hasBreakoutVolume && hasAccumulation && hasHealthyLp) {
-          scanTier = 'BREAKOUT_RUNNER';
-        } else {
-          // MC di atas $150k tapi volume sepi / dead / tanpa akumulasi -> abaikan
+      if (mode === 'SUB_100K') {
+        // Mode SUB_100K: Khusus koin ultra-early dengan MC di bawah $100,000 USD
+        if (mc > 100000 || (mc > 0 && mc < 2000)) {
           continue;
         }
+        scanTier = 'EARLY_GEM';
       } else {
-        // Early Gem: MC $3,000 - $150,000 USD
-        if (mc > 150000 || (mc > 0 && mc < 3000)) {
-          continue;
-        }
-        if (!isPump && initialLpUsd < 2500 && pair) {
-          continue;
+        // Pola Nasduck (Breakout Runner): MC $150k - $5M, Volume aktif, ada akumulasi pembeli
+        const isBreakoutCandidate = mc > 150000 && mc <= 5000000;
+        if (isBreakoutCandidate) {
+          const hasBreakoutVolume = vol1h >= 15000 || vol5m >= 3500;
+          const hasAccumulation = buySellRatio >= 1.4;
+          const hasHealthyLp = initialLpUsd >= 15000;
+
+          if (hasBreakoutVolume && hasAccumulation && hasHealthyLp) {
+            scanTier = 'BREAKOUT_RUNNER';
+          } else {
+            // MC di atas $150k tapi volume sepi / dead / tanpa akumulasi -> abaikan
+            continue;
+          }
+        } else {
+          // Early Gem: MC $3,000 - $150,000 USD
+          if (mc > 150000 || (mc > 0 && mc < 3000)) {
+            continue;
+          }
+          if (!isPump && initialLpUsd < 2500 && pair) {
+            continue;
+          }
         }
       }
 

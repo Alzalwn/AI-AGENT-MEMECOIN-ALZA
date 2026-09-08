@@ -14,7 +14,7 @@ import { ScannerStatus } from '../dashboard/ScannerStatus';
 
 type FilterTier = 'ALL' | SignalTier;
 type StatusFilter = 'ACTIVE' | 'RESOLVED' | 'ALL';
-export type DiscoveryChannel = 'ALL' | 'SNIPER' | 'BREAKOUT' | 'WHALE' | 'SUPERNOVA';
+export type DiscoveryChannel = 'ALL' | 'SUB_100K' | 'SNIPER' | 'BREAKOUT' | 'WHALE' | 'SUPERNOVA';
 
 interface SignalFeedProps {
   signals: TradingSignal[];
@@ -30,6 +30,7 @@ const TIER_FILTERS: { key: FilterTier; label: string; emoji: string }[] = [
 
 export const DISCOVERY_CHANNELS: { key: DiscoveryChannel; label: string; desc: string; icon: string; badge: string }[] = [
   { key: 'ALL', label: 'Semua Channel', desc: 'Scan seluruh pool live Solana DEX tanpa filter kategori', icon: '🌐', badge: 'DEFAULT' },
+  { key: 'SUB_100K', label: 'Gems <$100k', desc: 'Koin early potensial dengan Market Cap di bawah $100,000 USD', icon: '🌱', badge: 'EARLY GEM' },
   { key: 'SNIPER', label: 'Microcap Sniper', desc: 'Koin awal (<6 jam), MC <$40k, potensi 10x-50x', icon: '🎯', badge: 'HIGH R/R' },
   { key: 'BREAKOUT', label: 'Breakout Runner', desc: 'MC $30k-$250k, volume spike & akumulasi pembeli', icon: '🚀', badge: 'MOMENTUM' },
   { key: 'WHALE', label: 'Smart Money Track', desc: 'Terdeteksi akumulasi wallet trader winrate >60%', icon: '🐋', badge: 'ON-CHAIN' },
@@ -190,7 +191,10 @@ export function SignalFeed({ signals }: SignalFeedProps) {
         if (statusFilter === 'RESOLVED' && isStillActive) return false;
 
         // Discovery Mode channel filter
-        if (discoveryChannel === 'SNIPER') {
+        if (discoveryChannel === 'SUB_100K') {
+          const mc = s.marketContext?.marketCapUsd || (s.token?.initialLpUsd || 5000) * 5.5;
+          if (mc > 100000) return false;
+        } else if (discoveryChannel === 'SNIPER') {
           const mc = s.marketContext?.marketCapUsd || (s.token?.initialLpUsd || 5000) * 5.5;
           if (mc > 40000) return false;
         } else if (discoveryChannel === 'BREAKOUT') {
