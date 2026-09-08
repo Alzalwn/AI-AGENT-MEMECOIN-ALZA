@@ -59,6 +59,32 @@ export function enqueueSniffedPoolEvent(event: PoolCreationEvent): TokenSignal {
   return blockZeroSignal;
 }
 
+// Helper to fetch JSON with automatic fallback to curl on VPS when Node undici IPv6 times out
+async function safeFetchJson<T>(url: string, timeoutMs = 6000): Promise<T | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) GrokTrencher/1.0' },
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {
+    // Fallback using curl if running on VPS / Node environment
+    if (typeof window === 'undefined') {
+      try {
+        const { execSync } = await import('child_process');
+        const cmd = `curl -s -m ${Math.ceil(timeoutMs / 1000)} "${url}"`;
+        const raw = execSync(cmd, { stdio: ['pipe', 'pipe', 'ignore'] }).toString();
+        if (raw && (raw.trim().startsWith('{') || raw.trim().startsWith('['))) {
+          return JSON.parse(raw);
+        }
+      } catch {}
+    }
+  }
+  return null;
+}
+
 export async function fetchLiveSolanaTokens(): Promise<TokenSignal[]> {
   const now = Date.now();
 
@@ -75,19 +101,13 @@ export async function fetchLiveSolanaTokens(): Promise<TokenSignal[]> {
 
   try {
     // 1. Fetch dual stream: token profiles + token boosts on Solana from DexScreener
-    const [resProfiles, resBoosts] = await Promise.allSettled([
-      fetch('https://api.dexscreener.com/token-profiles/latest/v1', {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) GrokTrencher/1.0' },
-        signal: AbortSignal.timeout(4000)
-      }).then(r => r.ok ? r.json() : []),
-      fetch('https://api.dexscreener.com/token-boosts/latest/v1', {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) GrokTrencher/1.0' },
-        signal: AbortSignal.timeout(4000)
-      }).then(r => r.ok ? r.json() : [])
+    const [profilesData, boostsData] = await Promise.all([
+      safeFetchJson<DexProfile[]>('https://api.dexscreener.com/token-profiles/latest/v1', 6000),
+      safeFetchJson<any[]>('https://api.dexscreener.com/token-boosts/latest/v1', 6000)
     ]);
 
-    const profiles: DexProfile[] = resProfiles.status === 'fulfilled' && Array.isArray(resProfiles.value) ? resProfiles.value : [];
-    const boosts: any[] = resBoosts.status === 'fulfilled' && Array.isArray(resBoosts.value) ? resBoosts.value : [];
+    const profiles: DexProfile[] = Array.isArray(profilesData) ? profilesData : [];
+    const boosts: any[] = Array.isArray(boostsData) ? boostsData : [];
 
     // Filter & Deduplikasi token mints di Solana
     const solanaProfiles = profiles.filter((t) => t.chainId === 'solana');
@@ -113,11 +133,8 @@ export async function fetchLiveSolanaTokens(): Promise<TokenSignal[]> {
     const uniqueAddresses = Array.from(addressMap.keys()).slice(0, 25);
     if (uniqueAddresses.length === 0) return cachedTokens;
 
-    // 2. Fetch pair detail data for these tokens with strict timeout
-    const pairRes = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${uniqueAddresses.join(',')}`, {
-      signal: AbortSignal.timeout(4000)
-    });
-    const pairData = pairRes.ok ? await pairRes.json() : null;
+    // 2. Fetch pair detail data for these tokens
+    const pairData = await safeFetchJson<any>(`https://api.dexscreener.com/latest/dex/tokens/${uniqueAddresses.join(',')}`, 6000);
     const pairsMap = new Map<string, any>();
 
     if (pairData && pairData.pairs) {
@@ -134,32 +151,36 @@ export async function fetchLiveSolanaTokens(): Promise<TokenSignal[]> {
     for (const tokenAddress of uniqueAddresses) {
       const profile = addressMap.get(tokenAddress);
       const pair = pairsMap.get(tokenAddress);
+
+      const dexId = pair?.dexId || (tokenAddress.toLowerCase().endsWith('pump') ? 'pumpfun' : 'raydium');
+      const isPump = dexId === 'pumpfun' || tokenAddress.toLowerCase().endsWith('pump');
+      const platform = isPump ? 'Pump.fun' : 'Raydium';
       
       const mc = pair?.marketCap || pair?.fdv || 0;
-      const initialLpUsd = pair?.liquidity?.usd ? Math.round(pair.liquidity.usd) : 0;
+      const reportedLp = pair?.liquidity?.usd ? Math.round(pair.liquidity.usd) : 0;
+      // Pump.fun bonding curve memiliki likuiditas virtual (~$6,000 USD / ~30 SOL)
+      const initialLpUsd = isPump ? Math.max(reportedLp, 6000) : reportedLp;
       const createdAt = pair?.pairCreatedAt ? Number(pair.pairCreatedAt) : now;
       const ageHours = Math.max(0.01, (now - createdAt) / 3600000);
 
       // ─── FILTER SELEKTIF & REALISTIS ───
-      // (a) Market Cap Sweet Spot: $8,000 - $150,000 USD (Zona momentum awal)
-      if (mc > 150000 || (mc > 0 && mc < 8000)) {
+      // (a) Market Cap Sweet Spot: $3,000 - $150,000 USD (Early Microcap to Breakout)
+      if (mc > 150000 || (mc > 0 && mc < 3000)) {
         continue;
       }
 
-      // (b) Likuiditas Minimum: $2,500 USD (Mencegah koin rug/tanpa LP)
-      if (initialLpUsd < 2500 && pair) {
+      // (b) Likuiditas Minimum: $2,500 USD (Untuk Raydium; Pump.fun dijamin oleh bonding curve)
+      if (!isPump && initialLpUsd < 2500 && pair) {
         continue;
       }
 
-      // (c) Usia Koin Maksimal: 12 Jam (Token Intra-Day segar, bukan koin mati minggu lalu)
+      // (c) Usia Koin Maksimal: 12 Jam (Token Intra-Day segar)
       if (ageHours > 12) {
         continue;
       }
 
       const symbol = pair?.baseToken?.symbol || 'UNKNOWN';
       const name = pair?.baseToken?.name || profile?.description?.slice(0, 24) || symbol;
-      const dexId = pair?.dexId || (tokenAddress.toLowerCase().endsWith('pump') ? 'pumpfun' : 'raydium');
-      const platform = dexId === 'pumpfun' ? 'Pump.fun' : 'Raydium';
 
       const priceUsd = pair?.priceUsd ? parseFloat(pair.priceUsd) : 0.00002;
       const priceSol = +(priceUsd / 140).toFixed(8);
