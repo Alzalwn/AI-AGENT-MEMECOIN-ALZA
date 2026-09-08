@@ -25,7 +25,7 @@ module.exports = {
       name: 'grok-trencher',
       script: 'node_modules/.bin/next',
       args: 'start',
-      cwd: '/root/AI-AGENT-MEMECOIN-ALZA',
+      cwd: __dirname,
 
       // — Resource Guards —
       max_memory_restart: '900M',    // Restart otomatis sebelum OOM Kill
@@ -44,9 +44,9 @@ module.exports = {
       // — Logging —
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       merge_logs: true,
-      out_file: '/root/.pm2/logs/grok-trencher-out.log',
-      error_file: '/root/.pm2/logs/grok-trencher-err.log',
-      log_file: '/root/.pm2/logs/grok-trencher-combined.log',
+      out_file: (process.env.HOME || '/root') + '/.pm2/logs/grok-trencher-out.log',
+      error_file: (process.env.HOME || '/root') + '/.pm2/logs/grok-trencher-err.log',
+      log_file: (process.env.HOME || '/root') + '/.pm2/logs/grok-trencher-combined.log',
 
       // — Environment: Production —
       env_production: {

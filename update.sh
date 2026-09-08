@@ -24,8 +24,12 @@ echo "📦 [3/4] Memeriksa dependencies dan mengompilasi Next.js production buil
 npm install --production=false
 npm run build
 
-echo "⚡ [4/4] Memuat ulang instance PM2 dengan kode baru..."
-pm2 restart grok-trencher 2>/dev/null || pm2 start npm --name "grok-trencher" -- start
+echo "⚡ [4/4] Memuat ulang instance PM2 dengan ecosystem config terbaru..."
+if [ -f "ecosystem.config.js" ]; then
+    pm2 startOrReload ecosystem.config.js --env production || pm2 restart grok-trencher || pm2 start npm --name "grok-trencher" -- start
+else
+    pm2 restart grok-trencher 2>/dev/null || pm2 start npm --name "grok-trencher" -- start
+fi
 
 # Memuat ulang grok-sniper daemon jika aktif
 if pm2 list 2>/dev/null | grep -q "grok-sniper"; then
