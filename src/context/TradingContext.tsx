@@ -243,12 +243,12 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (saved) {
           const parsed = JSON.parse(saved) as TradingSignal[];
           if (parsed && Array.isArray(parsed)) {
-            // Auto-clean: buang token dengan MC > $30k & deduplikasi ketat per CA (mint)
+            // Auto-clean: buang token dengan MC > $150k & deduplikasi ketat per CA (mint)
             const seenMints = new Set<string>();
             const cleaned = parsed.filter((s) => {
               if (!s || !s.token || !s.token.mint) return false;
-              if (s.marketContext && s.marketContext.marketCapUsd > 30000) return false;
-              if (s.token.initialLpUsd && s.token.initialLpUsd > 30000) return false;
+              if (s.marketContext && s.marketContext.marketCapUsd > 150000) return false;
+              if (s.token.initialLpUsd && s.token.initialLpUsd > 150000) return false;
               if (seenMints.has(s.token.mint)) return false;
               seenMints.add(s.token.mint);
               return true;
@@ -357,9 +357,9 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     signal: TradingSignal,
     telegramConfig: WebhookTelegramConfig
   ): Promise<void> => {
-    // 0. EARLY ENTRY GUARD: Drop jika Market Cap > $30,000 USD
-    if (signal.marketContext && signal.marketContext.marketCapUsd > 30000) {
-      console.warn(`[broadcastSignal] DROPPED by Early Guard: MC $${signal.marketContext.marketCapUsd.toLocaleString()} > $30,000`);
+    // 0. EARLY ENTRY GUARD: Drop jika Market Cap > $150,000 USD
+    if (signal.marketContext && signal.marketContext.marketCapUsd > 150000) {
+      console.warn(`[broadcastSignal] DROPPED by Early Guard: MC $${signal.marketContext.marketCapUsd.toLocaleString()} > $150,000`);
       return;
     }
 
@@ -389,7 +389,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (prev.some((s) => s.token?.mint === signal.token?.mint)) {
         return prev;
       }
-      const cleanPrev = prev.filter((s) => s.token?.mint !== signal.token?.mint && (s.marketContext?.marketCapUsd || 0) <= 30000);
+      const cleanPrev = prev.filter((s) => s.token?.mint !== signal.token?.mint && (s.marketContext?.marketCapUsd || 0) <= 150000);
       const next = [signal, ...cleanPrev].slice(0, 50);
       try { localStorage.setItem('GT_ACTIVE_SIGNALS', JSON.stringify(next)); } catch {}
       return next;
@@ -2019,7 +2019,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
 
     fetchRealTokens();
-    const timer = setInterval(fetchRealTokens, 35000);
+    const timer = setInterval(fetchRealTokens, 15000);
     return () => {
       isMounted = false;
       clearInterval(timer);
@@ -2083,12 +2083,26 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         latencyMs: 32 + Math.floor(Math.random() * 14)
       }));
 
-      // Ingest signal: blend real live DexScreener token with simulation
+      // Ingest signal: prioritize real live DexScreener token from queue
       let rawToken: TokenSignal;
-      if (realTokensQueueRef.current.length > 0 && Math.random() > 0.4) {
+      if (realTokensQueueRef.current.length > 0) {
         rawToken = realTokensQueueRef.current.shift()!;
       } else {
         rawToken = generateRandomTokenSignal();
+      }
+
+      // Proactively replenish real tokens queue if running low
+      if (realTokensQueueRef.current.length < 3) {
+        fetch('/api/tokens/real')
+          .then((r) => r.json())
+          .then((d) => {
+            if (d.success && Array.isArray(d.tokens) && d.tokens.length > 0) {
+              const existingMints = new Set(realTokensQueueRef.current.map((t) => t.mint));
+              const newTokens = d.tokens.filter((t: TokenSignal) => !existingMints.has(t.mint));
+              realTokensQueueRef.current.push(...newTokens);
+            }
+          })
+          .catch(() => {});
       }
 
       const consensus = runAgentConsensus(rawToken, STRATEGY_PRESETS.BALANCED);

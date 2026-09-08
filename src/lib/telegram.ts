@@ -138,9 +138,9 @@ export async function sendSignalAlert(
   signal: TradingSignal,
   config: TelegramConfig
 ): Promise<boolean> {
-  // 1. EARLY ENTRY GUARD: Drop jika Market Cap > $30,000 USD
-  if (signal.marketContext && signal.marketContext.marketCapUsd > 30000) {
-    console.warn(`[Telegram Alert Dropped] MC $${signal.marketContext.marketCapUsd.toLocaleString()} > $30,000 (Early-Entry Guard)`);
+  // 1. EARLY ENTRY GUARD: Drop jika Market Cap > $150,000 USD
+  if (signal.marketContext && signal.marketContext.marketCapUsd > 150000) {
+    console.warn(`[Telegram Alert Dropped] MC $${signal.marketContext.marketCapUsd.toLocaleString()} > $150,000 (Early-Entry Guard)`);
     return false;
   }
 
@@ -420,15 +420,15 @@ export async function sendPersonalActionAlert(
     return { success: false, reason: 'Ditolak: Terdeteksi indikasi honeypot' };
   }
 
-  // 1b. FILTER EARLY-ENTRY GUARD (Batas MC <= $30k, Usia <= 10m, Spike <= +300%)
-  if (token.marketCapUsd && token.marketCapUsd > 30000) {
-    return { success: false, reason: `Ditolak Early-Entry Guard: Market Cap $${Math.round(token.marketCapUsd).toLocaleString()} > $30,000 (Already Pumped)` };
+  // 1b. FILTER EARLY-ENTRY GUARD (Batas MC <= $150k, Usia <= 12h, Spike <= +500%)
+  if (token.marketCapUsd && token.marketCapUsd > 150000) {
+    return { success: false, reason: `Ditolak Early-Entry Guard: Market Cap $${Math.round(token.marketCapUsd).toLocaleString()} > $150,000 (Already Pumped)` };
   }
-  if (token.tokenAgeMinutes && token.tokenAgeMinutes > 10) {
-    return { success: false, reason: `Ditolak Early-Entry Guard: Usia koin ${token.tokenAgeMinutes.toFixed(1)} menit > Cutoff 10 menit` };
+  if (token.tokenAgeMinutes && token.tokenAgeMinutes > 720) {
+    return { success: false, reason: `Ditolak Early-Entry Guard: Usia koin ${(token.tokenAgeMinutes / 60).toFixed(1)} jam > Cutoff 12 jam` };
   }
-  if (token.pricePumpPct && token.pricePumpPct > 300) {
-    return { success: false, reason: `Ditolak Early-Entry Guard: Lonjakan harga +${token.pricePumpPct.toFixed(0)}% > +300% (MISSED_ENTRY)` };
+  if (token.pricePumpPct && token.pricePumpPct > 500) {
+    return { success: false, reason: `Ditolak Early-Entry Guard: Lonjakan harga +${token.pricePumpPct.toFixed(0)}% > +500% (MISSED_ENTRY)` };
   }
 
   // 2. FILTER 2: Anti-Spam Personal (6-Hour Deduplication Cache)

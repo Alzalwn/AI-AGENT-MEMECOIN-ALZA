@@ -17,11 +17,11 @@ export interface EarlyEntryGuardConfig {
 }
 
 export const DEFAULT_EARLY_GUARD_CONFIG: EarlyEntryGuardConfig = {
-  maxMarketCapUsd: 30000,      // Hard ceiling: Drop > $30,000 USD
-  minLiquidityUsd: 1500,       // Minimum liquidity floor ($1,000 - $3,000)
-  maxTokenAgeMinutes: 10,      // Hard cutoff: 10 menit
-  idealTokenAgeMinutes: 4,     // Sweet spot: 3 - 5 menit
-  maxPricePumpPct: 300,        // Max pump dari initial price: +300%
+  maxMarketCapUsd: 150000,     // Hard ceiling: Drop > $150,000 USD (Early Microcap Breakout Zone)
+  minLiquidityUsd: 2500,       // Minimum liquidity floor ($2,500)
+  maxTokenAgeMinutes: 720,     // Hard cutoff: 12 jam (Intra-day alpha window)
+  idealTokenAgeMinutes: 15,    // Sweet spot: 5 - 30 menit
+  maxPricePumpPct: 500,        // Max pump dari initial price: +500%
 };
 
 export interface TokenCandleMetadata {

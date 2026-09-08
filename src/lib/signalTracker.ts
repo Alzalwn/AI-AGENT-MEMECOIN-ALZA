@@ -226,11 +226,11 @@ export async function processActiveSignals(
 ): Promise<TrackingResult> {
   const activeSignals = signals.filter(
     (s) => ['ACTIVE', 'TP1_HIT', 'TP2_HIT'].includes(s.status) &&
-           (!s.marketContext || (s.marketContext.marketCapUsd || 0) <= 30000)
+           (!s.marketContext || (s.marketContext.marketCapUsd || 0) <= 150000)
   );
   const resolvedSignals = signals.filter(
     (s) => !['ACTIVE', 'TP1_HIT', 'TP2_HIT'].includes(s.status) ||
-           (s.marketContext && (s.marketContext.marketCapUsd || 0) > 30000)
+           (s.marketContext && (s.marketContext.marketCapUsd || 0) > 150000)
   );
 
   if (activeSignals.length === 0) {

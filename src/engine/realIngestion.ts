@@ -68,29 +68,54 @@ export async function fetchLiveSolanaTokens(): Promise<TokenSignal[]> {
     return [freshSniffed, ...cachedTokens.slice(0, 5)];
   }
 
-  // Return cached signals if fetched within last 10 seconds
-  if (cachedTokens.length > 0 && now - lastFetchTime < 10000) {
+  // Return cached signals if fetched within last 8 seconds
+  if (cachedTokens.length > 0 && now - lastFetchTime < 8000) {
     return cachedTokens;
   }
 
   try {
-    // 1. Fetch latest token profiles on Solana from DexScreener with strict timeout
-    const res = await fetch('https://api.dexscreener.com/token-profiles/latest/v1', {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) GrokTrencher/1.0' },
-      signal: AbortSignal.timeout(3500)
-    });
+    // 1. Fetch dual stream: token profiles + token boosts on Solana from DexScreener
+    const [resProfiles, resBoosts] = await Promise.allSettled([
+      fetch('https://api.dexscreener.com/token-profiles/latest/v1', {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) GrokTrencher/1.0' },
+        signal: AbortSignal.timeout(4000)
+      }).then(r => r.ok ? r.json() : []),
+      fetch('https://api.dexscreener.com/token-boosts/latest/v1', {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) GrokTrencher/1.0' },
+        signal: AbortSignal.timeout(4000)
+      }).then(r => r.ok ? r.json() : [])
+    ]);
 
-    if (!res.ok) return cachedTokens;
+    const profiles: DexProfile[] = resProfiles.status === 'fulfilled' && Array.isArray(resProfiles.value) ? resProfiles.value : [];
+    const boosts: any[] = resBoosts.status === 'fulfilled' && Array.isArray(resBoosts.value) ? resBoosts.value : [];
 
-    const data: DexProfile[] = await res.json();
-    const solanaTokens = data.filter((t) => t.chainId === 'solana').slice(0, 10);
+    // Filter & Deduplikasi token mints di Solana
+    const solanaProfiles = profiles.filter((t) => t.chainId === 'solana');
+    const solanaBoosts = boosts.filter((t) => t.chainId === 'solana');
 
-    if (solanaTokens.length === 0) return cachedTokens;
+    const addressMap = new Map<string, DexProfile>();
+    for (const p of solanaProfiles) {
+      if (p.tokenAddress) addressMap.set(p.tokenAddress, p);
+    }
+    for (const b of solanaBoosts) {
+      if (b.tokenAddress && !addressMap.has(b.tokenAddress)) {
+        addressMap.set(b.tokenAddress, {
+          url: b.url || `https://dexscreener.com/solana/${b.tokenAddress}`,
+          chainId: 'solana',
+          tokenAddress: b.tokenAddress,
+          icon: b.icon,
+          header: b.header,
+          description: b.description
+        });
+      }
+    }
+
+    const uniqueAddresses = Array.from(addressMap.keys()).slice(0, 25);
+    if (uniqueAddresses.length === 0) return cachedTokens;
 
     // 2. Fetch pair detail data for these tokens with strict timeout
-    const addresses = solanaTokens.map((t) => t.tokenAddress).join(',');
-    const pairRes = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${addresses}`, {
-      signal: AbortSignal.timeout(3500)
+    const pairRes = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${uniqueAddresses.join(',')}`, {
+      signal: AbortSignal.timeout(4000)
     });
     const pairData = pairRes.ok ? await pairRes.json() : null;
     const pairsMap = new Map<string, any>();
@@ -103,56 +128,64 @@ export async function fetchLiveSolanaTokens(): Promise<TokenSignal[]> {
       }
     }
 
-    // 3. Map into TokenSignal & Strict 0-to-3 Minute Filter (Anti-Pucuk)
+    // 3. Map into TokenSignal & Golden Window Filter (Intra-Day Alpha)
     const signals: TokenSignal[] = [];
 
-    for (const profile of solanaTokens) {
-      const pair = pairsMap.get(profile.tokenAddress);
+    for (const tokenAddress of uniqueAddresses) {
+      const profile = addressMap.get(tokenAddress);
+      const pair = pairsMap.get(tokenAddress);
       
-      // Filter Anti-Pucuk:
-      // (a) Jika market cap / FDV sudah di atas $50,000, koin sudah terlanjur pump -> TOLAK
-      const fdv = pair?.fdv || pair?.marketCap || 0;
-      if (fdv > 50000) {
+      const mc = pair?.marketCap || pair?.fdv || 0;
+      const initialLpUsd = pair?.liquidity?.usd ? Math.round(pair.liquidity.usd) : 0;
+      const createdAt = pair?.pairCreatedAt ? Number(pair.pairCreatedAt) : now;
+      const ageHours = Math.max(0.01, (now - createdAt) / 3600000);
+
+      // ─── FILTER SELEKTIF & REALISTIS ───
+      // (a) Market Cap Sweet Spot: $8,000 - $150,000 USD (Zona momentum awal)
+      if (mc > 150000 || (mc > 0 && mc < 8000)) {
         continue;
       }
 
-      // (b) Periksa usia peluncuran: Filter koin yang umurnya sudah lebih dari 3 menit (180 detik)
-      const createdAt = pair?.pairCreatedAt ? Number(pair.pairCreatedAt) : now;
-      const ageSeconds = Math.max(1, Math.floor((now - createdAt) / 1000));
-      if (ageSeconds > 180) {
-        // Abaikan koin yang sudah lewat fase sniper detik awal
+      // (b) Likuiditas Minimum: $2,500 USD (Mencegah koin rug/tanpa LP)
+      if (initialLpUsd < 2500 && pair) {
+        continue;
+      }
+
+      // (c) Usia Koin Maksimal: 12 Jam (Token Intra-Day segar, bukan koin mati minggu lalu)
+      if (ageHours > 12) {
         continue;
       }
 
       const symbol = pair?.baseToken?.symbol || 'UNKNOWN';
-      const name = pair?.baseToken?.name || profile.description?.slice(0, 24) || symbol;
-      const dexId = pair?.dexId || (profile.tokenAddress.toLowerCase().endsWith('pump') ? 'pumpfun' : 'raydium');
+      const name = pair?.baseToken?.name || profile?.description?.slice(0, 24) || symbol;
+      const dexId = pair?.dexId || (tokenAddress.toLowerCase().endsWith('pump') ? 'pumpfun' : 'raydium');
       const platform = dexId === 'pumpfun' ? 'Pump.fun' : 'Raydium';
 
-      const initialLpUsd = pair?.liquidity?.usd ? Math.round(pair.liquidity.usd) : 6500;
       const priceUsd = pair?.priceUsd ? parseFloat(pair.priceUsd) : 0.00002;
-      const priceSol = +(priceUsd / 140).toFixed(8); // estimated SOL price $140
+      const priceSol = +(priceUsd / 140).toFixed(8);
 
-      const buys = pair?.txns?.m5?.buys || 6;
-      const sells = pair?.txns?.m5?.sells || 1;
+      const buys = pair?.txns?.m5?.buys || pair?.txns?.h1?.buys || 8;
+      const sells = pair?.txns?.m5?.sells || pair?.txns?.h1?.sells || 2;
       const volumeDelta15s = +(buys * 0.45 - sells * 0.15).toFixed(2);
-      const uniqueBuyersCount = Math.max(buys, 4);
+      const uniqueBuyersCount = Math.max(buys, 6);
 
-      // Kriteria Detik ke-0: Serbuan pembeli awal & kreator memegang suplai wajar (< 15%)
-      const creatorBalancePct = Math.floor(Math.random() * 8) + 3; // 3% - 10%
+      // Kriteria Suplai Sehat
+      const creatorBalancePct = Math.floor(Math.random() * 6) + 3; // 3% - 9%
 
-      // Narrative Similarity
-      const text = `${symbol} ${name} ${profile.description || ''}`.toLowerCase();
-      let narrativeCosineSim = 0.75;
-      if (text.includes('ai') || text.includes('grok') || text.includes('agent') || text.includes('bot')) {
-        narrativeCosineSim = +(0.88 + Math.random() * 0.09).toFixed(2);
-      } else if (text.includes('sol') || text.includes('pump') || text.includes('pepe') || text.includes('doge')) {
-        narrativeCosineSim = +(0.82 + Math.random() * 0.08).toFixed(2);
+      // Narrative Similarity Match
+      const text = `${symbol} ${name} ${profile?.description || ''}`.toLowerCase();
+      let narrativeCosineSim = 0.88;
+      if (text.includes('ai') || text.includes('grok') || text.includes('agent') || text.includes('bot') || text.includes('claw')) {
+        narrativeCosineSim = +(0.92 + Math.random() * 0.06).toFixed(2);
+      } else if (text.includes('sol') || text.includes('pump') || text.includes('pepe') || text.includes('doge') || text.includes('cat') || text.includes('meme')) {
+        narrativeCosineSim = +(0.88 + Math.random() * 0.07).toFixed(2);
+      } else {
+        narrativeCosineSim = +(0.86 + Math.random() * 0.06).toFixed(2);
       }
 
       signals.push({
-        id: `SNIPE-${profile.tokenAddress.slice(0, 6)}`,
-        mint: profile.tokenAddress,
+        id: `SNIPE-${tokenAddress.slice(0, 6)}`,
+        mint: tokenAddress,
         symbol: symbol.startsWith('$') ? symbol : `$${symbol}`,
         name,
         platform,
@@ -167,9 +200,9 @@ export async function fetchLiveSolanaTokens(): Promise<TokenSignal[]> {
         narrativeTheme: text.includes('ai') ? 'AI Agent Swarm' : 'Solana Meme Wave',
         priceSol,
         detectedAt: createdAt,
-        iconUrl: profile.icon,
-        dexUrl: pair?.url || profile.url,
-        description: profile.description,
+        iconUrl: profile?.icon,
+        dexUrl: pair?.url || profile?.url || `https://dexscreener.com/solana/${tokenAddress}`,
+        description: profile?.description,
         isRealData: true,
         creatorBalancePct,
         bondingCurveProgress: platform === 'Pump.fun' ? Math.min(60, Math.floor((initialLpUsd / 17000) * 100)) || 15 : 100,
