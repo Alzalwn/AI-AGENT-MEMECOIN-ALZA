@@ -365,28 +365,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return;
     }
 
-    // 0b. 24-HOUR DEDUPLIKASI CA (Single Alert Rule per Token)
-    const DEDUP_KEY = 'GT_ALERTED_CA_CACHE';
-    const mint = signal.token?.mint;
-    if (typeof window !== 'undefined' && mint) {
-      try {
-        const raw = localStorage.getItem(DEDUP_KEY);
-        const map: Record<string, number> = raw ? JSON.parse(raw) : {};
-        const lastSent = map[mint];
-        if (lastSent && (Date.now() - lastSent) < 24 * 3600 * 1000) {
-          console.warn(`[broadcastSignal] DROPPED: CA ${mint} sudah pernah dijadikan sinyal dalam 24 jam terakhir.`);
-          return;
-        }
-        map[mint] = Date.now();
-        const cutoff = Date.now() - 24 * 3600 * 1000;
-        for (const [k, v] of Object.entries(map)) {
-          if (v < cutoff) delete map[k];
-        }
-        localStorage.setItem(DEDUP_KEY, JSON.stringify(map));
-      } catch {}
-    }
-
-    // 1. Tambah ke activeSignals (Deduplikasi ketat by token.mint, buang legacy > $30k)
+    // 1. Tambah ke activeSignals (Deduplikasi ketat by token.mint, buang legacy di atas batas MC)
     setActiveSignals((prev) => {
       if (prev.some((s) => s.token?.mint === signal.token?.mint)) {
         return prev;
@@ -404,8 +383,28 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // 2. Tambah ke history
     addSignalToHistory(signal);
 
-    // 3. Kirim ke Telegram (hanya jika lolos deduplikasi & guard)
+    // 3. Kirim ke Telegram (dengan 24-Hour Deduplikasi CA agar tidak spam grup/channel)
     if (telegramConfig.isEnabled && telegramConfig.botToken && telegramConfig.chatId) {
+      const DEDUP_KEY = 'GT_ALERTED_CA_CACHE';
+      const mint = signal.token?.mint;
+      if (typeof window !== 'undefined' && mint) {
+        try {
+          const raw = localStorage.getItem(DEDUP_KEY);
+          const map: Record<string, number> = raw ? JSON.parse(raw) : {};
+          const lastSent = map[mint];
+          if (lastSent && (Date.now() - lastSent) < 24 * 3600 * 1000) {
+            console.log(`[broadcastSignal] Telegram skip: CA ${mint} sudah pernah dikirim dalam 24 jam.`);
+            return;
+          }
+          map[mint] = Date.now();
+          const cutoff = Date.now() - 24 * 3600 * 1000;
+          for (const [k, v] of Object.entries(map)) {
+            if (v < cutoff) delete map[k];
+          }
+          localStorage.setItem(DEDUP_KEY, JSON.stringify(map));
+        } catch {}
+      }
+
       try {
         await sendSignalAlert(signal, {
           botToken: telegramConfig.botToken,
@@ -2072,16 +2071,25 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   }, [appendLog]);
 
-  // Autonomous Ingestion Loop with Synchronous Mutex Guard (Requirement 1 & Anti-Spam)
+  // Autonomous Ingestion Loop with Continuous Signal Broadcast
   useEffect(() => {
     if (engineStatus !== 'AUTONOMOUS') return;
 
-    const interval = setInterval(async () => {
-      // 0. STRICT MUTEX CHECK: If a position is open, acquiring, or in-flight, immediately skip
-      if (positionMutex.isPositionOpen() || isPositionOpenRef.current || activePositionRef.current !== null || isAutoSnipingRef.current) {
-        return;
-      }
+    // Eagerly fetch real Solana tokens on activation
+    if (realTokensQueueRef.current.length < 5) {
+      fetch('/api/tokens/real')
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.success && Array.isArray(d.tokens) && d.tokens.length > 0) {
+            const existingMints = new Set(realTokensQueueRef.current.map((t) => t.mint));
+            const newTokens = d.tokens.filter((t: TokenSignal) => !existingMints.has(t.mint));
+            realTokensQueueRef.current.push(...newTokens);
+          }
+        })
+        .catch(() => {});
+    }
 
+    const interval = setInterval(async () => {
       // Slot increment
       setNetworkMetrics((m) => ({
         ...m,
@@ -2098,7 +2106,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
 
       // Proactively replenish real tokens queue if running low
-      if (realTokensQueueRef.current.length < 3) {
+      if (realTokensQueueRef.current.length < 5) {
         fetch('/api/tokens/real')
           .then((r) => r.json())
           .then((d) => {
