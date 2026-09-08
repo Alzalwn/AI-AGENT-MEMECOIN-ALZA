@@ -69,6 +69,10 @@ npm config set fetch-retry-maxtimeout 120000 2>/dev/null || true
 # Install dependencies yang baru ditambahkan (@supabase/supabase-js, @supabase/ssr)
 npm install --production=false
 
+# Bersihkan cache .next sebelumnya untuk menghindari collision rename 500.html
+rm -rf .next
+mkdir -p .next/server/pages
+
 # Jalankan build Next.js
 npm run build
 
