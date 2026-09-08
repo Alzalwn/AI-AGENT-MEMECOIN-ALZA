@@ -13,14 +13,18 @@ import {
   ExternalLink,
   ShieldCheck,
   ShieldAlert,
-  Flame,
   Clock,
   Droplets,
   DollarSign,
   Activity,
   X,
   Send,
-  Crosshair
+  Crosshair,
+  TrendingUp,
+  TrendingDown,
+  Info,
+  Scale,
+  Target
 } from 'lucide-react';
 import { runConsensusAndBuildSignal } from '../../agents/consensus';
 import { STRATEGY_PRESETS } from '../../config/constants';
@@ -54,6 +58,12 @@ interface AnalyzedTokenResult {
   sells24h: number;
   status: 'SNIPER' | 'AMAN' | 'BAHAYA';
   badgeText: string;
+  buyVerdict: 'LAYAK_DIBELI' | 'HATI_HATI' | 'JANGAN_DIBELI';
+  buyVerdictTitle: string;
+  buyVerdictDesc: string;
+  canSellStatus: 'CONFIRMED_SELL' | 'HONEYPOT_RISK' | 'LOW_DATA';
+  canSellReason: string;
+  turnoverRatio: number;
   explanations: ScanExplanation[];
   rawPair: any;
 }
@@ -69,7 +79,7 @@ const SUPPORTED_CHAINS = [
 export function QuickSignalScanner({ onOpenJupiterSwap }: QuickSignalScannerProps) {
   const { broadcastSignal, telegramConfig, appendLog } = useTradingAgent();
   const [caInput, setCaInput] = useState('');
-  const [selectedChain, setSelectedChain] = useState('solana');
+  const [selectedChain, setSelectedChain] = useState('all');
   const [isScanning, setIsScanning] = useState(false);
   const [scanStep, setScanStep] = useState<number>(0); // 0 = idle, 1, 2, 3
   const [analyzedResult, setAnalyzedResult] = useState<AnalyzedTokenResult | null>(null);
@@ -97,19 +107,19 @@ export function QuickSignalScanner({ onOpenJupiterSwap }: QuickSignalScannerProp
         signal: AbortSignal.timeout(6000)
       });
 
-      // Simulation steps timer for slick UI feedback
-      await new Promise((r) => setTimeout(r, 400));
+      // Simulation steps timer for UI feedback
+      await new Promise((r) => setTimeout(r, 350));
       setScanStep(2);
 
       const res = await fetchPromise;
       if (!res.ok) throw new Error('Gagal menghubungi DEX gateway');
       const data = await res.json();
 
-      await new Promise((r) => setTimeout(r, 400));
+      await new Promise((r) => setTimeout(r, 350));
       setScanStep(3);
 
       if (!data.pairs || data.pairs.length === 0) {
-        await new Promise((r) => setTimeout(r, 300));
+        await new Promise((r) => setTimeout(r, 200));
         setNotFoundCA(ca);
         appendLog('SCAN', 'WARN', `[SCANNER] CA ${ca.slice(0, 8)} belum memiliki liquidity pool di DEX.`);
         return;
@@ -139,54 +149,119 @@ export function QuickSignalScanner({ onOpenJupiterSwap }: QuickSignalScannerProp
       const vol24 = pair.volume?.h24 || 0;
       const buys24 = pair.txns?.h24?.buys || 0;
       const sells24 = pair.txns?.h24?.sells || 0;
+      const turnoverRatio = liq > 0 ? +(vol24 / liq).toFixed(1) : 0;
 
       // ─────────────────────────────────────────────────────────────
-      // SCREENING ENGINE (SNIPER ENTRY & ANTI-RUGPULL RULES)
+      // 1. EVALUASI BISA DIJUAL (CAN SELL / HONEYPOT TEST)
       // ─────────────────────────────────────────────────────────────
+      let canSellStatus: 'CONFIRMED_SELL' | 'HONEYPOT_RISK' | 'LOW_DATA' = 'CONFIRMED_SELL';
+      let canSellReason = `Bisa dijual (Terverifikasi ${sells24.toLocaleString()} transaksi penjualan sukses di DEX)`;
+
+      if (buys24 > 15 && sells24 === 0) {
+        canSellStatus = 'HONEYPOT_RISK';
+        canSellReason = 'Waspada Honeypot! Sudah ada pembelian tetapi 0 penjualan yang berhasil.';
+      } else if (buys24 < 3 && sells24 === 0) {
+        canSellStatus = 'LOW_DATA';
+        canSellReason = 'Data transaksi masih sangat minim di DEX.';
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 2. KEPUTUSAN TRADING UTAMA: APAKAH BISA DIBELI ATAU TIDAK?
+      // ─────────────────────────────────────────────────────────────
+      let buyVerdict: 'LAYAK_DIBELI' | 'HATI_HATI' | 'JANGAN_DIBELI' = 'LAYAK_DIBELI';
+      let buyVerdictTitle = '🟢 REKOMENDASI: LAYAK DIBELI (AMAN / SNIPER ENTRY)';
+      let buyVerdictDesc = 'Token memenuhi syarat kelayakan: Likuiditas aman, bisa dijual kembali di DEX, dan berada di zona awal.';
       let status: 'SNIPER' | 'AMAN' | 'BAHAYA' = 'AMAN';
       let badgeText = '🟢 LOLOS SCREENING';
       let sniperEligible = false;
 
-      if (liq < 3000) {
+      const isSellingPressureDominant = sells24 > buys24 * 1.05;
+
+      if (liq < 3000 || canSellStatus === 'HONEYPOT_RISK') {
+        // Fatal Rug Risk
         status = 'BAHAYA';
         badgeText = '🔴 RISIKO RUGPULL TINGGI';
+        buyVerdict = 'JANGAN_DIBELI';
+        buyVerdictTitle = '🔴 REKOMENDASI: JANGAN DIBELI (HINDARI KERAS)';
+        buyVerdictDesc = liq < 3000
+          ? `Likuiditas hanya $${Math.round(liq).toLocaleString()} (sangat kritis di bawah $3.000). Likuiditas sekecil ini sangat mudah ditarik dev (rugpull) atau membuat Anda rugi 90% saat jual.`
+          : 'Terindikasi Honeypot on-chain: Pembelian token tidak bisa dijual kembali ke DEX.';
+      } else if (isSellingPressureDominant) {
+        // Warning Sell Pressure
+        status = mcap <= 150000 && ageHours <= 48 ? 'SNIPER' : 'AMAN';
+        badgeText = status === 'SNIPER' ? '🎯 SNIPER (HIGH VOLATILITY)' : '🟡 WAIT & SEE';
+        sniperEligible = status === 'SNIPER';
+        buyVerdict = 'HATI_HATI';
+        buyVerdictTitle = '🟡 REKOMENDASI: HATI-HATI / WAIT & SEE (TEKANAN JUAL TINGGI)';
+        buyVerdictDesc = `BISA DIJUAL, TETAPI RISIKO TINGGI. Transaksi jual (${sells24}) saat ini lebih banyak dari beli (${buys24}). Kemungkinan terjadi aksi dump/profit-taking oleh sniper awal. Jika ingin beli, tunggu grafik stabil atau gunakan modal kecil.`;
       } else if (mcap <= 150000 && mcap >= 4000 && ageHours <= 48) {
+        // Golden Sniper Entry
         status = 'SNIPER';
         badgeText = '🎯 SNIPER ENTRY CANDIDATE';
         sniperEligible = true;
+        buyVerdict = 'LAYAK_DIBELI';
+        buyVerdictTitle = '🟢 REKOMENDASI: SANGAT LAYAK DIBELI (GOLDEN SNIPER ENTRY)';
+        buyVerdictDesc = `BISA DIBELI. Token berada di fase akumulasi awal ($${Math.round(mcap).toLocaleString()} MC) dengan usia baru ${ageHours < 1 ? `${ageMinutes} Menit` : `${ageHours} Jam`}. Tekanan beli stabil dan likuiditas mencukupi.`;
+      } else {
+        // Regular Safe Runner
+        status = 'AMAN';
+        badgeText = '🟢 LOLOS SCREENING';
+        buyVerdict = 'LAYAK_DIBELI';
+        buyVerdictTitle = '🟢 REKOMENDASI: BISA DIBELI (ESTABLISHED RUNNER)';
+        buyVerdictDesc = `BISA DIBELI. Likuiditas pool $${Math.round(liq).toLocaleString()} sehat dan aman dari risiko rugpull instan.`;
       }
 
-      // Bangun Penjelasan Otomatis Algoritma
+      // ─────────────────────────────────────────────────────────────
+      // 3. BANGUN DETAIL PENJELASAN KOMPREHENSIF
+      // ─────────────────────────────────────────────────────────────
       const explanations: ScanExplanation[] = [];
 
-      if (status === 'BAHAYA') {
+      // Keputusan Jual/Beli
+      explanations.push({
+        title: 'Status Honeypot (Bisa Dijual Kembali?)',
+        desc: canSellReason,
+        isPositive: canSellStatus === 'CONFIRMED_SELL'
+      });
+
+      // Status Likuiditas
+      if (liq < 3000) {
         explanations.push({
-          title: 'Likuiditas Sangat Minim',
-          desc: `Likuiditas terdaftar hanya $${Math.round(liq).toLocaleString()} (di bawah ambang aman $3.000). Sangat rentan penarikan pool seketika (rugpull) atau token tidak dapat dijual.`,
-          isPositive: false
-        });
-        explanations.push({
-          title: 'Peringatan Volatilitas Ekstrem',
-          desc: 'Slippage dan transaksi dump kecil apa pun akan membuat harga anjlok hingga lebih dari -90%.',
+          title: 'Kesehatan Likuiditas Kritis',
+          desc: `Likuiditas pool hanya $${Math.round(liq).toLocaleString()}. Sangat rawan kuras likuiditas seketika (pull pool) atau slippage ekstrem.`,
           isPositive: false
         });
       } else {
-        if (sniperEligible) {
-          explanations.push({
-            title: 'Early Entry Spot (Fase Akumulasi Awal)',
-            desc: `Market Cap saat ini masih $${Math.round(mcap).toLocaleString()} dengan usia pair baru ${ageHours < 1 ? `${ageMinutes} Menit` : `${ageHours} Jam`}. Token belum viral atau mengalami lonjakan FOMO publik.`,
-            isPositive: true
-          });
-        }
         explanations.push({
           title: 'Kesehatan Likuiditas Terverifikasi',
           desc: `Likuiditas pool terdaftar sebesar $${Math.round(liq).toLocaleString()}, cukup untuk menyerap volume transaksi tanpa slippage liar.`,
           isPositive: true
         });
+      }
+
+      // Early Entry Phase
+      if (sniperEligible) {
         explanations.push({
-          title: 'Rasio Volume & Aktivitas Trading',
-          desc: `Volume trading 24 jam tercatat $${Math.round(vol24).toLocaleString()} dengan rasio ${buys24} transaksi beli vs ${sells24} jual.`,
-          isPositive: buys24 >= sells24
+          title: 'Early Entry Spot (Fase Akumulasi Awal)',
+          desc: `Market Cap saat ini masih $${Math.round(mcap).toLocaleString()} dengan usia pair baru ${ageHours < 1 ? `${ageMinutes} Menit` : `${ageHours} Jam`}. Token belum masuk fase FOMO viral publik.`,
+          isPositive: true
+        });
+      }
+
+      // Order Flow & Tekanan Beli vs Jual
+      explanations.push({
+        title: 'Tekanan Transaksi (Order Flow Ratio)',
+        desc: isSellingPressureDominant
+          ? `Waspada Tekanan Jual: Tercatat ${sells24} transaksi jual vs ${buys24} beli. Trader awal sedang keluar (take profit/dumping).`
+          : `Momentum Beli Positif: Tercatat ${buys24} transaksi beli vs ${sells24} jual. Permintaan pembeli masih dominan.`,
+        isPositive: !isSellingPressureDominant
+      });
+
+      // Volume Turnover Anomaly
+      if (turnoverRatio >= 20) {
+        explanations.push({
+          title: 'Perputaran Volume Ekstrem (Turnover High)',
+          desc: `Volume 24 jam ($${Math.round(vol24).toLocaleString()}) mencapai ${turnoverRatio}x lipat dari likuiditas yang ada. Menunjukkan volatilitas sangat tinggi atau aktivitas wash-trading bot.`,
+          isPositive: false
         });
       }
 
@@ -208,14 +283,20 @@ export function QuickSignalScanner({ onOpenJupiterSwap }: QuickSignalScannerProp
         sells24h: sells24,
         status,
         badgeText,
+        buyVerdict,
+        buyVerdictTitle,
+        buyVerdictDesc,
+        canSellStatus,
+        canSellReason,
+        turnoverRatio,
         explanations,
         rawPair: pair
       });
 
       appendLog(
         'SCAN',
-        status === 'BAHAYA' ? 'WARN' : 'SUCCESS',
-        `[HASIL SCAN] $${pair.baseToken?.symbol}: Status ${status} (MC: $${Math.round(mcap).toLocaleString()} | LP: $${Math.round(liq).toLocaleString()})`
+        buyVerdict === 'JANGAN_DIBELI' ? 'WARN' : 'SUCCESS',
+        `[HASIL SCAN] $${pair.baseToken?.symbol}: ${buyVerdictTitle} (MC: $${Math.round(mcap).toLocaleString()} | LP: $${Math.round(liq).toLocaleString()})`
       );
     } catch (err: any) {
       console.error('Scan error:', err);
@@ -301,7 +382,7 @@ export function QuickSignalScanner({ onOpenJupiterSwap }: QuickSignalScannerProp
                 </span>
               </div>
               <p className="text-[11px] text-zinc-400 mt-0.5">
-                Input Contract Address (CA) untuk deteksi instan Sniper Entry & audit Anti-Rugpull.
+                Input Contract Address (CA) untuk deteksi instan Sniper Entry & panduan kelayakan beli.
               </p>
             </div>
           </div>
@@ -332,7 +413,7 @@ export function QuickSignalScanner({ onOpenJupiterSwap }: QuickSignalScannerProp
               type="text"
               value={caInput}
               onChange={(e) => setCaInput(e.target.value)}
-              placeholder="Contoh CA Solana: 6p6xgHyF7AeQ2JQ95UtDQkJB8yyFamnn6Mg5Up5pump"
+              placeholder="Paste Contract Address (CA) token apa saja di sini..."
               className="w-full bg-zinc-950/90 border border-zinc-800 focus:border-cyan-400 text-zinc-100 pl-10 pr-9 py-2.5 rounded-xl text-xs placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-cyan-400/40 transition-all shadow-inner"
               disabled={isScanning}
             />
@@ -412,15 +493,68 @@ export function QuickSignalScanner({ onOpenJupiterSwap }: QuickSignalScannerProp
       {/* ─── Interactive Analysis Result Card ─── */}
       {analyzedResult && (
         <div
-          className={`bg-zinc-900/90 rounded-2xl p-4 sm:p-6 transition-all border shadow-2xl relative animate-fade-in ${
-            analyzedResult.status === 'BAHAYA'
-              ? 'border-rose-500/50 shadow-[0_0_30px_-5px_rgba(244,63,94,0.3)]'
-              : analyzedResult.status === 'SNIPER'
-              ? 'border-cyan-500/50 shadow-[0_0_30px_-5px_rgba(6,182,212,0.3)]'
-              : 'border-emerald-500/50 shadow-[0_0_30px_-5px_rgba(16,185,129,0.3)]'
+          className={`bg-zinc-900/95 rounded-2xl p-4 sm:p-6 transition-all border shadow-2xl relative animate-fade-in ${
+            analyzedResult.buyVerdict === 'JANGAN_DIBELI'
+              ? 'border-rose-500/50 shadow-[0_0_35px_-5px_rgba(244,63,94,0.35)]'
+              : analyzedResult.buyVerdict === 'HATI_HATI'
+              ? 'border-amber-500/50 shadow-[0_0_35px_-5px_rgba(245,158,11,0.35)]'
+              : 'border-emerald-500/50 shadow-[0_0_35px_-5px_rgba(16,185,129,0.35)]'
           }`}
         >
-          {/* Card Header */}
+          {/* ═══════════════════════════════════════════════════════════════ */}
+          {/* 1. HERO BUY VERDICT BANNER (APAKAH BISA DIBELI ATAU TIDAK?) */}
+          {/* ═══════════════════════════════════════════════════════════════ */}
+          <div
+            className={`p-3.5 sm:p-4 rounded-xl border mb-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+              analyzedResult.buyVerdict === 'JANGAN_DIBELI'
+                ? 'bg-rose-950/80 border-rose-500/50 text-rose-200'
+                : analyzedResult.buyVerdict === 'HATI_HATI'
+                ? 'bg-amber-950/80 border-amber-500/50 text-amber-200'
+                : 'bg-emerald-950/80 border-emerald-500/50 text-emerald-200'
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <div
+                className={`p-2 rounded-xl shrink-0 ${
+                  analyzedResult.buyVerdict === 'JANGAN_DIBELI'
+                    ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
+                    : analyzedResult.buyVerdict === 'HATI_HATI'
+                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                    : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                }`}
+              >
+                {analyzedResult.buyVerdict === 'JANGAN_DIBELI' ? (
+                  <ShieldAlert className="w-6 h-6" />
+                ) : analyzedResult.buyVerdict === 'HATI_HATI' ? (
+                  <AlertTriangle className="w-6 h-6" />
+                ) : (
+                  <ShieldCheck className="w-6 h-6" />
+                )}
+              </div>
+              <div>
+                <h4 className="text-sm sm:text-base font-black tracking-wide">
+                  {analyzedResult.buyVerdictTitle}
+                </h4>
+                <p className="text-xs text-zinc-300 mt-1 leading-relaxed">
+                  {analyzedResult.buyVerdictDesc}
+                </p>
+              </div>
+            </div>
+
+            <span
+              className={`px-3 py-1 rounded-full text-[11px] font-bold shrink-0 self-end sm:self-center border ${
+                analyzedResult.buyVerdict === 'JANGAN_DIBELI'
+                  ? 'bg-rose-900/60 border-rose-400 text-rose-300'
+                  : analyzedResult.buyVerdict === 'HATI_HATI'
+                  ? 'bg-amber-900/60 border-amber-400 text-amber-300'
+                  : 'bg-emerald-900/60 border-emerald-400 text-emerald-300'
+              }`}
+            >
+              {analyzedResult.badgeText}
+            </span>
+          </div>
+
+          {/* Card Header Info */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 pb-4 mb-4">
             <div>
               <div className="flex flex-wrap items-center gap-2">
@@ -447,22 +581,24 @@ export function QuickSignalScanner({ onOpenJupiterSwap }: QuickSignalScannerProp
               </div>
             </div>
 
-            {/* Verdict Badge */}
-            <div
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border self-start sm:self-auto flex items-center gap-1.5 whitespace-nowrap ${
-                analyzedResult.status === 'BAHAYA'
-                  ? 'bg-rose-950/80 text-rose-400 border-rose-500/40'
-                  : analyzedResult.status === 'SNIPER'
-                  ? 'bg-cyan-950/80 text-cyan-400 border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.3)]'
-                  : 'bg-emerald-950/80 text-emerald-400 border-emerald-500/40'
-              }`}
-            >
-              {analyzedResult.status === 'BAHAYA' ? (
-                <ShieldAlert className="w-4 h-4" />
-              ) : (
-                <ShieldCheck className="w-4 h-4" />
-              )}
-              <span>{analyzedResult.badgeText}</span>
+            {/* Quick Honeypot Status Badge */}
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-zinc-400">Can-Sell Test:</span>
+              <span
+                className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${
+                  analyzedResult.canSellStatus === 'CONFIRMED_SELL'
+                    ? 'bg-emerald-950/60 text-emerald-400 border-emerald-500/30'
+                    : analyzedResult.canSellStatus === 'HONEYPOT_RISK'
+                    ? 'bg-rose-950/60 text-rose-400 border-rose-500/30'
+                    : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                }`}
+              >
+                {analyzedResult.canSellStatus === 'CONFIRMED_SELL'
+                  ? '✅ BISA DIJUAL'
+                  : analyzedResult.canSellStatus === 'HONEYPOT_RISK'
+                  ? '❌ HONEYPOT DANGER'
+                  : '⚠️ DATA MINIM'}
+              </span>
             </div>
           </div>
 
@@ -507,10 +643,130 @@ export function QuickSignalScanner({ onOpenJupiterSwap }: QuickSignalScannerProp
             </div>
           </div>
 
+          {/* ═══════════════════════════════════════════════════════════════ */}
+          {/* 2. CHECKLIST AUDIT KEAMANAN LENGKAP (4 PILAR ANTI-RUGPULL) */}
+          {/* ═══════════════════════════════════════════════════════════════ */}
+          <div className="bg-zinc-950/90 border border-zinc-800 rounded-xl p-4 mb-4">
+            <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5 border-b border-zinc-800/80 pb-2 mb-3">
+              <span>🛡️</span> Checklist Audit Keamanan On-Chain
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-zinc-900/60 border border-zinc-800">
+                <span className="text-zinc-400 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> Honeypot Test (Bisa Jual)
+                </span>
+                <span
+                  className={`font-bold ${
+                    analyzedResult.canSellStatus === 'CONFIRMED_SELL'
+                      ? 'text-emerald-400'
+                      : 'text-rose-400'
+                  }`}
+                >
+                  {analyzedResult.canSellStatus === 'CONFIRMED_SELL' ? '✅ Lolos (Bisa Jual)' : '❌ Gagal'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-zinc-900/60 border border-zinc-800">
+                <span className="text-zinc-400 flex items-center gap-1.5">
+                  <Droplets className="w-3.5 h-3.5 text-cyan-400" /> Rasio Likuiditas / Floor
+                </span>
+                <span
+                  className={`font-bold ${
+                    analyzedResult.liquidityUsd >= 5000
+                      ? 'text-emerald-400'
+                      : analyzedResult.liquidityUsd >= 3000
+                      ? 'text-amber-400'
+                      : 'text-rose-400'
+                  }`}
+                >
+                  {analyzedResult.liquidityUsd >= 5000
+                    ? '✅ Cukup (>= $5K)'
+                    : analyzedResult.liquidityUsd >= 3000
+                    ? '⚠️ Minimum ($3K-$5K)'
+                    : '❌ Terlalu Minim (<$3K)'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-zinc-900/60 border border-zinc-800">
+                <span className="text-zinc-400 flex items-center gap-1.5">
+                  <Scale className="w-3.5 h-3.5 text-amber-400" /> Tekanan Order Flow
+                </span>
+                <span
+                  className={`font-bold ${
+                    analyzedResult.buys24h >= analyzedResult.sells24h
+                      ? 'text-emerald-400'
+                      : 'text-amber-400'
+                  }`}
+                >
+                  {analyzedResult.buys24h >= analyzedResult.sells24h
+                    ? `✅ Tekanan Beli (+${analyzedResult.buys24h})`
+                    : `⚠️ Tekanan Jual (${analyzedResult.sells24h} Sells)`}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-zinc-900/60 border border-zinc-800">
+                <span className="text-zinc-400 flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5 text-purple-400" /> Rasio Perputaran Volume
+                </span>
+                <span
+                  className={`font-bold ${
+                    analyzedResult.turnoverRatio < 20
+                      ? 'text-emerald-400'
+                      : 'text-amber-400'
+                  }`}
+                >
+                  {analyzedResult.turnoverRatio}x LP (
+                  {analyzedResult.turnoverRatio < 20 ? 'Normal' : 'Ekstrem / Bot'})
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* ═══════════════════════════════════════════════════════════════ */}
+          {/* 3. PANDUAN TRADING & MONEY MANAGEMENT (JIKA MEMUTUSKAN BELI) */}
+          {/* ═══════════════════════════════════════════════════════════════ */}
+          {analyzedResult.buyVerdict !== 'JANGAN_DIBELI' && (
+            <div className="bg-gradient-to-r from-cyan-950/30 to-emerald-950/30 border border-cyan-500/20 rounded-xl p-4 mb-4">
+              <h4 className="text-xs font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5 border-b border-cyan-500/20 pb-2 mb-3">
+                <Target className="w-3.5 h-3.5" /> Panduan Eksekusi Trading & Batas Risiko
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div className="p-2.5 rounded-lg bg-zinc-950/60 border border-zinc-800">
+                  <span className="text-[10px] text-zinc-400 uppercase tracking-wider block">
+                    🎯 Target Take Profit (TP)
+                  </span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-emerald-400 font-bold">TP1: +50%</span>
+                    <span className="text-emerald-300 font-bold">TP2: +100%</span>
+                    <span className="text-cyan-400 font-bold">TP3: +250%</span>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-zinc-950/60 border border-zinc-800">
+                  <span className="text-[10px] text-zinc-400 uppercase tracking-wider block">
+                    🛑 Batas Cut Loss / Stop Loss
+                  </span>
+                  <p className="text-rose-400 font-bold mt-1">
+                    Maksimal -20% s/d -25%
+                  </p>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-zinc-950/60 border border-zinc-800">
+                  <span className="text-[10px] text-zinc-400 uppercase tracking-wider block">
+                    💼 Rekomendasi Alokasi Modal
+                  </span>
+                  <p className="text-zinc-200 font-bold mt-1">
+                    0.05 – 0.25 SOL (Maks 2% portofolio)
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Bagian Penjelasan Sistem Algoritma */}
           <div className="bg-zinc-950/90 border border-zinc-800 rounded-xl p-4 mb-5 space-y-2.5">
             <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5 border-b border-zinc-800/80 pb-2">
-              <span>🧠</span> Analisis Algoritma Website & Multi-Agent Gate
+              <span>🧠</span> Analisis Algoritma Website & Penjelasan Detail
             </h4>
             <div className="space-y-2 pt-1">
               {analyzedResult.explanations.map((exp, idx) => (
@@ -559,8 +815,8 @@ export function QuickSignalScanner({ onOpenJupiterSwap }: QuickSignalScannerProp
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
 
-            {/* Tombol Terbitkan Sinyal ke Live Feed (Jika status AMAN atau SNIPER) */}
-            {analyzedResult.status !== 'BAHAYA' && (
+            {/* Tombol Terbitkan Sinyal ke Live Feed (Jika bukan status BAHAYA) */}
+            {analyzedResult.buyVerdict !== 'JANGAN_DIBELI' && (
               <button
                 onClick={handlePublishToLiveSignals}
                 disabled={Boolean(broadcastedSymbol)}
