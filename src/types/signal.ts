@@ -20,6 +20,15 @@ export type SignalStatus =
   | 'EXPIRED'
   | 'CANCELLED';
 
+export type DiscoveryChannel =
+  | 'ALL'
+  | 'SNIPER'
+  | 'GRADUATING_PUMP'
+  | 'BREAKOUT'
+  | 'VOLUME_SURGE'
+  | 'WHALE'
+  | 'SUPERNOVA';
+
 export interface EntryZone {
   low: number;      // SOL — Batas bawah zona beli
   high: number;     // SOL — Batas atas zona beli

@@ -67,10 +67,9 @@ function TerminalAppInner() {
     appendLog,
     activeSignals,
     signalHistory,
+    agentThresholds,
+    setAgentThresholds,
   } = useTradingAgent();
-
-  // Strategy thresholds — mirrors agentConfig; initialized from BALANCED preset
-  const [agentThresholds, setAgentThresholds] = React.useState<import('../types/terminal').AgentThresholds>(() => STRATEGY_PRESETS.BALANCED);
 
   // Jito Tip Tier selection (matches WalletConnectModal's ECONOMY | STANDARD | FAST | TURBO)
   const [selectedTipTier, setSelectedTipTier] = React.useState<'ECONOMY' | 'STANDARD' | 'FAST' | 'TURBO'>('STANDARD');

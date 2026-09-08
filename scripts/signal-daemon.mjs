@@ -71,15 +71,15 @@ const CHAT_ID =
   '';
 
 const SCAN_INTERVAL_MS = parseInt(process.env.SCAN_INTERVAL_MS || '15000', 10);
-const MIN_SCORE = parseInt(process.env.MIN_SCORE || '82', 10);
+const MIN_SCORE = parseInt(process.env.MIN_SCORE || '76', 10);
 
 // Early-Entry Guard & ZCAT-Model Thresholds
-const MAX_MARKET_CAP_USD = parseFloat(process.env.MAX_MARKET_CAP_USD || '30000'); // Ceiling: drop > $30k
-const MIN_LIQUIDITY_USD = parseFloat(process.env.MIN_LIQUIDITY_USD || '1500');   // Floor: $1,000 - $3,000 USD
-const MAX_TOKEN_AGE_MINUTES = parseFloat(process.env.MAX_TOKEN_AGE_MINUTES || '10'); // Hard cutoff: 10m
-const MAX_PRICE_PUMP_PCT = parseFloat(process.env.MAX_PRICE_PUMP_PCT || '300');    // Spike cutoff: > +300% (MISSED_ENTRY)
-const MIN_V_MC_RATIO = 1.0;                                                         // ZCAT Volume/MC >= 1.0x
-const MIN_LIQ_DEPTH_PCT = 10.0;                                                     // ZCAT Liquidity Depth >= 10%
+const MAX_MARKET_CAP_USD = parseFloat(process.env.MAX_MARKET_CAP_USD || '1000000'); // Ceiling: hingga $1M untuk early gem & breakout
+const MIN_LIQUIDITY_USD = parseFloat(process.env.MIN_LIQUIDITY_USD || '1000');     // Floor: $1,000 USD
+const MAX_TOKEN_AGE_MINUTES = parseFloat(process.env.MAX_TOKEN_AGE_MINUTES || '1440'); // Cutoff: 24 jam (1440m)
+const MAX_PRICE_PUMP_PCT = parseFloat(process.env.MAX_PRICE_PUMP_PCT || '800');      // Spike cutoff: > +800% (MISSED_ENTRY)
+const MIN_V_MC_RATIO = 0.5;                                                          // ZCAT Volume/MC >= 0.5x
+const MIN_LIQ_DEPTH_PCT = 5.0;                                                       // ZCAT Liquidity Depth >= 5%
 
 // Deduplikasi CA 24 Jam
 let sentTokens = {}; // mint -> timestamp
@@ -237,18 +237,42 @@ async function scanAndProcessTokens() {
   botState.scannedCount++;
 
   try {
-    const res = await fetch('https://api.dexscreener.com/token-profiles/latest/v1', {
-      headers: { Accept: 'application/json', 'User-Agent': 'AlphaSignalDaemon/2.0' },
-      signal: AbortSignal.timeout(8000)
+    const [resProfiles, resBoosts] = await Promise.allSettled([
+      fetch('https://api.dexscreener.com/token-profiles/latest/v1', {
+        headers: { Accept: 'application/json', 'User-Agent': 'AlphaSignalDaemon/2.0' },
+        signal: AbortSignal.timeout(8000)
+      }),
+      fetch('https://api.dexscreener.com/token-boosts/latest/v1', {
+        headers: { Accept: 'application/json', 'User-Agent': 'AlphaSignalDaemon/2.0' },
+        signal: AbortSignal.timeout(8000)
+      })
+    ]);
+
+    const items = [];
+    if (resProfiles.status === 'fulfilled' && resProfiles.value.ok) {
+      try {
+        const pJson = await resProfiles.value.json();
+        if (Array.isArray(pJson)) items.push(...pJson);
+      } catch {}
+    }
+    if (resBoosts.status === 'fulfilled' && resBoosts.value.ok) {
+      try {
+        const bJson = await resBoosts.value.json();
+        if (Array.isArray(bJson)) items.push(...bJson);
+      } catch {}
+    }
+
+    if (items.length === 0) return;
+
+    const seenAddresses = new Set();
+    const solanaTokens = items.filter((t) => {
+      if (t.chainId !== 'solana' || !t.tokenAddress) return false;
+      if (seenAddresses.has(t.tokenAddress)) return false;
+      seenAddresses.add(t.tokenAddress);
+      return true;
     });
 
-    if (!res.ok) return;
-    const items = await res.json();
-    if (!Array.isArray(items)) return;
-
-    const solanaTokens = items.filter((t) => t.chainId === 'solana');
-
-    for (const item of solanaTokens.slice(0, 6)) {
+    for (const item of solanaTokens.slice(0, 10)) {
       const mint = item.tokenAddress;
       if (!mint) continue;
 

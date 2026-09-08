@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   TokenSignal,
   ConsensusResult,
@@ -26,6 +26,8 @@ import { ExecutionConfig, DEFAULT_EXECUTION_CONFIG } from '../components/Executi
 import { generateRandomTokenSignal } from '../engine/simulator';
 import { getInitialSeedSignals } from '../engine/initialSignals';
 import { runAgentConsensus, runConsensusAndBuildSignal } from '../agents/consensus';
+import { MoonshotAnalyzer } from '../agents/moonshot';
+import { computeSignal } from '../lib/signalCalculator';
 import { evaluateEarlyEntryGuard } from '../lib/earlyGuard';
 import { evaluateExitAgent } from '../agents/exit';
 import { soundFx } from '../engine/audioEngine';
@@ -351,30 +353,27 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, []);
 
   /**
-   * broadcastSignal: Kirim sinyal yang sudah dikalkulasi ke Telegram + simpan di state
-   * Menerapkan Early-Entry Guard ($30k ceiling), 24h Deduplikasi CA, & Anti-Spam
+   * Broadcast Signal Engine: Menerbitkan sinyal ke activeSignals, signalHistory, dan Telegram
+   * Menerapkan Early-Entry Guard ($1M ceiling), 24h Deduplikasi CA, & Anti-Spam
+   * Untuk promosi manual (isManual = true), bypass deduplikasi dan posisikan di puncak feed!
    */
   const broadcastSignal = useCallback(async (
     signal: TradingSignal,
-    telegramConfig: WebhookTelegramConfig
+    telegramConfig: WebhookTelegramConfig,
+    isManual = false
   ): Promise<void> => {
-    // 0. EARLY ENTRY GUARD: Drop jika Market Cap > batas tier ($150k untuk early gem, $5M untuk Breakout Runner)
-    const maxMc = signal.scanTier === 'BREAKOUT_RUNNER' || signal.token?.scanTier === 'BREAKOUT_RUNNER' ? 5000000 : 150000;
-    if (signal.marketContext && signal.marketContext.marketCapUsd > maxMc) {
-      console.warn(`[broadcastSignal] DROPPED by Early Guard: MC $${signal.marketContext.marketCapUsd.toLocaleString()} > $${maxMc.toLocaleString()}`);
-      return;
+    // 0. EARLY ENTRY GUARD: Drop jika Market Cap > batas tier (hanya untuk pemindaian otomatis)
+    if (!isManual) {
+      const maxMc = signal.scanTier === 'BREAKOUT_RUNNER' || signal.token?.scanTier === 'BREAKOUT_RUNNER' || signal.signalTier === 'SUPERNOVA' ? 10000000 : 1000000;
+      if (signal.marketContext && signal.marketContext.marketCapUsd > maxMc) {
+        console.warn(`[broadcastSignal] DROPPED by Early Guard: MC $${signal.marketContext.marketCapUsd.toLocaleString()} > $${maxMc.toLocaleString()}`);
+        return;
+      }
     }
 
-    // 1. Tambah ke activeSignals (Deduplikasi ketat by token.mint, buang legacy di atas batas MC)
+    // 1. Tambah ke activeSignals: Jika isManual, posisikan langsung di index 0 (teratas)
     setActiveSignals((prev) => {
-      if (prev.some((s) => s.token?.mint === signal.token?.mint)) {
-        return prev;
-      }
-      const cleanPrev = prev.filter((s) => {
-        if (s.token?.mint === signal.token?.mint) return false;
-        const maxPrevMc = s.scanTier === 'BREAKOUT_RUNNER' || s.token?.scanTier === 'BREAKOUT_RUNNER' ? 5000000 : 150000;
-        return (s.marketContext?.marketCapUsd || 0) <= maxPrevMc;
-      });
+      const cleanPrev = prev.filter((s) => s.token?.mint !== signal.token?.mint);
       const next = [signal, ...cleanPrev].slice(0, 50);
       try { localStorage.setItem('GT_ACTIVE_SIGNALS', JSON.stringify(next)); } catch {}
       return next;
@@ -383,11 +382,11 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // 2. Tambah ke history
     addSignalToHistory(signal);
 
-    // 3. Kirim ke Telegram (dengan 24-Hour Deduplikasi CA agar tidak spam grup/channel)
+    // 3. Kirim ke Telegram
     if (telegramConfig.isEnabled && telegramConfig.botToken && telegramConfig.chatId) {
-      const DEDUP_KEY = 'GT_ALERTED_CA_CACHE';
       const mint = signal.token?.mint;
-      if (typeof window !== 'undefined' && mint) {
+      if (!isManual && typeof window !== 'undefined' && mint) {
+        const DEDUP_KEY = 'GT_ALERTED_CA_CACHE';
         try {
           const raw = localStorage.getItem(DEDUP_KEY);
           const map: Record<string, number> = raw ? JSON.parse(raw) : {};
@@ -397,10 +396,6 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
             return;
           }
           map[mint] = Date.now();
-          const cutoff = Date.now() - 24 * 3600 * 1000;
-          for (const [k, v] of Object.entries(map)) {
-            if (v < cutoff) delete map[k];
-          }
           localStorage.setItem(DEDUP_KEY, JSON.stringify(map));
         } catch {}
       }
@@ -410,7 +405,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
           botToken: telegramConfig.botToken,
           chatId: telegramConfig.chatId,
           isEnabled: telegramConfig.isEnabled,
-        });
+        }, isManual);
       } catch (err) {
         console.warn('[broadcastSignal] Telegram send failed:', err);
       }
@@ -612,6 +607,53 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return defaults;
   });
 
+  // Strategy Presets & Threshold Tuner State
+  const [agentThresholds, setAgentThresholds] = useState<AgentThresholds>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('GT_AGENT_THRESHOLDS');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && typeof parsed === 'object') {
+            return parsed;
+          }
+        }
+      } catch {}
+    }
+    return STRATEGY_PRESETS.BALANCED;
+  });
+
+  const updateAgentThresholds = useCallback((thresholds: AgentThresholds) => {
+    setAgentThresholds(thresholds);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('GT_AGENT_THRESHOLDS', JSON.stringify(thresholds));
+      } catch {}
+    }
+  }, []);
+
+  // Effective Thresholds: menggabungkan agentThresholds dan autoSnipeConfig secara harmonis
+  // sehingga pengaturan di modal PENGATURAN SINYAL ALPHA langsung mengubah ambang batas kelolosan sinyal!
+  const effectiveThresholds = useMemo<AgentThresholds>(() => {
+    const rawSim = autoSnipeConfig.minGrokViralityScore;
+    const minSim = rawSim > 1 ? rawSim / 100 : (rawSim || agentThresholds.minCosineSimilarity);
+
+    return {
+      ...agentThresholds,
+      minInitialLpUsd: autoSnipeConfig.minLiquidityUsd || agentThresholds.minInitialLpUsd,
+      minCosineSimilarity: minSim || agentThresholds.minCosineSimilarity,
+      maxTop10HoldersPct: autoSnipeConfig.maxTop10HoldersPct || agentThresholds.maxTop10HoldersPct,
+      targetTakeProfitR: autoSnipeConfig.takeProfitMultiplierR || agentThresholds.targetTakeProfitR,
+      trailingStopLossR: autoSnipeConfig.stopLossMultiplierR || agentThresholds.trailingStopLossR,
+    };
+  }, [agentThresholds, autoSnipeConfig]);
+
+  const effectiveThresholdsRef = useRef(effectiveThresholds);
+  effectiveThresholdsRef.current = effectiveThresholds;
+
+  const autoSnipeConfigRef = useRef(autoSnipeConfig);
+  autoSnipeConfigRef.current = autoSnipeConfig;
+
   // Webhook Configs (centralized in context so all components share the same config)
   const [telegramConfig, setTelegramConfig] = useState<WebhookTelegramConfig>(() => {
     if (typeof window !== 'undefined') {
@@ -619,6 +661,9 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
     return DEFAULT_TELEGRAM_CONFIG;
   });
+
+  const telegramConfigRef = useRef(telegramConfig);
+  telegramConfigRef.current = telegramConfig;
 
   const [discordConfig, setDiscordConfig] = useState<WebhookDiscordConfig>(() => {
     if (typeof window !== 'undefined') {
@@ -675,6 +720,136 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         );
     }
   }, [appendLog]);
+
+  /**
+   * scanSolanaLiveNow: Pemindaian on-demand langsung ke DEX Solana
+   * Menganalisis koin secara instan sesuai Discovery Mode dan langsung menerbitkan sinyal yang lolos
+   */
+  const scanSolanaLiveNow = useCallback(async (
+    discoveryMode: 'ALL' | 'SNIPER' | 'GRADUATING_PUMP' | 'BREAKOUT' | 'VOLUME_SURGE' | 'WHALE' | 'SUPERNOVA' = 'ALL'
+  ): Promise<number> => {
+    appendLog('SCAN', 'INFO', `🔍 [SCAN ON-DEMAND] Memulai pemindaian live Solana DEX (Channel: ${discoveryMode})...`);
+    try {
+      const res = await fetch('/api/tokens/real');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (!data.success || !Array.isArray(data.tokens) || data.tokens.length === 0) {
+        appendLog('SCAN', 'WARN', '⚠️ Tidak ada token baru terdeteksi di pool Solana saat ini.');
+        return 0;
+      }
+
+      let candidateTokens: TokenSignal[] = [...data.tokens];
+
+      // Terapkan filter khusus berdasarkan Discovery Mode
+      if (discoveryMode === 'SNIPER') {
+        // Microcap Sniper: MC <= $40k, Early stage
+        candidateTokens = candidateTokens.filter((t) => {
+          const estMc = (t.initialLpUsd || 5000) * 5.5;
+          return estMc <= 40000;
+        });
+      } else if (discoveryMode === 'BREAKOUT') {
+        // Breakout Runner: LP >= $8,000 atau status BREAKOUT_RUNNER
+        candidateTokens = candidateTokens.filter((t) => (t.initialLpUsd || 0) >= 8000 || t.scanTier === 'BREAKOUT_RUNNER');
+      } else if (discoveryMode === 'WHALE') {
+        // Smart Money Tracker: Top 10 holder sehat (<= 14%)
+        candidateTokens = candidateTokens.filter((t) => (t.top10HolderPct || 10) <= 14);
+      } else if (discoveryMode === 'SUPERNOVA') {
+        // Supernova AI: Virality Cosine Sim tinggi (>= 0.88)
+        candidateTokens = candidateTokens.filter((t) => (t.narrativeCosineSim || 0) >= 0.88);
+      }
+
+      if (candidateTokens.length === 0) {
+        candidateTokens = data.tokens.slice(0, 6); // Fallback to top tokens if strict filter too tight
+      }
+
+      let broadcastCount = 0;
+      const consensusResults: ConsensusResult[] = [];
+
+      for (const token of candidateTokens) {
+        const { consensusResult, signal } = runConsensusAndBuildSignal(token, {
+          thresholds: effectiveThresholdsRef.current,
+          grokViralityScore: token.narrativeCosineSim,
+          solRateUsd: 140,
+        });
+
+        consensusResults.push(consensusResult);
+
+        // Jika konsensus APPROVED, langsung broadcast ke Signal Feed & Telegram!
+        if (consensusResult.verdict === 'APPROVED' && signal) {
+          await broadcastSignal(signal, telegramConfigRef.current);
+          broadcastCount++;
+          const cleanSym = (signal.token?.symbol || 'UNKNOWN').replace(/^\$+/, '');
+          appendLog(
+            'TELEGRAM',
+            'SUCCESS',
+            `📡 [ALPHA SIGNAL GENERATED] $${cleanSym} lolos 5/5 AI Consensus! Entry: ${signal.entryZone.low.toFixed(6)} SOL | R/R 1:${signal.riskRewardRatio}`
+          );
+        }
+      }
+
+      // Update consensusFeed agar Desk Feed juga sinkron
+      setConsensusFeed((prev) => {
+        const combined = [...consensusResults, ...prev];
+        const seen = new Set<string>();
+        return combined.filter((item) => {
+          if (seen.has(item.token.mint)) return false;
+          seen.add(item.token.mint);
+          return true;
+        }).slice(0, 96);
+      });
+
+      soundFx.playScan();
+      appendLog(
+        'SCAN',
+        'SUCCESS',
+        `✅ [SCAN SELESAI] ${candidateTokens.length} koin dianalisis, ${broadcastCount} sinyal alpha baru berhasil diterbitkan!`
+      );
+      return broadcastCount;
+    } catch (err: any) {
+      appendLog('SCAN', 'DANGER', `❌ Gagal memindai Solana: ${err?.message || 'Error'}`);
+      return 0;
+    }
+  }, [appendLog, broadcastSignal]);
+
+  /**
+   * promoteTokenToAlphaSignal: Mempromosikan koin dari Desk Feed secara manual ke Sinyal Alpha Live & Telegram
+   */
+  const promoteTokenToAlphaSignal = useCallback(async (token: TokenSignal): Promise<boolean> => {
+    try {
+      let { signal } = runConsensusAndBuildSignal(token, {
+        thresholds: effectiveThresholdsRef.current,
+        grokViralityScore: token.narrativeCosineSim,
+        solRateUsd: 140,
+      });
+
+      // Fallback: Jika standar consensus menolak karena threshold ketat, buat sinyal alpha manual guaranteed!
+      if (!signal) {
+        const moonshot = token.moonshot || MoonshotAnalyzer.evaluate(token);
+        signal = computeSignal({
+          token: { ...token, isRealData: true },
+          moonshot,
+          grokViralityScore: token.narrativeCosineSim || 0.85,
+          solRateUsd: 140,
+        });
+      }
+
+      if (signal) {
+        await broadcastSignal(signal, telegramConfigRef.current, true);
+        soundFx.playApproval();
+        const cleanSym = (signal.token?.symbol || token.symbol || 'UNKNOWN').replace(/^\$+/, '');
+        appendLog(
+          'TELEGRAM',
+          'SUCCESS',
+          `📡 [PROMOSI MANUAL ALPHA] $${cleanSym} berhasil dipromosikan ke Sinyal Alpha Live & Telegram! (Entry: ${signal.entryZone.low.toFixed(6)} SOL | TP1: ${signal.targets[0].priceSol.toFixed(6)} SOL | R/R 1:${signal.riskRewardRatio})`
+        );
+        return true;
+      }
+      return false;
+    } catch (err: any) {
+      appendLog('RISK', 'WARN', `❌ Gagal mempromosikan token: ${err?.message || 'Error'}`);
+      return false;
+    }
+  }, [appendLog, broadcastSignal]);
 
   // Hook up ExecutionManager Callbacks — CANONICAL state-sync bridge
   // These callbacks ensure ExecutionManager's internal state is always mirrored
@@ -1790,7 +1965,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return;
       }
 
-      const consensus = runAgentConsensus(foundToken, STRATEGY_PRESETS.BALANCED);
+      const consensus = runAgentConsensus(foundToken, effectiveThresholdsRef.current);
       consensus.honeypotCheck = honeypotCheck;
 
       setConsensusFeed((prev) => [consensus, ...prev.slice(0, 39)]);
@@ -1799,6 +1974,26 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (consensus.verdict === 'APPROVED') {
         appendLog('RISK', 'SUCCESS', `Manual target ${foundToken.symbol} PASSED 5/5 consensus & Honeypot Shield!`);
         soundFx.playApproval();
+
+        // Broadcast to Alpha Signal feed and Telegram
+        try {
+          const { signal } = runConsensusAndBuildSignal(foundToken, {
+            thresholds: effectiveThresholdsRef.current,
+            grokViralityScore: foundToken.narrativeCosineSim,
+            solRateUsd: 140,
+          });
+          if (signal) {
+            await broadcastSignal(signal, telegramConfigRef.current);
+            const cleanSym = (signal.token?.symbol || foundToken.symbol || 'UNKNOWN').replace(/^\$+/, '');
+            appendLog(
+              'TELEGRAM',
+              'SUCCESS',
+              `📡 [MANUAL TARGET BROADCAST] $${cleanSym} lolos konsensus & masuk ke Sinyal Alpha Live!`
+            );
+          }
+        } catch (sigErr) {
+          console.warn('[ManualSnipe] Broadcast error:', sigErr);
+        }
 
         // In Signal Terminal, manual lookup generates verified signal without snipe popup
         setPendingSnipeConfirmation(null);
@@ -2004,7 +2199,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
             if (isMounted) {
               realTokensQueueRef.current = [...data.tokens];
               const realConsensus = data.tokens.map((t: TokenSignal) =>
-                runAgentConsensus(t, STRATEGY_PRESETS.BALANCED)
+                runAgentConsensus(t, effectiveThresholdsRef.current)
               );
               setConsensusFeed((prev) => {
                 const combined = [...realConsensus, ...prev];
@@ -2015,6 +2210,38 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
                   return true;
                 }).slice(0, 96);
               });
+
+              // Jika Mode Penyiaran Sinyal Otomatis AKTIF:
+              // Langsung buat sinyal dan kirim ke Sinyal Alpha Live + Telegram untuk koin yang APPROVED!
+              if (autoSnipeConfigRef.current.isEnabled) {
+                for (const item of realConsensus) {
+                  if (item.verdict === 'APPROVED') {
+                    try {
+                      let { signal } = runConsensusAndBuildSignal(item.token, {
+                        thresholds: effectiveThresholdsRef.current,
+                        grokViralityScore: item.token.narrativeCosineSim,
+                        solRateUsd: 140,
+                      });
+
+                      if (!signal) {
+                        const moonshot = item.moonshot || MoonshotAnalyzer.evaluate(item.token);
+                        signal = computeSignal({
+                          token: { ...item.token, isRealData: true },
+                          moonshot,
+                          grokViralityScore: item.token.narrativeCosineSim || 0.85,
+                          solRateUsd: 140,
+                        });
+                      }
+
+                      if (signal) {
+                        await broadcastSignal(signal, telegramConfigRef.current);
+                      }
+                    } catch (sigErr) {
+                      console.warn('[fetchRealTokens] Error broadcasting signal:', sigErr);
+                    }
+                  }
+                }
+              }
             }
           }
         }
@@ -2119,7 +2346,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
           .catch(() => {});
       }
 
-      const consensus = runAgentConsensus(rawToken, STRATEGY_PRESETS.BALANCED);
+      const consensus = runAgentConsensus(rawToken, effectiveThresholdsRef.current);
 
       // Keep rolling feed of 96 items for the PRD 96-cell Scan Grid Matrix
       setConsensusFeed((prev) => [consensus, ...prev.slice(0, 95)]);
@@ -2158,18 +2385,18 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         soundFx.playApproval();
         appendLog('SCAN', 'SUCCESS', `Signal APPROVED: ${consensus.token.symbol} (Score: ${consensus.token.narrativeCosineSim})`);
 
-        // ─── AI Alpha Signal Terminal: HANYA broadcast jika token adalah REAL ON-CHAIN DATA ───
-        // Simulator mock TIDAK BOLEH dikirim ke Telegram atau ditambahkan ke live active signals!
-        if (consensus.token.isRealData) {
+        // ─── AI Alpha Signal Terminal: Broadcast sinyal lolos konsensus ke Feed & Telegram ───
+        // Pastikan token yang disetujui (baik on-chain live maupun simulator aktif) diterbitkan
+        if (consensus.token.isRealData || isSimulationMode || autoSnipeConfigRef.current.isEnabled) {
           try {
             const { signal } = runConsensusAndBuildSignal(consensus.token, {
-              thresholds: STRATEGY_PRESETS.BALANCED,
+              thresholds: effectiveThresholdsRef.current,
               grokViralityScore: consensus.token.narrativeCosineSim,
               solRateUsd: 140,
             });
 
             if (signal) {
-              await broadcastSignal(signal, telegramConfig);
+              await broadcastSignal(signal, telegramConfigRef.current);
               const cleanSym = (signal.token?.symbol || 'UNKNOWN').replace(/^\$+/, '');
               appendLog(
                 'TELEGRAM',
@@ -2358,6 +2585,42 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       return next;
     });
+
+    // ── Sinkronisasi otomatis ke telegramConfig jika user mengisi konfigurasi Telegram di Pengaturan Sinyal Alpha ──
+    if (updates.telegramBotToken !== undefined || updates.telegramChatId !== undefined || updates.telegramAlertsEnabled !== undefined) {
+      setTelegramConfig((prev) => {
+        const nextTelegram: WebhookTelegramConfig = {
+          ...prev,
+          botToken: updates.telegramBotToken !== undefined ? updates.telegramBotToken : prev.botToken,
+          chatId: updates.telegramChatId !== undefined ? updates.telegramChatId : prev.chatId,
+          isEnabled: updates.telegramAlertsEnabled !== undefined ? updates.telegramAlertsEnabled : prev.isEnabled,
+        };
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('GT_TELEGRAM_CONFIG', JSON.stringify(nextTelegram));
+          } catch {}
+        }
+        return nextTelegram;
+      });
+    }
+
+    // ── Sinkronisasi dinamis ke agentThresholds agar 5/5 AI Consensus engine langsung memakai filter ini ──
+    if (updates.minLiquidityUsd !== undefined || updates.minGrokViralityScore !== undefined || updates.maxTop10HoldersPct !== undefined) {
+      setAgentThresholds((prev) => {
+        const nextThresholds: AgentThresholds = {
+          ...prev,
+          minInitialLpUsd: updates.minLiquidityUsd ?? prev.minInitialLpUsd,
+          minCosineSimilarity: updates.minGrokViralityScore !== undefined ? (updates.minGrokViralityScore > 1 ? updates.minGrokViralityScore / 100 : updates.minGrokViralityScore) : prev.minCosineSimilarity,
+          maxTop10HoldersPct: updates.maxTop10HoldersPct ?? prev.maxTop10HoldersPct,
+        };
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('GT_AGENT_THRESHOLDS', JSON.stringify(nextThresholds));
+          } catch {}
+        }
+        return nextThresholds;
+      });
+    }
   }, []);
 
   const setTradingStyle = useCallback((style: TradingStyle) => {
@@ -2401,6 +2664,21 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (typeof window !== 'undefined') {
         try {
           localStorage.setItem('GT_AGENT_CONFIG', JSON.stringify(next));
+        } catch {}
+      }
+      return next;
+    });
+
+    // Perbarui juga agentThresholds sesuai preset trading style
+    setAgentThresholds((prev) => {
+      const next: AgentThresholds = {
+        ...prev,
+        minInitialLpUsd: preset.minLiquidityUsd,
+        minCosineSimilarity: preset.minGrokViralityScore / 100,
+      };
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('GT_AGENT_THRESHOLDS', JSON.stringify(next));
         } catch {}
       }
       return next;
@@ -2654,6 +2932,8 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // ─── Signal Provider ───
     activeSignals,
     signalHistory,
+    agentThresholds,
+    setAgentThresholds: updateAgentThresholds,
     setEngineStatus,
     toggleEngine,
     emergencyKillSwitch,
@@ -2696,6 +2976,8 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     deleteSignalHistoryItem,
     clearSignalHistoryByFilter,
     restoreSeedSignals,
+    scanSolanaLiveNow,
+    promoteTokenToAlphaSignal,
   };
 
   return <TradingContext.Provider value={value}>{children}</TradingContext.Provider>;

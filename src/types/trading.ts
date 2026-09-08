@@ -95,6 +95,7 @@ export interface TradingState {
   // ─── Signal Provider ───
   activeSignals: TradingSignal[];
   signalHistory: TradingSignal[];
+  agentThresholds: AgentThresholds;
 }
 
 export interface TradingActions {
@@ -113,6 +114,7 @@ export interface TradingActions {
   updateAgentConfig: (updates: Partial<AgentConfig>) => void;
   updateExecutionConfig: (updates: Partial<ExecutionConfig>) => void;
   updateAutoSnipeConfig: (updates: Partial<AutoSnipeConfig>) => void;
+  setAgentThresholds: (thresholds: AgentThresholds) => void;
   setTradingStyle: (style: TradingStyle) => void;
   updateTelegramConfig: (updates: Partial<WebhookTelegramConfig>) => void;
   updateDiscordConfig: (updates: Partial<WebhookDiscordConfig>) => void;
@@ -137,6 +139,8 @@ export interface TradingActions {
   deleteSignalHistoryItem: (id: string) => void;
   clearSignalHistoryByFilter: (option: 'all' | 'older_1h' | 'older_24h' | 'older_7d' | 'older_30d' | 'last_1h' | 'last_24h' | 'last_7d' | 'last_30d' | 'sl_only') => number;
   restoreSeedSignals: () => void;
+  scanSolanaLiveNow: (mode?: 'ALL' | 'SNIPER' | 'GRADUATING_PUMP' | 'BREAKOUT' | 'VOLUME_SURGE' | 'WHALE' | 'SUPERNOVA') => Promise<number>;
+  promoteTokenToAlphaSignal: (token: any) => Promise<boolean>;
 }
 
 export type TradingContextType = TradingState & TradingActions;

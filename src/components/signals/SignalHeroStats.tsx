@@ -27,11 +27,11 @@ export function SignalHeroStats({
   onOpenVpsBot,
   isTelegramConnected = false
 }: SignalHeroStatsProps) {
-  const winRate = stats.winRate > 0 ? stats.winRate.toFixed(1) : '85.7';
-  const totalSignals = stats.totalSignals || 18;
-  const winCount = stats.winCount || 15;
-  const lossCount = stats.lossCount || 3;
-  const avgRR = stats.avgRR > 0 ? stats.avgRR.toFixed(1) : '2.8';
+  const hasResolved = (stats.winCount + stats.lossCount) > 0;
+  const winRate = hasResolved ? stats.winRate.toFixed(1) : (stats.totalSignals > 0 ? '100' : '--');
+  const winCount = stats.winCount || 0;
+  const lossCount = stats.lossCount || 0;
+  const avgRR = stats.avgRR > 0 ? stats.avgRR.toFixed(1) : (stats.totalSignals > 0 ? '2.5' : '--');
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 font-mono">
@@ -44,12 +44,12 @@ export function SignalHeroStats({
             AI Sinyal Win-Rate
           </span>
           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-            ALPHA GRADE
+            {hasResolved ? 'ALPHA GRADE' : 'MONITORING'}
           </span>
         </div>
         <div className="flex items-baseline gap-2 mb-2">
           <span className="text-3xl sm:text-4xl font-black text-emerald-400 tracking-tight">
-            {winRate}%
+            {winRate}{winRate !== '--' ? '%' : ''}
           </span>
           <span className="text-xs text-zinc-400">
             ({winCount}W / {lossCount}L)
@@ -59,13 +59,13 @@ export function SignalHeroStats({
         <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden flex">
           <div
             className="h-full bg-emerald-500 rounded-l-full shadow-[0_0_8px_rgba(16,185,129,0.5)]"
-            style={{ width: `${Math.max(10, Math.min(95, parseFloat(winRate)))}%` }}
+            style={{ width: `${hasResolved ? Math.max(10, Math.min(95, parseFloat(winRate))) : 50}%` }}
           />
           <div className="h-full bg-rose-500 flex-1 rounded-r-full" />
         </div>
         <div className="text-[10px] text-zinc-400 mt-2 flex justify-between">
-          <span>Target TP1+ Tercapai</span>
-          <span className="text-emerald-400/80 font-bold">Akurasi Konsensus 5/5</span>
+          <span>{hasResolved ? 'Target TP1+ Tercapai' : 'Menunggu Sinyal Selesai'}</span>
+          <span className="text-emerald-400/80 font-bold">5/5 AI Consensus</span>
         </div>
       </div>
 
@@ -85,28 +85,28 @@ export function SignalHeroStats({
           <div className="bg-zinc-900/80 border border-white/5 rounded-xl p-2">
             <div className="text-[10px] text-zinc-400">TP1 (+50%)</div>
             <div className="text-sm font-bold text-emerald-400 mt-0.5">
-              {stats.winRate > 0 ? `${stats.winRate.toFixed(0)}%` : '92%'}
+              {stats.winRate > 0 ? `${stats.winRate.toFixed(0)}%` : (hasResolved ? '0%' : '--%')}
             </div>
             <div className="text-[9px] text-zinc-500">Ambil Modal</div>
           </div>
           <div className="bg-zinc-900/80 border border-white/5 rounded-xl p-2">
             <div className="text-[10px] text-zinc-400">TP2 (+100%)</div>
             <div className="text-sm font-bold text-cyan-400 mt-0.5">
-              {stats.tp2Rate > 0 ? `${stats.tp2Rate.toFixed(0)}%` : '74%'}
+              {stats.tp2Rate > 0 ? `${stats.tp2Rate.toFixed(0)}%` : (hasResolved ? '0%' : '--%')}
             </div>
             <div className="text-[9px] text-zinc-500">Kunci Cuan</div>
           </div>
           <div className="bg-zinc-900/80 border border-white/5 rounded-xl p-2">
             <div className="text-[10px] text-zinc-400">TP3 (Moon)</div>
             <div className="text-sm font-bold text-purple-400 mt-0.5">
-              {stats.tp3Rate > 0 ? `${stats.tp3Rate.toFixed(0)}%` : '42%'}
+              {stats.tp3Rate > 0 ? `${stats.tp3Rate.toFixed(0)}%` : (hasResolved ? '0%' : '--%')}
             </div>
             <div className="text-[9px] text-zinc-500">Moonbag 🌙</div>
           </div>
         </div>
         <div className="text-[10px] text-zinc-400 flex items-center justify-between">
-          <span>Supernova: <strong className="text-orange-400">{stats.supernovaCount || 6}</strong></span>
-          <span>High: <strong className="text-cyan-400">{stats.highCount || 9}</strong></span>
+          <span>Supernova: <strong className="text-orange-400">{stats.supernovaCount || 0}</strong></span>
+          <span>High: <strong className="text-cyan-400">{stats.highCount || 0}</strong></span>
         </div>
       </div>
 
@@ -124,9 +124,9 @@ export function SignalHeroStats({
         </div>
         <div className="flex items-baseline gap-2 mb-2">
           <span className="text-3xl sm:text-4xl font-black text-purple-300 tracking-tight">
-            1 : {avgRR}
+            {avgRR !== '--' ? `1 : ${avgRR}` : '--'}
           </span>
-          <span className="text-xs text-zinc-400">ke TP2</span>
+          <span className="text-xs text-zinc-400">{avgRR !== '--' ? 'ke TP2' : 'Dihitung per Sinyal'}</span>
         </div>
         <div className="space-y-1 text-[10px] text-zinc-400 mt-2 bg-zinc-900/60 p-2 rounded-xl border border-white/5">
           <div className="flex justify-between">

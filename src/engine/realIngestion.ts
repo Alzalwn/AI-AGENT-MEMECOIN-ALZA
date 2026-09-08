@@ -85,7 +85,10 @@ async function safeFetchJson<T>(url: string, timeoutMs = 6000): Promise<T | null
   return null;
 }
 
-export async function fetchLiveSolanaTokens(): Promise<TokenSignal[]> {
+// In-memory cache per mode to guarantee instant response and distinct results
+const cachedByMode: Record<string, { tokens: TokenSignal[]; time: number }> = {};
+
+export async function fetchLiveSolanaTokens(mode: string = 'ALL'): Promise<TokenSignal[]> {
   const now = Date.now();
 
   // Jika ada token hasil sniffing Block 0/1 langsung dari RPC WebSocket, berikan prioritas tertinggi
@@ -94,30 +97,43 @@ export async function fetchLiveSolanaTokens(): Promise<TokenSignal[]> {
     return [freshSniffed, ...cachedTokens.slice(0, 5)];
   }
 
-  // Return cached signals if fetched within last 8 seconds
-  if (cachedTokens.length > 0 && now - lastFetchTime < 8000) {
-    return cachedTokens;
+  // Cek cache spesifik untuk mode ini (TTL 5 detik agar scan berulang tetap cepat tapi tidak stale)
+  const modeCache = cachedByMode[mode];
+  if (modeCache && modeCache.tokens.length > 0 && now - modeCache.time < 5000) {
+    return modeCache.tokens;
   }
 
   try {
-    // 1. Fetch dual stream: token profiles + token boosts on Solana from DexScreener
-    const [profilesData, boostsData] = await Promise.all([
+    // 1. Fetch multi-stream feeds: profiles, latest boosts, top boosts, plus targeted search
+    const fetchPromises: Promise<any>[] = [
       safeFetchJson<DexProfile[]>('https://api.dexscreener.com/token-profiles/latest/v1', 6000),
-      safeFetchJson<any[]>('https://api.dexscreener.com/token-boosts/latest/v1', 6000)
-    ]);
+      safeFetchJson<any[]>('https://api.dexscreener.com/token-boosts/latest/v1', 6000),
+      safeFetchJson<any[]>('https://api.dexscreener.com/token-boosts/top/v1', 6000)
+    ];
+
+    if (mode === 'SUPERNOVA') {
+      fetchPromises.push(safeFetchJson<any>('https://api.dexscreener.com/latest/dex/search?q=ai', 6000));
+    } else if (mode === 'GRADUATING_PUMP') {
+      fetchPromises.push(safeFetchJson<any>('https://api.dexscreener.com/latest/dex/search?q=pump', 6000));
+    } else if (mode === 'VOLUME_SURGE') {
+      fetchPromises.push(safeFetchJson<any>('https://api.dexscreener.com/latest/dex/search?q=solana', 6000));
+    }
+
+    const [profilesData, boostsLatestData, boostsTopData, searchData] = await Promise.all(fetchPromises);
 
     const profiles: DexProfile[] = Array.isArray(profilesData) ? profilesData : [];
-    const boosts: any[] = Array.isArray(boostsData) ? boostsData : [];
+    const boostsLatest: any[] = Array.isArray(boostsLatestData) ? boostsLatestData : [];
+    const boostsTop: any[] = Array.isArray(boostsTopData) ? boostsTopData : [];
 
     // Filter & Deduplikasi token mints di Solana
     const solanaProfiles = profiles.filter((t) => t.chainId === 'solana');
-    const solanaBoosts = boosts.filter((t) => t.chainId === 'solana');
+    const combinedBoosts = [...boostsTop, ...boostsLatest].filter((t) => t.chainId === 'solana');
 
     const addressMap = new Map<string, DexProfile>();
     for (const p of solanaProfiles) {
       if (p.tokenAddress) addressMap.set(p.tokenAddress, p);
     }
-    for (const b of solanaBoosts) {
+    for (const b of combinedBoosts) {
       if (b.tokenAddress && !addressMap.has(b.tokenAddress)) {
         addressMap.set(b.tokenAddress, {
           url: b.url || `https://dexscreener.com/solana/${b.tokenAddress}`,
@@ -130,12 +146,35 @@ export async function fetchLiveSolanaTokens(): Promise<TokenSignal[]> {
       }
     }
 
-    const uniqueAddresses = Array.from(addressMap.keys()).slice(0, 25);
+    // Ekstrak token dari targeted search jika ada
+    const searchPairsMap = new Map<string, any>();
+    if (searchData && Array.isArray(searchData.pairs)) {
+      for (const pair of searchData.pairs) {
+        if (pair.chainId === 'solana' && pair.baseToken?.address) {
+          const addr = pair.baseToken.address;
+          searchPairsMap.set(addr, pair);
+          if (!addressMap.has(addr)) {
+            addressMap.set(addr, {
+              url: pair.url || `https://dexscreener.com/solana/${addr}`,
+              chainId: 'solana',
+              tokenAddress: addr,
+              icon: pair.info?.imageUrl,
+              header: pair.info?.header,
+              description: `${pair.baseToken.name || ''} (${pair.baseToken.symbol || ''})`
+            });
+          }
+        }
+      }
+    }
+
+    const allKeys = Array.from(addressMap.keys());
+    // Ambil sampel unik (hingga 30 token)
+    const uniqueAddresses = allKeys.slice(0, 30);
     if (uniqueAddresses.length === 0) return cachedTokens;
 
     // 2. Fetch pair detail data for these tokens
     const pairData = await safeFetchJson<any>(`https://api.dexscreener.com/latest/dex/tokens/${uniqueAddresses.join(',')}`, 6000);
-    const pairsMap = new Map<string, any>();
+    const pairsMap = new Map<string, any>(searchPairsMap);
 
     if (pairData && pairData.pairs) {
       for (const pair of pairData.pairs) {
@@ -274,10 +313,11 @@ export async function fetchLiveSolanaTokens(): Promise<TokenSignal[]> {
     if (signals.length > 0) {
       cachedTokens = signals;
       lastFetchTime = Date.now();
+      cachedByMode[mode] = { tokens: signals, time: Date.now() };
     }
-    return signals.length > 0 ? signals : cachedTokens;
+    return signals.length > 0 ? signals : (cachedByMode[mode]?.tokens || cachedTokens);
   } catch (err: any) {
     console.warn('Live Solana token ingestion fallback (network timeout):', err?.message || err);
-    return cachedTokens;
+    return cachedByMode[mode]?.tokens || cachedTokens;
   }
 }

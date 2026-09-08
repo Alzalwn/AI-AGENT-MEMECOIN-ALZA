@@ -49,18 +49,39 @@ interface BotData {
 
 export const VpsBotModal: React.FC<VpsBotModalProps> = ({ isOpen, onClose }) => {
   const [botData, setBotData] = useState<BotData | null>(null);
+  const [pm2Data, setPm2Data] = useState<any>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isToggling, setIsToggling] = useState<boolean>(false);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [copiedCmd, setCopiedCmd] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'monitor' | 'guide'>('monitor');
+
+  const [botToken, setBotToken] = useState<string>('');
+  const [chatId, setChatId] = useState<string>('');
+  const [isSavingConfig, setIsSavingConfig] = useState<boolean>(false);
+  const [isTestingTelegram, setIsTestingTelegram] = useState<boolean>(false);
+  const [configStatus, setConfigStatus] = useState<{ success: boolean; message: string } | null>(null);
 
   const fetchBotStatus = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/bot/status', { cache: 'no-store' });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && json.data) {
-          setBotData(json.data);
+      const [resStatus, resDaemon] = await Promise.all([
+        fetch('/api/bot/status', { cache: 'no-store' }).catch(() => null),
+        fetch('/api/bot/daemon', { cache: 'no-store' }).catch(() => null)
+      ]);
+
+      if (resStatus?.ok) {
+        const json = await resStatus.json();
+        if (json.success && json.data) setBotData(json.data);
+      }
+
+      if (resDaemon?.ok) {
+        const jsonDaemon = await resDaemon.json();
+        if (jsonDaemon.success) {
+          if (jsonDaemon.pm2) setPm2Data(jsonDaemon.pm2);
+          if (jsonDaemon.telegramChatId && !chatId) {
+            setChatId(jsonDaemon.telegramChatId);
+          }
         }
       }
     } catch (err) {
@@ -70,8 +91,92 @@ export const VpsBotModal: React.FC<VpsBotModalProps> = ({ isOpen, onClose }) => 
     }
   };
 
+  const handleToggleDaemon = async (action: 'start' | 'stop' | 'restart') => {
+    setIsToggling(true);
+    setActionMsg(null);
+    try {
+      const res = await fetch('/api/bot/daemon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setActionMsg(data.message || `Berhasil ${action === 'start' ? 'menyalakan' : 'menghentikan'} daemon!`);
+        if (data.pm2) setPm2Data(data.pm2);
+        fetchBotStatus();
+      } else {
+        setActionMsg(`Gagal: ${data.error || 'Terjadi kesalahan'}`);
+      }
+    } catch (err: any) {
+      setActionMsg(`Gagal menghubungi server: ${err?.message}`);
+    } finally {
+      setIsToggling(false);
+    }
+  };
+
+  const handleSaveConfig = async () => {
+    if (!botToken.trim() || !chatId.trim()) {
+      setConfigStatus({ success: false, message: 'Bot Token dan Chat ID wajib diisi!' });
+      return;
+    }
+    setIsSavingConfig(true);
+    setConfigStatus(null);
+    try {
+      const res = await fetch('/api/bot/daemon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'save_config', botToken, chatId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setConfigStatus({ success: true, message: data.message || 'Konfigurasi tersimpan ke server!' });
+        fetchBotStatus();
+        try {
+          localStorage.setItem('GT_TELEGRAM_CONFIG', JSON.stringify({ botToken, chatId, isEnabled: true }));
+        } catch {}
+      } else {
+        setConfigStatus({ success: false, message: data.error || 'Gagal menyimpan konfigurasi.' });
+      }
+    } catch (err: any) {
+      setConfigStatus({ success: false, message: err?.message || 'Gagal terhubung ke server.' });
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
+
+  const handleTestTelegram = async () => {
+    setIsTestingTelegram(true);
+    setConfigStatus(null);
+    try {
+      const res = await fetch('/api/bot/daemon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'test_telegram', botToken, chatId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setConfigStatus({ success: true, message: data.message || 'Pesan tes berhasil dikirim ke Telegram!' });
+      } else {
+        setConfigStatus({ success: false, message: data.error || 'Pesan tes gagal dikirim.' });
+      }
+    } catch (err: any) {
+      setConfigStatus({ success: false, message: err?.message || 'Error mengirim tes.' });
+    } finally {
+      setIsTestingTelegram(false);
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
+      try {
+        const raw = localStorage.getItem('GT_TELEGRAM_CONFIG');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed.botToken) setBotToken(parsed.botToken);
+          if (parsed.chatId) setChatId(parsed.chatId);
+        }
+      } catch {}
       fetchBotStatus();
       const interval = setInterval(fetchBotStatus, 10000);
       return () => clearInterval(interval);
@@ -80,7 +185,8 @@ export const VpsBotModal: React.FC<VpsBotModalProps> = ({ isOpen, onClose }) => 
 
   if (!isOpen) return null;
 
-  const isOnline = botData?.status === 'ONLINE';
+  const isPm2Running = pm2Data?.isRunning || botData?.status === 'ONLINE';
+  const isOnline = isPm2Running;
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -159,6 +265,65 @@ export const VpsBotModal: React.FC<VpsBotModalProps> = ({ isOpen, onClose }) => 
         <div className="p-4 overflow-y-auto space-y-4 flex-1">
           {activeTab === 'monitor' ? (
             <>
+              {/* 1-Click Interactive Daemon Controller */}
+              <div className={`p-4 rounded-xl border transition-all ${
+                isPm2Running
+                  ? 'bg-emerald-950/20 border-emerald-500/40 shadow-[0_0_20px_rgba(16,185,129,0.15)]'
+                  : 'bg-zinc-900/90 border-zinc-800'
+              }`}>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-sm text-zinc-100 flex items-center gap-1.5">
+                        <Server className={`w-4 h-4 ${isPm2Running ? 'text-emerald-400' : 'text-zinc-500'}`} />
+                        <span>Kontrol Otomatis Daemon 24/7 (PM2)</span>
+                      </span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-black border ${
+                        isPm2Running
+                          ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 animate-pulse'
+                          : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                      }`}>
+                        {isPm2Running ? 'ONLINE 24/7' : 'OFFLINE'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-zinc-400 leading-relaxed">
+                      {isPm2Running
+                        ? `Bot sedang berjalan di VPS (PID: ${pm2Data?.pid || 'PM2'}, RAM: ${pm2Data?.memoryMb || 25}MB, CPU: ${pm2Data?.cpu || 0}%). Anda bisa menutup browser kapan saja.`
+                        : 'Nyalakan bot langsung dari browser dengan 1-klik tanpa perlu buka terminal SSH atau ketik perintah manual!'}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    {isPm2Running ? (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleDaemon('stop')}
+                        disabled={isToggling}
+                        className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/40 font-black text-xs transition-all cursor-pointer shadow-sm hover:text-rose-300"
+                      >
+                        {isToggling ? 'Memproses...' : '🛑 HENTIKAN BOT'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleDaemon('start')}
+                        disabled={isToggling}
+                        className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs transition-all cursor-pointer shadow-[0_0_20px_rgba(16,185,129,0.35)]"
+                      >
+                        {isToggling ? 'Menyalakan...' : '🚀 AKTIFKAN BOT 24/7 (1-KLIK)'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {actionMsg && (
+                  <div className="mt-3 p-2.5 rounded-lg bg-zinc-950 border border-zinc-700 text-cyan-300 text-[11px] flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                    <span>{actionMsg}</span>
+                  </div>
+                )}
+              </div>
+
               {/* Architecture Summary Banner */}
               <div className="p-3 rounded-xl bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-emerald-500/10 border border-blue-500/30 space-y-1">
                 <div className="flex items-center gap-2 text-blue-400 font-bold text-xs">
@@ -204,6 +369,79 @@ export const VpsBotModal: React.FC<VpsBotModalProps> = ({ isOpen, onClose }) => 
                     Min Skor: {botData?.settings?.minScore || 82}%
                   </span>
                 </div>
+              </div>
+
+              {/* Telegram Bot Credentials Configuration Panel */}
+              <div className="p-3.5 rounded-xl bg-zinc-900/90 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.08)] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Send className="w-4 h-4 text-cyan-400" />
+                    <span className="font-bold text-xs text-zinc-100">Konfigurasi Telegram Bot & Channel VPS</span>
+                  </div>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                    botData?.telegramConnected
+                      ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                      : 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                  }`}>
+                    {botData?.telegramConnected ? `TERHUBUNG (${botData.telegramChatId || 'Aktif'})` : 'BELUM DISINKRONKAN'}
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  <div>
+                    <label className="block text-[10px] text-zinc-400 font-bold mb-1">TELEGRAM BOT TOKEN (dari @BotFather):</label>
+                    <input
+                      type="password"
+                      value={botToken}
+                      onChange={(e) => setBotToken(e.target.value)}
+                      placeholder="1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ"
+                      className="w-full bg-black/60 border border-zinc-800 focus:border-cyan-500/80 text-zinc-200 px-3 py-1.5 rounded-lg text-xs font-mono placeholder:text-zinc-600 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-zinc-400 font-bold mb-1">TELEGRAM CHAT ID / CHANNEL ID:</label>
+                    <input
+                      type="text"
+                      value={chatId}
+                      onChange={(e) => setChatId(e.target.value)}
+                      placeholder="-1001234567890 atau @nama_channel"
+                      className="w-full bg-black/60 border border-zinc-800 focus:border-cyan-500/80 text-zinc-200 px-3 py-1.5 rounded-lg text-xs font-mono placeholder:text-zinc-600 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap pt-1">
+                  <button
+                    type="button"
+                    onClick={handleSaveConfig}
+                    disabled={isSavingConfig}
+                    className="px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-black text-[11px] transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>{isSavingConfig ? 'Menyimpan...' : '💾 Simpan Konfigurasi Otomatis'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleTestTelegram}
+                    disabled={isTestingTelegram}
+                    className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-[11px] transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Send className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>{isTestingTelegram ? 'Mengirim...' : '🧪 Tes Kirim Pesan'}</span>
+                  </button>
+                </div>
+
+                {configStatus && (
+                  <div className={`p-2 rounded-lg text-[11px] flex items-center gap-2 border ${
+                    configStatus.success
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                      : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                  }`}>
+                    {configStatus.success ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
+                    <span>{configStatus.message}</span>
+                  </div>
+                )}
               </div>
 
               {/* Anti-Spam Safeguards */}
@@ -283,7 +521,10 @@ export const VpsBotModal: React.FC<VpsBotModalProps> = ({ isOpen, onClose }) => 
                   <span>Cara Menjalankan Bot 24/7 di VPS Tanpa Perlu Buka Web</span>
                 </div>
                 <p className="text-[11px] text-zinc-300 leading-relaxed">
-                  Cukup 3 perintah sederhana di terminal server VPS Linux (Ubuntu / AlmaLinux / Debian) Anda, bot akan hidup mandiri di cloud dan mengirim sinyal terus menerus ke Telegram Anda.
+                  💡 <strong>CARA PALING MUDAH (OTOMATIS 1-KLIK)</strong>: Buka tab <strong>Status &amp; Telemetri</strong> di atas, lalu cukup klik tombol hijau <strong>&quot;🚀 AKTIFKAN BOT 24/7 (1-KLIK)&quot;</strong>. Sistem langsung menyalakan background process PM2 di server tanpa Anda perlu menyentuh terminal!
+                </p>
+                <p className="text-[10px] text-zinc-400">
+                  Jika Anda tetap ingin menjalankan atau mengecek log secara manual lewat terminal SSH server VPS, Anda bisa gunakan panduan di bawah ini:
                 </p>
               </div>
 

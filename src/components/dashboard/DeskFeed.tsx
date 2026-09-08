@@ -28,7 +28,8 @@ export const DeskFeed: React.FC = () => {
     selectedResult,
     selectResult,
     dataSource,
-    networkMetrics
+    networkMetrics,
+    promoteTokenToAlphaSignal
   } = useTradingAgent();
 
   // Item-level accordion expansion state
@@ -36,6 +37,20 @@ export const DeskFeed: React.FC = () => {
   const [filterVerdict, setFilterVerdict] = useState<'ALL' | 'APPROVED' | 'VETOED'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [copiedMint, setCopiedMint] = useState<string | null>(null);
+  const [promotingId, setPromotingId] = useState<string | null>(null);
+  const [promotedSuccessId, setPromotedSuccessId] = useState<string | null>(null);
+
+  const handlePromote = async (token: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!promoteTokenToAlphaSignal) return;
+    setPromotingId(token.id);
+    const ok = await promoteTokenToAlphaSignal(token);
+    setPromotingId(null);
+    if (ok) {
+      setPromotedSuccessId(token.id);
+      setTimeout(() => setPromotedSuccessId(null), 3000);
+    }
+  };
 
   const toggleExpand = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -237,6 +252,34 @@ export const DeskFeed: React.FC = () => {
                       {item.verdict}
                     </span>
 
+                    {/* Quick Promote to Alpha Signal Button */}
+                    <button
+                      onClick={(e) => handlePromote(item.token, e)}
+                      disabled={promotingId === item.token.id}
+                      className={`px-2 py-1 rounded-lg text-[9px] font-bold flex items-center gap-1 transition-all cursor-pointer border ${
+                        promotedSuccessId === item.token.id
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                          : isApproved
+                          ? 'bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border-emerald-500/40'
+                          : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 border-zinc-800'
+                      }`}
+                      title="Kirim token ini langsung ke Sinyal Alpha Live & Telegram"
+                    >
+                      {promotingId === item.token.id ? (
+                        <span className="animate-pulse">Mengirim...</span>
+                      ) : promotedSuccessId === item.token.id ? (
+                        <>
+                          <Check className="w-2.5 h-2.5 text-emerald-300" />
+                          <span className="hidden xs:inline">Terkirim</span>
+                        </>
+                      ) : (
+                        <>
+                          <Zap className="w-2.5 h-2.5 text-amber-300" />
+                          <span className="hidden sm:inline">Kirim ke Alpha</span>
+                        </>
+                      )}
+                    </button>
+
                     {/* Accordion Toggle Chevron Indicator */}
                     <button
                       onClick={(e) => toggleExpand(item.token.id, e)}
@@ -391,6 +434,36 @@ export const DeskFeed: React.FC = () => {
                       </span>
                     </div>
                   )}
+
+                  {/* Manual Promotion to Alpha Signal Card */}
+                  <div className="pt-1 flex items-center justify-between gap-2 bg-gradient-to-r from-zinc-900/80 to-zinc-900/40 p-2.5 rounded-lg border border-zinc-800">
+                    <div className="text-[10px] text-zinc-300">
+                      <span className="font-semibold text-zinc-100">Kirim ke Alpha Feed:</span> Publikasikan target ini ke Sinyal Alpha Live & Telegram
+                    </div>
+                    <button
+                      onClick={(e) => handlePromote(item.token, e)}
+                      disabled={promotingId === item.token.id}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm shrink-0 ${
+                        promotedSuccessId === item.token.id
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : 'bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/40'
+                      }`}
+                    >
+                      {promotingId === item.token.id ? (
+                        <span className="animate-pulse">Mengirim Sinyal...</span>
+                      ) : promotedSuccessId === item.token.id ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-300" />
+                          <span>Berhasil Terkirim!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Zap className="w-3 h-3 text-amber-300" />
+                          <span>🚀 Kirim ke Sinyal Alpha Live</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
             );

@@ -100,7 +100,7 @@ export async function testTelegramConnection(
 // ANTI-SPAM & DEDUPLIKASI 24 JAM
 // ─────────────────────────────────────────────────────────
 const DEDUP_KEY = 'GT_TELEGRAM_SENT_CAS';
-const GLOBAL_COOLDOWN_MS = 60 * 1000; // Minimal 60 detik jeda antar notifikasi Telegram
+const GLOBAL_COOLDOWN_MS = 4 * 1000; // Minimal 4 detik jeda antar notifikasi Telegram otomatis
 let lastTelegramSentAt = 0;
 
 function isCaAlertedRecently(mint: string): boolean {
@@ -136,26 +136,31 @@ function recordCaAlerted(mint: string): void {
 // ─────────────────────────────────────────────────────────
 export async function sendSignalAlert(
   signal: TradingSignal,
-  config: TelegramConfig
+  config: TelegramConfig,
+  isManual = false
 ): Promise<boolean> {
-  // 1. EARLY ENTRY GUARD: Drop jika Market Cap > batas tier ($150k untuk early gem, $5M untuk Breakout Runner)
-  const maxMc = signal.scanTier === 'BREAKOUT_RUNNER' || signal.token?.scanTier === 'BREAKOUT_RUNNER' ? 5000000 : 150000;
-  if (signal.marketContext && signal.marketContext.marketCapUsd > maxMc) {
-    console.warn(`[Telegram Alert Dropped] MC $${signal.marketContext.marketCapUsd.toLocaleString()} > $${maxMc.toLocaleString()} (Early-Entry Guard)`);
-    return false;
-  }
+  // Hanya terapkan filter Early-Entry Guard & deduplikasi jika sinyal berasal dari pemindaian otomatis.
+  // Jika promosi manual dari UI (isManual = true), pengguna berhak mengirim koin apa pun yang mereka pilih!
+  if (!isManual) {
+    // 1. EARLY ENTRY GUARD: Drop jika Market Cap > batas tier ($1M untuk early gem, $10M untuk Breakout Runner/Supernova)
+    const maxMc = signal.scanTier === 'BREAKOUT_RUNNER' || signal.token?.scanTier === 'BREAKOUT_RUNNER' || signal.signalTier === 'SUPERNOVA' ? 10000000 : 1000000;
+    if (signal.marketContext && signal.marketContext.marketCapUsd > maxMc) {
+      console.warn(`[Telegram Alert Dropped] MC $${signal.marketContext.marketCapUsd.toLocaleString()} > $${maxMc.toLocaleString()} (Early-Entry Guard)`);
+      return false;
+    }
 
-  // 2. ANTI-SPAM DEDUPLIKASI: 1 Koin hanya boleh dikirim 1x per 24 jam
-  if (signal.token?.mint && isCaAlertedRecently(signal.token.mint)) {
-    console.warn(`[Telegram Alert Dropped] CA ${signal.token.mint} sudah pernah dikirim dalam 24 jam terakhir.`);
-    return false;
-  }
+    // 2. ANTI-SPAM DEDUPLIKASI: 1 Koin hanya boleh dikirim 1x per 24 jam untuk bot otomatis
+    if (signal.token?.mint && isCaAlertedRecently(signal.token.mint)) {
+      console.warn(`[Telegram Alert Dropped] CA ${signal.token.mint} sudah pernah dikirim dalam 24 jam terakhir.`);
+      return false;
+    }
 
-  // 3. GLOBAL RATE LIMITING: Jeda minimal antar pengiriman sinyal
-  const now = Date.now();
-  if (now - lastTelegramSentAt < GLOBAL_COOLDOWN_MS) {
-    console.warn(`[Telegram Alert Dropped] Global cooldown Telegram aktif (tunggu ${Math.round((GLOBAL_COOLDOWN_MS - (now - lastTelegramSentAt)) / 1000)} detik).`);
-    return false;
+    // 3. GLOBAL RATE LIMITING: Jeda minimal antar pengiriman sinyal otomatis
+    const now = Date.now();
+    if (now - lastTelegramSentAt < GLOBAL_COOLDOWN_MS) {
+      console.warn(`[Telegram Alert Dropped] Global cooldown Telegram aktif (tunggu ${Math.round((GLOBAL_COOLDOWN_MS - (now - lastTelegramSentAt)) / 1000)} detik).`);
+      return false;
+    }
   }
 
   const { token, entryZone, stopLoss, targets, marketContext, tradingLinks } = signal;
