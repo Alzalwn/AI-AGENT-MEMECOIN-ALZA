@@ -2217,34 +2217,31 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 }).slice(0, 96);
               });
 
-              // Jika Mode Penyiaran Sinyal Otomatis AKTIF:
-              // Langsung buat sinyal dan kirim ke Sinyal Alpha Live + Telegram untuk koin yang APPROVED!
-              if (autoSnipeConfigRef.current.isEnabled) {
-                for (const item of realConsensus) {
-                  if (item.verdict === 'APPROVED') {
-                    try {
-                      let { signal } = runConsensusAndBuildSignal(item.token, {
-                        thresholds: effectiveThresholdsRef.current,
-                        grokViralityScore: item.token.narrativeCosineSim,
+              // Rotasikan & Siarkan sinyal koin real yang lolos konsensus ke Sinyal Alpha Live & Telegram
+              for (const item of realConsensus) {
+                if (item.verdict === 'APPROVED') {
+                  try {
+                    let { signal } = runConsensusAndBuildSignal(item.token, {
+                      thresholds: effectiveThresholdsRef.current,
+                      grokViralityScore: item.token.narrativeCosineSim,
+                      solRateUsd: 140,
+                    });
+
+                    if (!signal) {
+                      const moonshot = item.moonshot || MoonshotAnalyzer.evaluate(item.token);
+                      signal = computeSignal({
+                        token: { ...item.token, isRealData: true },
+                        moonshot,
+                        grokViralityScore: item.token.narrativeCosineSim || 0.85,
                         solRateUsd: 140,
                       });
-
-                      if (!signal) {
-                        const moonshot = item.moonshot || MoonshotAnalyzer.evaluate(item.token);
-                        signal = computeSignal({
-                          token: { ...item.token, isRealData: true },
-                          moonshot,
-                          grokViralityScore: item.token.narrativeCosineSim || 0.85,
-                          solRateUsd: 140,
-                        });
-                      }
-
-                      if (signal) {
-                        await broadcastSignal(signal, telegramConfigRef.current);
-                      }
-                    } catch (sigErr) {
-                      console.warn('[fetchRealTokens] Error broadcasting signal:', sigErr);
                     }
+
+                    if (signal) {
+                      await broadcastSignal(signal, telegramConfigRef.current);
+                    }
+                  } catch (sigErr) {
+                    console.warn('[fetchRealTokens] Error broadcasting signal:', sigErr);
                   }
                 }
               }

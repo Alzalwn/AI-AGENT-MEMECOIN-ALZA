@@ -153,7 +153,7 @@ function RadarEmptyState({ onScanNow, isScanningLive, selectedChannel, onSelectC
 }
 
 export function SignalFeed({ signals }: SignalFeedProps) {
-  const { dismissSignal, scanSolanaLiveNow } = useTradingAgent();
+  const { dismissSignal, scanSolanaLiveNow, clearSignals } = useTradingAgent();
   const [tierFilter, setTierFilter] = useState<FilterTier>('ALL');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ACTIVE');
   const [search, setSearch] = useState('');
@@ -263,8 +263,22 @@ export function SignalFeed({ signals }: SignalFeedProps) {
           </div>
         </div>
 
-        {/* 1-Click Scan Solana Live Button */}
+        {/* 1-Click Scan Solana Live & Reset Buttons */}
         <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+          <button
+            onClick={async () => {
+              clearSignals();
+              setScanStatusMsg('🧹 Cache 4 token lama dibersihkan! Sedang memindai DEX untuk koin-koin segar...');
+              await handleScanNow(discoveryChannel);
+            }}
+            disabled={isScanningLive}
+            title="Hapus token lama dari cache memori browser dan muat token-token baru dari DEX Solana"
+            className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white font-bold text-xs flex items-center justify-center gap-1.5 border border-zinc-700/80 transition-all cursor-pointer disabled:opacity-50 shrink-0"
+          >
+            <span>🔄</span>
+            <span className="hidden sm:inline">Reset &amp; Refresh</span>
+          </button>
+
           <button
             onClick={() => handleScanNow(discoveryChannel)}
             disabled={isScanningLive}

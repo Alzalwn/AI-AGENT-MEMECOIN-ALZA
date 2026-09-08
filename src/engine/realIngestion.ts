@@ -104,24 +104,34 @@ export async function fetchLiveSolanaTokens(mode: string = 'ALL'): Promise<Token
   }
 
   try {
-    // 1. Fetch multi-stream feeds: profiles, latest boosts, top boosts, plus targeted search
+    // 1. Fetch multi-stream feeds: profiles, latest boosts, top boosts, plus targeted dynamic searches
     const fetchPromises: Promise<any>[] = [
       safeFetchJson<DexProfile[]>('https://api.dexscreener.com/token-profiles/latest/v1', 6000),
       safeFetchJson<any[]>('https://api.dexscreener.com/token-boosts/latest/v1', 6000),
-      safeFetchJson<any[]>('https://api.dexscreener.com/token-boosts/top/v1', 6000)
+      safeFetchJson<any[]>('https://api.dexscreener.com/token-boosts/top/v1', 6000),
+      safeFetchJson<any>('https://api.dexscreener.com/latest/dex/search?q=pump', 6000)
     ];
 
     if (mode === 'SUB_100K') {
-      fetchPromises.push(safeFetchJson<any>('https://api.dexscreener.com/latest/dex/search?q=pump', 6000));
+      fetchPromises.push(safeFetchJson<any>('https://api.dexscreener.com/latest/dex/search?q=pump.fun', 6000));
+      fetchPromises.push(safeFetchJson<any>('https://api.dexscreener.com/latest/dex/search?q=sol', 6000));
     } else if (mode === 'SUPERNOVA') {
       fetchPromises.push(safeFetchJson<any>('https://api.dexscreener.com/latest/dex/search?q=ai', 6000));
+      fetchPromises.push(safeFetchJson<any>('https://api.dexscreener.com/latest/dex/search?q=agent', 6000));
     } else if (mode === 'GRADUATING_PUMP') {
       fetchPromises.push(safeFetchJson<any>('https://api.dexscreener.com/latest/dex/search?q=pump', 6000));
     } else if (mode === 'VOLUME_SURGE') {
       fetchPromises.push(safeFetchJson<any>('https://api.dexscreener.com/latest/dex/search?q=solana', 6000));
+    } else if (mode === 'BREAKOUT') {
+      fetchPromises.push(safeFetchJson<any>('https://api.dexscreener.com/latest/dex/search?q=raydium', 6000));
+    } else {
+      // mode === 'ALL': acak kueri pencarian agar setiap pemindaian menemukan koin-koin segar yang berbeda
+      const dynamicKeywords = ['meme', 'ai', 'doge', 'pepe', 'cat', 'solana'];
+      const picked = dynamicKeywords[Math.floor(Math.random() * dynamicKeywords.length)];
+      fetchPromises.push(safeFetchJson<any>(`https://api.dexscreener.com/latest/dex/search?q=${picked}`, 6000));
     }
 
-    const [profilesData, boostsLatestData, boostsTopData, searchData] = await Promise.all(fetchPromises);
+    const [profilesData, boostsLatestData, boostsTopData, ...searchDataList] = await Promise.all(fetchPromises);
 
     const profiles: DexProfile[] = Array.isArray(profilesData) ? profilesData : [];
     const boostsLatest: any[] = Array.isArray(boostsLatestData) ? boostsLatestData : [];
@@ -150,28 +160,31 @@ export async function fetchLiveSolanaTokens(mode: string = 'ALL'): Promise<Token
 
     // Ekstrak token dari targeted search jika ada
     const searchPairsMap = new Map<string, any>();
-    if (searchData && Array.isArray(searchData.pairs)) {
-      for (const pair of searchData.pairs) {
-        if (pair.chainId === 'solana' && pair.baseToken?.address) {
-          const addr = pair.baseToken.address;
-          searchPairsMap.set(addr, pair);
-          if (!addressMap.has(addr)) {
-            addressMap.set(addr, {
-              url: pair.url || `https://dexscreener.com/solana/${addr}`,
-              chainId: 'solana',
-              tokenAddress: addr,
-              icon: pair.info?.imageUrl,
-              header: pair.info?.header,
-              description: `${pair.baseToken.name || ''} (${pair.baseToken.symbol || ''})`
-            });
+    for (const searchData of searchDataList) {
+      if (searchData && Array.isArray(searchData.pairs)) {
+        for (const pair of searchData.pairs) {
+          if (pair.chainId === 'solana' && pair.baseToken?.address && pair.baseToken?.symbol !== 'SOL') {
+            const addr = pair.baseToken.address;
+            searchPairsMap.set(addr, pair);
+            if (!addressMap.has(addr)) {
+              addressMap.set(addr, {
+                url: pair.url || `https://dexscreener.com/solana/${addr}`,
+                chainId: 'solana',
+                tokenAddress: addr,
+                icon: pair.info?.imageUrl,
+                header: pair.info?.header,
+                description: `${pair.baseToken.name || ''} (${pair.baseToken.symbol || ''})`
+              });
+            }
           }
         }
       }
     }
 
     const allKeys = Array.from(addressMap.keys());
-    // Ambil sampel unik (hingga 30 token)
-    const uniqueAddresses = allKeys.slice(0, 30);
+    // Acak urutan alamat (shuffle) agar setiap fetch mengevaluasi koin-koin yang berbeda, bukan selalu 30 koin pertama yang sama
+    const shuffledKeys = allKeys.sort(() => 0.5 - Math.random());
+    const uniqueAddresses = shuffledKeys.slice(0, 35);
     if (uniqueAddresses.length === 0) return cachedTokens;
 
     // 2. Fetch pair detail data for these tokens
