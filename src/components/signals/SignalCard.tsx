@@ -203,11 +203,21 @@ function TradingButtons({ signal }: { signal: TradingSignal }) {
 interface SignalCardProps {
   signal: TradingSignal;
   compact?: boolean;
+  onDismiss?: (id: string) => void;
 }
 
-export function SignalCard({ signal, compact = false }: SignalCardProps) {
+export function SignalCard({ signal, compact = false, onDismiss }: SignalCardProps) {
   const [expanded, setExpanded] = useState(!compact);
   const [timeStr, setTimeStr] = useState(timeAgo(signal.timestamp));
+  const [isDismissing, setIsDismissing] = useState(false);
+
+  const handleDismiss = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsDismissing(true);
+    setTimeout(() => {
+      onDismiss?.(signal.id);
+    }, 220);
+  };
 
   // Update timestamp every 30s
   useEffect(() => {
@@ -236,7 +246,11 @@ export function SignalCard({ signal, compact = false }: SignalCardProps) {
 
   return (
     <div
-      className="relative bg-[#111111] rounded-xl overflow-hidden transition-all duration-300 hover:translate-y-[-1px]"
+      className={`relative bg-[#111111] rounded-xl overflow-hidden transition-all duration-300 ease-out transform ${
+        isDismissing
+          ? 'opacity-0 scale-90 -translate-y-3 pointer-events-none'
+          : 'hover:translate-y-[-1px] opacity-100 scale-100'
+      }`}
       style={glowStyle}
     >
       {/* SUPERNOVA animated top border */}
@@ -284,11 +298,26 @@ export function SignalCard({ signal, compact = false }: SignalCardProps) {
               <p className="text-xs text-white/40 truncate mt-0.5">{token.name} · {token.platform}</p>
             </div>
           </div>
-          <div className="text-right flex-shrink-0">
-            <div className="text-xs text-white/30 font-mono">{timeStr}</div>
-            <div className="text-xs text-white/40 mt-0.5">
-              MC {fmtUsd(marketContext.marketCapUsd)} · LP {fmtUsd(marketContext.liquidityUsd)}
+          <div className="flex items-start gap-2 flex-shrink-0">
+            <div className="text-right">
+              <div className="text-xs text-white/30 font-mono">{timeStr}</div>
+              <div className="text-xs text-white/40 mt-0.5">
+                MC {fmtUsd(marketContext.marketCapUsd)} · LP {fmtUsd(marketContext.liquidityUsd)}
+              </div>
             </div>
+            {onDismiss && (
+              <button
+                type="button"
+                onClick={handleDismiss}
+                title="Hapus / Tutup sinyal ini dari radar"
+                aria-label={`Tutup sinyal ${cleanSymbol}`}
+                className="p-1 rounded-lg text-white/30 hover:text-rose-400 hover:bg-rose-500/15 border border-white/5 hover:border-rose-500/30 transition-all cursor-pointer group"
+              >
+                <span className="text-xs font-black block leading-none select-none group-hover:scale-125 transition-transform">
+                  ✕
+                </span>
+              </button>
+            )}
           </div>
         </div>
 

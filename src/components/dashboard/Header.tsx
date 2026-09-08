@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState } from 'react';
 import { useTradingAgent } from '../../hooks/useTradingAgent';
@@ -33,6 +33,7 @@ import { rpcFailoverInstance } from '../../lib/rpcFailover';
 import { useSolRate } from '../../hooks/useSolRate';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
+import { ScannerStatus } from './ScannerStatus';
 
 interface HeaderProps {
   onOpenWallet: () => void;
@@ -177,6 +178,11 @@ export const Header: React.FC<HeaderProps> = ({
             <span>Jito Tip:</span>
             <span className="text-cyan-400 font-bold">{networkMetrics.jitoTipSol} SOL</span>
           </div>
+
+          <div className="h-3 w-px bg-zinc-800" />
+
+          {/* Scanner Live Sniffing & Rejection Counter Heartbeat */}
+          <ScannerStatus variant="compact" />
 
           <div className="h-3 w-px bg-zinc-800" />
 

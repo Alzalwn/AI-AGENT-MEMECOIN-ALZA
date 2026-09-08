@@ -61,3 +61,23 @@
   from { transform: translateX(110%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
+
+/* Radar Sweep & Blip Animations */
+@keyframes radar-sweep {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-radar-sweep {
+  animation: radar-sweep 3s linear infinite;
+}
+
+@keyframes radar-blip {
+  0%, 100% { opacity: 0.1; transform: scale(0.6); }
+  50% { opacity: 1; transform: scale(1.4); }
+}
+
+.animate-radar-blip {
+  animation: radar-blip 2.2s ease-in-out infinite;
+}
+

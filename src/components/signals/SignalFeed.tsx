@@ -9,6 +9,8 @@
 import React, { useState, useMemo } from 'react';
 import { TradingSignal, SignalTier } from '../../types/signal';
 import { SignalCard } from './SignalCard';
+import { useTradingAgent } from '../../hooks/useTradingAgent';
+import { ScannerStatus } from '../dashboard/ScannerStatus';
 
 type FilterTier = 'ALL' | SignalTier;
 type StatusFilter = 'ACTIVE' | 'RESOLVED' | 'ALL';
@@ -25,39 +27,83 @@ const TIER_FILTERS: { key: FilterTier; label: string; emoji: string }[] = [
   { key: 'MODERATE', label: 'Moderate', emoji: '⚡' },
 ];
 
-function EmptyState({ isScanning }: { isScanning?: boolean }) {
+function RadarEmptyState() {
   return (
-    <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
-      {isScanning ? (
-        <>
-          <div className="relative">
-            <div className="w-16 h-16 rounded-full border-2 border-emerald-500/30 flex items-center justify-center">
-              <div className="w-10 h-10 rounded-full border-2 border-emerald-500/50 flex items-center justify-center animate-ping absolute" />
-              <span className="text-2xl relative z-10">📡</span>
-            </div>
-          </div>
-          <div>
-            <p className="text-white/60 font-medium">Memindai Token Baru...</p>
-            <p className="text-white/30 text-sm mt-1">
-              Menunggu sinyal yang memenuhi 5/5 konsensus AI
-            </p>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-white/20">
-            <span className="inline-block w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
-            Scanner aktif — Risk, Honeypot, Momentum, Moonshot, Grok
-          </div>
-        </>
-      ) : (
-        <>
-          <span className="text-4xl">🔇</span>
-          <p className="text-white/40 text-sm">Belum ada sinyal. Aktifkan scanner untuk mulai.</p>
-        </>
-      )}
+    <div className="flex flex-col items-center justify-center py-10 sm:py-14 text-center space-y-5 select-none animate-fade-in">
+      {/* ─── Circular High-Tech Radar Scope ─── */}
+      <div className="relative w-56 h-56 sm:w-64 sm:h-64 rounded-full border border-emerald-500/30 bg-zinc-950/80 flex items-center justify-center overflow-hidden shadow-[0_0_35px_rgba(16,185,129,0.12)]">
+        {/* Outer Ring */}
+        <div className="absolute inset-0 rounded-full border border-emerald-500/20" />
+
+        {/* Middle Ring */}
+        <div className="absolute w-40 h-40 rounded-full border border-emerald-500/15" />
+
+        {/* Inner Ring */}
+        <div className="absolute w-20 h-20 rounded-full border border-emerald-500/25" />
+
+        {/* Crosshairs */}
+        <div className="absolute w-full h-[1px] bg-emerald-500/20" />
+        <div className="absolute h-full w-[1px] bg-emerald-500/20" />
+
+        {/* Rotating Radar Sweep Beam */}
+        <div
+          className="absolute inset-0 rounded-full animate-radar-sweep pointer-events-none"
+          style={{
+            background:
+              'conic-gradient(from 0deg, rgba(16, 185, 129, 0.35) 0deg, rgba(16, 185, 129, 0.08) 55deg, transparent 80deg, transparent 360deg)',
+          }}
+        />
+
+        {/* Center Beacon Core */}
+        <div className="relative z-10 w-3.5 h-3.5 bg-emerald-400 rounded-full shadow-[0_0_15px_#10b981] flex items-center justify-center">
+          <div className="w-6 h-6 rounded-full border border-emerald-400/40 animate-ping absolute" />
+        </div>
+
+        {/* Simulated Blips of Filtered Junk Coins */}
+        <div
+          className="absolute top-12 left-16 w-2 h-2 bg-rose-400/90 rounded-full animate-radar-blip shadow-[0_0_8px_#f43f5e]"
+          title="Filtered: Low Liquidity (<$8k)"
+        />
+        <div
+          className="absolute bottom-16 right-14 w-2 h-2 bg-amber-400/90 rounded-full animate-radar-blip shadow-[0_0_8px_#fbbf24]"
+          style={{ animationDelay: '0.8s' }}
+          title="Filtered: Honeypot / Mint not revoked"
+        />
+        <div
+          className="absolute top-24 right-12 w-1.5 h-1.5 bg-rose-500/80 rounded-full animate-radar-blip shadow-[0_0_8px_#f43f5e]"
+          style={{ animationDelay: '1.6s' }}
+          title="Filtered: Top10 Holders > 25%"
+        />
+      </div>
+
+      {/* ─── Typography & Status ─── */}
+      <div className="max-w-md px-4 space-y-2 font-mono">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-xs font-bold tracking-wider uppercase shadow-[0_0_10px_rgba(16,185,129,0.15)]">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+          </span>
+          RADAR SCANNER ONLINE
+        </div>
+
+        <h3 className="text-base sm:text-lg font-black text-white tracking-wide">
+          Menunggu anomali Smart Money...
+        </h3>
+
+        <p className="text-xs sm:text-sm text-white/50 leading-relaxed">
+          Filter ketat memblokir 99% koin sampah.
+        </p>
+
+        <p className="text-[11px] text-zinc-500 pt-1 leading-normal">
+          Bot memindai setiap pool baru Solana secara real-time. Hanya token yang lolos 5/5 AI Consensus (Honeypot Shield, LP Terbakar &amp; Momentum) yang akan diterbitkan.
+        </p>
+      </div>
     </div>
   );
 }
 
 export function SignalFeed({ signals, isScanning = false }: SignalFeedProps) {
+  const { dismissSignal } = useTradingAgent();
   const [tierFilter, setTierFilter] = useState<FilterTier>('ALL');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ACTIVE');
   const [search, setSearch] = useState('');
@@ -101,6 +147,9 @@ export function SignalFeed({ signals, isScanning = false }: SignalFeedProps) {
 
   return (
     <div className="flex flex-col gap-4 h-full">
+      {/* ─── SCANNER STATUS HEARTBEAT BANNER ─── */}
+      <ScannerStatus variant="banner" />
+
       {/* ─── CONTROLS ─── */}
       <div className="flex flex-col sm:flex-row gap-2">
         {/* Tier filter pills */}
@@ -147,9 +196,9 @@ export function SignalFeed({ signals, isScanning = false }: SignalFeedProps) {
         />
       </div>
 
-      {/* ─── FEED ─── */}
+      {/* ─── FEED / RADAR EMPTY STATE ─── */}
       {filtered.length === 0 ? (
-        <EmptyState isScanning={isScanning} />
+        <RadarEmptyState />
       ) : (
         <div className="grid gap-3 sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 auto-rows-min">
           {filtered.map((signal) => (
@@ -158,7 +207,7 @@ export function SignalFeed({ signals, isScanning = false }: SignalFeedProps) {
               className="animate-fade-in"
               style={{ animationFillMode: 'both' }}
             >
-              <SignalCard signal={signal} compact={true} />
+              <SignalCard signal={signal} compact={true} onDismiss={dismissSignal} />
             </div>
           ))}
         </div>

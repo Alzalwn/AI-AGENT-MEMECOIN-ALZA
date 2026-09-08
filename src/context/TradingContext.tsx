@@ -57,6 +57,7 @@ import { calculateSolanaPnl, parseRawTokenUnits, lamportsToSol } from '../lib/so
 import { VersionedTransaction, Connection, PublicKey } from '@solana/web3.js';
 import { ExecutionManager } from '../engine/executionManager';
 import { enqueueSniffedPoolEvent } from '../engine/realIngestion';
+import { supabase } from '../lib/supabase';
 
 // Extended configs with minGrokScore (not part of base lib type)
 export interface WebhookTelegramConfig extends TelegramConfig {
@@ -640,6 +641,35 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
     setLogs((prev) => [newLog, ...prev.slice(0, 199)]);
   }, []);
+
+  const dismissSignal = useCallback((id: string) => {
+    setActiveSignals((prev) => {
+      const target = prev.find((s) => s.id === id);
+      const symbol = target?.token?.symbol ? `$${target.token.symbol}` : id;
+      appendLog('SYSTEM', 'INFO', `Sinyal ${symbol} ditutup & diarsipkan dari radar aktif oleh pengguna.`);
+      const next = prev.filter((s) => s.id !== id);
+      try { localStorage.setItem('GT_ACTIVE_SIGNALS', JSON.stringify(next)); } catch {}
+      return next;
+    });
+
+    // Sinkronkan status is_archived = true ke Supabase jika terhubung
+    if (supabase) {
+      supabase
+        .from('signals')
+        .update({ is_archived: true })
+        .eq('id', id)
+        .then(
+          ({ error }) => {
+            if (error) {
+              console.warn('[Supabase] Gagal mengarsipkan sinyal:', error.message);
+            }
+          },
+          (err) => {
+            console.warn('[Supabase] Gagal eksekusi archive:', err);
+          }
+        );
+    }
+  }, [appendLog]);
 
   // Hook up ExecutionManager Callbacks — CANONICAL state-sync bridge
   // These callbacks ensure ExecutionManager's internal state is always mirrored
@@ -2634,6 +2664,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setActiveSignals([]);
       try { localStorage.removeItem('GT_ACTIVE_SIGNALS'); } catch {}
     },
+    dismissSignal,
     deleteSignalHistoryItem,
     clearSignalHistoryByFilter,
     restoreSeedSignals,
