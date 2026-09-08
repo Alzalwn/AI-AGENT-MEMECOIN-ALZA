@@ -40,6 +40,11 @@ export interface TokenSignal {
   smartMoneyWallets?: string[];
   moonshot?: MoonshotVerdict;
   honeypotCheck?: import('../lib/honeypot').HoneypotCheckResult;
+  // Breakout Runner vs Early Gem Tiering
+  scanTier?: 'EARLY_GEM' | 'BREAKOUT_RUNNER';
+  volume15mUsd?: number;
+  volume1hUsd?: number;
+  marketCapUsd?: number;
 }
 
 export interface MoonshotPillars {

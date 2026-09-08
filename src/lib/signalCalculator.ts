@@ -253,6 +253,7 @@ export function computeSignal(input: SignalCalculatorInput): TradingSignal {
     grokViralityScore: viralityScore,
     smartMoneyCount,
     smartMoneyLabels: token.smartMoneyWallets || [],
+    scanTier: token.scanTier || (marketContext.marketCapUsd > 150000 ? 'BREAKOUT_RUNNER' : 'EARLY_GEM'),
     status: 'ACTIVE' as SignalStatus,
   };
 }

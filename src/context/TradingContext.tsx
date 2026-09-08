@@ -247,8 +247,9 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
             const seenMints = new Set<string>();
             const cleaned = parsed.filter((s) => {
               if (!s || !s.token || !s.token.mint) return false;
-              if (s.marketContext && s.marketContext.marketCapUsd > 150000) return false;
-              if (s.token.initialLpUsd && s.token.initialLpUsd > 150000) return false;
+              const maxMc = s.scanTier === 'BREAKOUT_RUNNER' || s.token?.scanTier === 'BREAKOUT_RUNNER' ? 5000000 : 150000;
+              if (s.marketContext && s.marketContext.marketCapUsd > maxMc) return false;
+              if (s.token.initialLpUsd && s.token.initialLpUsd > maxMc) return false;
               if (seenMints.has(s.token.mint)) return false;
               seenMints.add(s.token.mint);
               return true;
@@ -357,9 +358,10 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     signal: TradingSignal,
     telegramConfig: WebhookTelegramConfig
   ): Promise<void> => {
-    // 0. EARLY ENTRY GUARD: Drop jika Market Cap > $150,000 USD
-    if (signal.marketContext && signal.marketContext.marketCapUsd > 150000) {
-      console.warn(`[broadcastSignal] DROPPED by Early Guard: MC $${signal.marketContext.marketCapUsd.toLocaleString()} > $150,000`);
+    // 0. EARLY ENTRY GUARD: Drop jika Market Cap > batas tier ($150k untuk early gem, $5M untuk Breakout Runner)
+    const maxMc = signal.scanTier === 'BREAKOUT_RUNNER' || signal.token?.scanTier === 'BREAKOUT_RUNNER' ? 5000000 : 150000;
+    if (signal.marketContext && signal.marketContext.marketCapUsd > maxMc) {
+      console.warn(`[broadcastSignal] DROPPED by Early Guard: MC $${signal.marketContext.marketCapUsd.toLocaleString()} > $${maxMc.toLocaleString()}`);
       return;
     }
 
@@ -389,7 +391,11 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (prev.some((s) => s.token?.mint === signal.token?.mint)) {
         return prev;
       }
-      const cleanPrev = prev.filter((s) => s.token?.mint !== signal.token?.mint && (s.marketContext?.marketCapUsd || 0) <= 150000);
+      const cleanPrev = prev.filter((s) => {
+        if (s.token?.mint === signal.token?.mint) return false;
+        const maxPrevMc = s.scanTier === 'BREAKOUT_RUNNER' || s.token?.scanTier === 'BREAKOUT_RUNNER' ? 5000000 : 150000;
+        return (s.marketContext?.marketCapUsd || 0) <= maxPrevMc;
+      });
       const next = [signal, ...cleanPrev].slice(0, 50);
       try { localStorage.setItem('GT_ACTIVE_SIGNALS', JSON.stringify(next)); } catch {}
       return next;

@@ -111,6 +111,7 @@ export interface TradingSignal {
   grokViralityScore: number;     // 0–1 (dari Grok API)
   smartMoneyCount: number;       // Jumlah Smart Money wallet terdeteksi
   smartMoneyLabels: string[];    // Label dompet (e.g. "TopTrader_7xKv")
+  scanTier?: 'EARLY_GEM' | 'BREAKOUT_RUNNER';
 
   // Status tracking
   status: SignalStatus;

@@ -33,6 +33,7 @@ export interface TokenCandleMetadata {
   initialPriceSol?: number;     // Harga saat pembukaan likuiditas pertama kali
   pairCreatedAtTimestampMs?: number; // Waktu pembuatan bonding curve / pool
   detectedAtTimestampMs?: number;
+  scanTier?: 'EARLY_GEM' | 'BREAKOUT_RUNNER';
 }
 
 export type EarlyGuardVerdict =
@@ -63,6 +64,11 @@ export function evaluateEarlyEntryGuard(
   const createdAt = token.pairCreatedAtTimestampMs || (token.detectedAtTimestampMs || now);
   const ageMinutes = Math.max(0, (now - createdAt) / (1000 * 60));
 
+  const isRunner = token.scanTier === 'BREAKOUT_RUNNER';
+  const effectiveMaxMc = isRunner ? 5000000 : config.maxMarketCapUsd;
+  const effectiveMaxAgeMin = isRunner ? 10080 : config.maxTokenAgeMinutes;
+  const effectiveMinLp = isRunner ? 15000 : config.minLiquidityUsd;
+
   // Hitung persentase kenaikan harga dari harga awal (initial price)
   const initialPrice = token.initialPriceSol || token.currentPriceSol;
   const pricePumpPct = initialPrice > 0
@@ -70,11 +76,11 @@ export function evaluateEarlyEntryGuard(
     : 0;
 
   // 1. Filter Syarat Minimal Likuiditas Awal (Liquidity Floor)
-  if (token.currentLiquidityUsd < config.minLiquidityUsd) {
+  if (token.currentLiquidityUsd < effectiveMinLp) {
     return {
       isPassed: false,
       verdict: 'DROP_LOW_LIQUIDITY',
-      reason: `Likuiditas terlalu rendah ($${Math.round(token.currentLiquidityUsd).toLocaleString()} < Min $${config.minLiquidityUsd.toLocaleString()}). Berisiko pool jebakan.`,
+      reason: `Likuiditas terlalu rendah ($${Math.round(token.currentLiquidityUsd).toLocaleString()} < Min $${effectiveMinLp.toLocaleString()}). Berisiko pool jebakan.`,
       tokenAgeMinutes: +ageMinutes.toFixed(1),
       pricePumpPct: +pricePumpPct.toFixed(1),
       marketCapUsd: token.currentMarketCapUsd,
@@ -82,12 +88,12 @@ export function evaluateEarlyEntryGuard(
     };
   }
 
-  // 2. Filter Batas Atas Kapitalisasi Pasar (Market Cap Ceiling > $30,000)
-  if (token.currentMarketCapUsd > config.maxMarketCapUsd) {
+  // 2. Filter Batas Atas Kapitalisasi Pasar (Market Cap Ceiling)
+  if (token.currentMarketCapUsd > effectiveMaxMc) {
     return {
       isPassed: false,
       verdict: 'DROP_OVERCAP',
-      reason: `Market Cap sudah menyentuh $${Math.round(token.currentMarketCapUsd).toLocaleString()} (> Maks $${config.maxMarketCapUsd.toLocaleString()}). Koin sudah lewat fase early entry & berisiko dump.`,
+      reason: `Market Cap sudah menyentuh $${Math.round(token.currentMarketCapUsd).toLocaleString()} (> Maks $${effectiveMaxMc.toLocaleString()}).`,
       tokenAgeMinutes: +ageMinutes.toFixed(1),
       pricePumpPct: +pricePumpPct.toFixed(1),
       marketCapUsd: token.currentMarketCapUsd,
@@ -95,12 +101,12 @@ export function evaluateEarlyEntryGuard(
     };
   }
 
-  // 3. Filter Usia Koin Maksimal (Token Age Cutoff > 10 menit)
-  if (ageMinutes > config.maxTokenAgeMinutes) {
+  // 3. Filter Usia Koin Maksimal
+  if (ageMinutes > effectiveMaxAgeMin) {
     return {
       isPassed: false,
       verdict: 'DROP_TOO_OLD',
-      reason: `Usia token sudah ${ageMinutes.toFixed(1)} menit (> Cutoff ${config.maxTokenAgeMinutes} menit). Membatalkan analisis dari pipeline.`,
+      reason: `Usia token sudah ${ageMinutes.toFixed(1)} menit (> Cutoff ${effectiveMaxAgeMin} menit).`,
       tokenAgeMinutes: +ageMinutes.toFixed(1),
       pricePumpPct: +pricePumpPct.toFixed(1),
       marketCapUsd: token.currentMarketCapUsd,

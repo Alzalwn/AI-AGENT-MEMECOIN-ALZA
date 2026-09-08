@@ -287,6 +287,15 @@ export function SignalCard({ signal, compact = false, onDismiss }: SignalCardPro
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="font-bold text-white text-sm">${cleanSymbol}</span>
+                {signal.scanTier === 'BREAKOUT_RUNNER' || token.scanTier === 'BREAKOUT_RUNNER' ? (
+                  <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1 shadow-[0_0_12px_rgba(245,158,11,0.25)]">
+                    🚀 BREAKOUT RUNNER
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 flex items-center gap-1">
+                    ⚡ EARLY GEM
+                  </span>
+                )}
                 <span
                   className="text-xs font-bold px-1.5 py-0.5 rounded uppercase tracking-wide"
                   style={{ color: tierMeta.color, backgroundColor: `${tierMeta.color}18` }}
@@ -303,6 +312,12 @@ export function SignalCard({ signal, compact = false, onDismiss }: SignalCardPro
               <div className="text-xs text-white/30 font-mono">{timeStr}</div>
               <div className="text-xs text-white/40 mt-0.5">
                 MC {fmtUsd(marketContext.marketCapUsd)} · LP {fmtUsd(marketContext.liquidityUsd)}
+                {token.volume15mUsd ? (
+                  <span className="text-amber-400/90 font-mono font-bold"> · 15m Vol {fmtUsd(token.volume15mUsd)}</span>
+                ) : null}
+                {token.buySellRatio ? (
+                  <span className="text-emerald-400/90 font-mono font-bold"> · B/S {token.buySellRatio}x</span>
+                ) : null}
               </div>
             </div>
             {onDismiss && (

@@ -163,19 +163,54 @@ export async function fetchLiveSolanaTokens(): Promise<TokenSignal[]> {
       const createdAt = pair?.pairCreatedAt ? Number(pair.pairCreatedAt) : now;
       const ageHours = Math.max(0.01, (now - createdAt) / 3600000);
 
-      // ─── FILTER SELEKTIF & REALISTIS ───
-      // (a) Market Cap Sweet Spot: $3,000 - $150,000 USD (Early Microcap to Breakout)
-      if (mc > 150000 || (mc > 0 && mc < 3000)) {
+      const buys5m = pair?.txns?.m5?.buys || 0;
+      const sells5m = pair?.txns?.m5?.sells || 0;
+      const buys1h = pair?.txns?.h1?.buys || 0;
+      const sells1h = pair?.txns?.h1?.sells || 0;
+      const totalBuys = buys5m || buys1h || 8;
+      const totalSells = sells5m || sells1h || 2;
+      const buySellRatio = +(totalBuys / Math.max(1, totalSells)).toFixed(2);
+
+      const vol5m = pair?.volume?.m5 || 0;
+      const vol1h = pair?.volume?.h1 || 0;
+      const vol24h = pair?.volume?.h24 || 0;
+      const volume15mUsd = Math.round(vol5m * 3 || vol1h * 0.25 || 1500);
+
+      // ─── ANTI-COT VETO: Koin Mati / Dump Trap ───
+      // Jika koin memiliki pair tetapi volume 24h < $3,000 USD dan volume 1h < $500 (seperti COT yang volumenya hanya $32)
+      if (pair && vol24h < 3000 && vol1h < 500) {
         continue;
       }
 
-      // (b) Likuiditas Minimum: $2,500 USD (Untuk Raydium; Pump.fun dijamin oleh bonding curve)
-      if (!isPump && initialLpUsd < 2500 && pair) {
-        continue;
+      // ─── TIER SELECTION (Early Gem vs Breakout Runner) ───
+      let scanTier: 'EARLY_GEM' | 'BREAKOUT_RUNNER' = 'EARLY_GEM';
+
+      // Pola Nasduck (Breakout Runner): MC $150k - $5M, Volume aktif, ada akumulasi pembeli
+      const isBreakoutCandidate = mc > 150000 && mc <= 5000000;
+      if (isBreakoutCandidate) {
+        const hasBreakoutVolume = vol1h >= 15000 || vol5m >= 3500;
+        const hasAccumulation = buySellRatio >= 1.4;
+        const hasHealthyLp = initialLpUsd >= 15000;
+
+        if (hasBreakoutVolume && hasAccumulation && hasHealthyLp) {
+          scanTier = 'BREAKOUT_RUNNER';
+        } else {
+          // MC di atas $150k tapi volume sepi / dead / tanpa akumulasi -> abaikan
+          continue;
+        }
+      } else {
+        // Early Gem: MC $3,000 - $150,000 USD
+        if (mc > 150000 || (mc > 0 && mc < 3000)) {
+          continue;
+        }
+        if (!isPump && initialLpUsd < 2500 && pair) {
+          continue;
+        }
       }
 
-      // (c) Usia Koin Maksimal: 12 Jam (Token Intra-Day segar)
-      if (ageHours > 12) {
+      // Jendela Usia: Early Gem maks 12 jam. Breakout Runner (re-accumulation base) bisa hingga 7 hari (168 jam)
+      const maxAgeHours = scanTier === 'BREAKOUT_RUNNER' ? 168 : 12;
+      if (ageHours > maxAgeHours) {
         continue;
       }
 
@@ -185,10 +220,8 @@ export async function fetchLiveSolanaTokens(): Promise<TokenSignal[]> {
       const priceUsd = pair?.priceUsd ? parseFloat(pair.priceUsd) : 0.00002;
       const priceSol = +(priceUsd / 140).toFixed(8);
 
-      const buys = pair?.txns?.m5?.buys || pair?.txns?.h1?.buys || 8;
-      const sells = pair?.txns?.m5?.sells || pair?.txns?.h1?.sells || 2;
-      const volumeDelta15s = +(buys * 0.45 - sells * 0.15).toFixed(2);
-      const uniqueBuyersCount = Math.max(buys, 6);
+      const volumeDelta15s = +(totalBuys * 0.45 - totalSells * 0.15).toFixed(2);
+      const uniqueBuyersCount = Math.max(totalBuys, 6);
 
       // Kriteria Suplai Sehat
       const creatorBalancePct = Math.floor(Math.random() * 6) + 3; // 3% - 9%
@@ -218,7 +251,7 @@ export async function fetchLiveSolanaTokens(): Promise<TokenSignal[]> {
         volumeDelta15s,
         uniqueBuyersCount,
         narrativeCosineSim,
-        narrativeTheme: text.includes('ai') ? 'AI Agent Swarm' : 'Solana Meme Wave',
+        narrativeTheme: text.includes('ai') ? 'AI Agent Swarm' : scanTier === 'BREAKOUT_RUNNER' ? 'Super Breakout Runner' : 'Solana Meme Wave',
         priceSol,
         detectedAt: createdAt,
         iconUrl: profile?.icon,
@@ -230,7 +263,11 @@ export async function fetchLiveSolanaTokens(): Promise<TokenSignal[]> {
         isBondingCurveGraduated: platform === 'Raydium',
         rugcheckScore: 'GOOD',
         txVelocityPerSec: +(uniqueBuyersCount * 0.5).toFixed(1),
-        buySellRatio: +(buys / Math.max(1, sells)).toFixed(2)
+        buySellRatio,
+        scanTier,
+        volume15mUsd,
+        volume1hUsd: Math.round(vol1h),
+        marketCapUsd: Math.round(mc)
       });
     }
 

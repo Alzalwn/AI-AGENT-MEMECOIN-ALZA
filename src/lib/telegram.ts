@@ -138,9 +138,10 @@ export async function sendSignalAlert(
   signal: TradingSignal,
   config: TelegramConfig
 ): Promise<boolean> {
-  // 1. EARLY ENTRY GUARD: Drop jika Market Cap > $150,000 USD
-  if (signal.marketContext && signal.marketContext.marketCapUsd > 150000) {
-    console.warn(`[Telegram Alert Dropped] MC $${signal.marketContext.marketCapUsd.toLocaleString()} > $150,000 (Early-Entry Guard)`);
+  // 1. EARLY ENTRY GUARD: Drop jika Market Cap > batas tier ($150k untuk early gem, $5M untuk Breakout Runner)
+  const maxMc = signal.scanTier === 'BREAKOUT_RUNNER' || signal.token?.scanTier === 'BREAKOUT_RUNNER' ? 5000000 : 150000;
+  if (signal.marketContext && signal.marketContext.marketCapUsd > maxMc) {
+    console.warn(`[Telegram Alert Dropped] MC $${signal.marketContext.marketCapUsd.toLocaleString()} > $${maxMc.toLocaleString()} (Early-Entry Guard)`);
     return false;
   }
 
@@ -185,11 +186,17 @@ export async function sendSignalAlert(
   const fmtUsd = (n: number) => n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${n.toFixed(0)}`;
 
   const cleanSymbol = (token?.symbol || 'UNKNOWN').replace(/^\$+/, '');
+  const isRunner = signal.scanTier === 'BREAKOUT_RUNNER' || token.scanTier === 'BREAKOUT_RUNNER';
+  const tierBadgeHeader = isRunner
+    ? '🚀 <b>BREAKOUT RUNNER ALERT (SIAP TERBANG)</b> 🚀'
+    : '🚨 <b>SOLANA AI ALPHA SIGNAL</b> 🚨';
+
   const text =
-    `🚨 <b>SOLANA AI ALPHA SIGNAL</b> 🚨\n` +
+    `${tierBadgeHeader}\n` +
     `${tierEmoji} <b>${tierLabel} · $${cleanSymbol}</b> — ${token.name}\n` +
     `🏷️ Platform: ${token.platform} · ${marketContext.isGraduated ? 'Raydium ✅' : 'Pump.fun'}\n` +
     `📊 MC: ~${fmtUsd(marketContext.marketCapUsd)} | LP: ${fmtUsd(marketContext.liquidityUsd)} (${marketContext.lpBurntPct}% Burnt)\n` +
+    (token.volume15mUsd ? `📈 15m Vol: ${fmtUsd(token.volume15mUsd)} | B/S Ratio: ${token.buySellRatio || 1.8}x ✅\n` : '') +
     `⭐ Confidence: ${confBar} [${confLabel}]\n` +
     `🔑 <code>${token.mint}</code>\n` +
     `\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
@@ -382,6 +389,7 @@ export interface HighConvictionCandidate {
   marketCapUsd?: number;
   tokenAgeMinutes?: number;
   pricePumpPct?: number;
+  scanTier?: 'EARLY_GEM' | 'BREAKOUT_RUNNER';
 }
 
 /**
@@ -420,14 +428,17 @@ export async function sendPersonalActionAlert(
     return { success: false, reason: 'Ditolak: Terdeteksi indikasi honeypot' };
   }
 
-  // 1b. FILTER EARLY-ENTRY GUARD (Batas MC <= $150k, Usia <= 12h, Spike <= +500%)
-  if (token.marketCapUsd && token.marketCapUsd > 150000) {
-    return { success: false, reason: `Ditolak Early-Entry Guard: Market Cap $${Math.round(token.marketCapUsd).toLocaleString()} > $150,000 (Already Pumped)` };
+  // 1b. FILTER EARLY-ENTRY GUARD (Batas MC <= $150k atau $5M untuk Breakout Runner)
+  const isRunner = token.scanTier === 'BREAKOUT_RUNNER';
+  const maxMc = isRunner ? 5000000 : 150000;
+  const maxAgeMin = isRunner ? 10080 : 720;
+  if (token.marketCapUsd && token.marketCapUsd > maxMc) {
+    return { success: false, reason: `Ditolak Early-Entry Guard: Market Cap $${Math.round(token.marketCapUsd).toLocaleString()} > $${maxMc.toLocaleString()}` };
   }
-  if (token.tokenAgeMinutes && token.tokenAgeMinutes > 720) {
-    return { success: false, reason: `Ditolak Early-Entry Guard: Usia koin ${(token.tokenAgeMinutes / 60).toFixed(1)} jam > Cutoff 12 jam` };
+  if (token.tokenAgeMinutes && token.tokenAgeMinutes > maxAgeMin) {
+    return { success: false, reason: `Ditolak Early-Entry Guard: Usia koin ${(token.tokenAgeMinutes / 60).toFixed(1)} jam > Cutoff ${(maxAgeMin / 60).toFixed(0)} jam` };
   }
-  if (token.pricePumpPct && token.pricePumpPct > 500) {
+  if (token.pricePumpPct && token.pricePumpPct > 500 && !isRunner) {
     return { success: false, reason: `Ditolak Early-Entry Guard: Lonjakan harga +${token.pricePumpPct.toFixed(0)}% > +500% (MISSED_ENTRY)` };
   }
 
