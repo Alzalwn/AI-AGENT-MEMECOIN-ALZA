@@ -182,19 +182,32 @@ export async function fetchLiveSolanaTokens(mode: string = 'ALL'): Promise<Token
     }
 
     const allKeys = Array.from(addressMap.keys());
-    // Acak urutan alamat (shuffle) agar setiap fetch mengevaluasi koin-koin yang berbeda, bukan selalu 30 koin pertama yang sama
+    // Acak urutan alamat (shuffle) agar setiap fetch mengevaluasi koin-koin yang berbeda
     const shuffledKeys = allKeys.sort(() => 0.5 - Math.random());
-    const uniqueAddresses = shuffledKeys.slice(0, 35);
-    if (uniqueAddresses.length === 0) return cachedTokens;
+    // Ambil sampel hingga 50 alamat unik dan bagi menjadi batch aman (maks 25 address per call)
+    // DexScreener membatasi maksimal 30 token address per request (HTTP 400 jika > 30)
+    const selectedAddresses = shuffledKeys.slice(0, 50);
+    if (selectedAddresses.length === 0) return cachedTokens;
 
-    // 2. Fetch pair detail data for these tokens
-    const pairData = await safeFetchJson<any>(`https://api.dexscreener.com/latest/dex/tokens/${uniqueAddresses.join(',')}`, 6000);
+    // 2. Fetch pair detail data in safe batches of <= 25 addresses
     const pairsMap = new Map<string, any>(searchPairsMap);
+    const BATCH_SIZE = 25;
+    const batchPromises: Promise<any>[] = [];
 
-    if (pairData && pairData.pairs) {
-      for (const pair of pairData.pairs) {
-        if (pair.baseToken?.address && !pairsMap.has(pair.baseToken.address)) {
-          pairsMap.set(pair.baseToken.address, pair);
+    for (let i = 0; i < selectedAddresses.length; i += BATCH_SIZE) {
+      const chunk = selectedAddresses.slice(i, i + BATCH_SIZE);
+      batchPromises.push(
+        safeFetchJson<any>(`https://api.dexscreener.com/latest/dex/tokens/${chunk.join(',')}`, 6000)
+      );
+    }
+
+    const batchResults = await Promise.all(batchPromises);
+    for (const pairData of batchResults) {
+      if (pairData && Array.isArray(pairData.pairs)) {
+        for (const pair of pairData.pairs) {
+          if (pair.baseToken?.address && !pairsMap.has(pair.baseToken.address)) {
+            pairsMap.set(pair.baseToken.address, pair);
+          }
         }
       }
     }
@@ -202,37 +215,53 @@ export async function fetchLiveSolanaTokens(mode: string = 'ALL'): Promise<Token
     // 3. Map into TokenSignal & Golden Window Filter (Intra-Day Alpha)
     const signals: TokenSignal[] = [];
 
-    for (const tokenAddress of uniqueAddresses) {
+    for (const tokenAddress of selectedAddresses) {
       const profile = addressMap.get(tokenAddress);
       const pair = pairsMap.get(tokenAddress);
 
-      const dexId = pair?.dexId || (tokenAddress.toLowerCase().endsWith('pump') ? 'pumpfun' : 'raydium');
+      // Koin WAJIB memiliki data pair aktif dari DexScreener agar tidak menghasilkan data kosong/phantom
+      if (!pair || !pair.baseToken?.symbol) {
+        continue;
+      }
+
+      const rawSymbol = pair.baseToken.symbol.trim();
+      if (!rawSymbol || rawSymbol.toUpperCase() === 'UNKNOWN') {
+        continue;
+      }
+
+      const dexId = pair.dexId || (tokenAddress.toLowerCase().endsWith('pump') ? 'pumpfun' : 'raydium');
       const isPump = dexId === 'pumpfun' || tokenAddress.toLowerCase().endsWith('pump');
       const platform = isPump ? 'Pump.fun' : 'Raydium';
       
-      const mc = pair?.marketCap || pair?.fdv || 0;
-      const reportedLp = pair?.liquidity?.usd ? Math.round(pair.liquidity.usd) : 0;
+      const mc = pair.marketCap || pair.fdv || 0;
+      const reportedLp = pair.liquidity?.usd ? Math.round(pair.liquidity.usd) : 0;
       // Pump.fun bonding curve memiliki likuiditas virtual (~$6,000 USD / ~30 SOL)
       const initialLpUsd = isPump ? Math.max(reportedLp, 6000) : reportedLp;
-      const createdAt = pair?.pairCreatedAt ? Number(pair.pairCreatedAt) : now;
+
+      // Token Raydium tanpa likuiditas valid (LP < $1,000) langsung skip agar tidak mengotori antrean konsensus
+      if (!isPump && initialLpUsd < 1000) {
+        continue;
+      }
+
+      const createdAt = pair.pairCreatedAt ? Number(pair.pairCreatedAt) : now;
       const ageHours = Math.max(0.01, (now - createdAt) / 3600000);
 
-      const buys5m = pair?.txns?.m5?.buys || 0;
-      const sells5m = pair?.txns?.m5?.sells || 0;
-      const buys1h = pair?.txns?.h1?.buys || 0;
-      const sells1h = pair?.txns?.h1?.sells || 0;
+      const buys5m = pair.txns?.m5?.buys || 0;
+      const sells5m = pair.txns?.m5?.sells || 0;
+      const buys1h = pair.txns?.h1?.buys || 0;
+      const sells1h = pair.txns?.h1?.sells || 0;
       const totalBuys = buys5m || buys1h || 8;
       const totalSells = sells5m || sells1h || 2;
       const buySellRatio = +(totalBuys / Math.max(1, totalSells)).toFixed(2);
 
-      const vol5m = pair?.volume?.m5 || 0;
-      const vol1h = pair?.volume?.h1 || 0;
-      const vol24h = pair?.volume?.h24 || 0;
+      const vol5m = pair.volume?.m5 || 0;
+      const vol1h = pair.volume?.h1 || 0;
+      const vol24h = pair.volume?.h24 || 0;
       const volume15mUsd = Math.round(vol5m * 3 || vol1h * 0.25 || 1500);
 
       // ─── ANTI-COT VETO: Koin Mati / Dump Trap ───
-      // Jika koin memiliki pair tetapi volume 24h < $3,000 USD dan volume 1h < $500 (seperti COT yang volumenya hanya $32)
-      if (pair && vol24h < 3000 && vol1h < 500) {
+      // Jika koin memiliki volume 24h < $3,000 USD dan volume 1h < $500 (seperti COT yang volumenya hanya $32)
+      if (vol24h < 3000 && vol1h < 500) {
         continue;
       }
 
@@ -264,7 +293,7 @@ export async function fetchLiveSolanaTokens(mode: string = 'ALL'): Promise<Token
           if (mc > 150000 || (mc > 0 && mc < 3000)) {
             continue;
           }
-          if (!isPump && initialLpUsd < 2500 && pair) {
+          if (!isPump && initialLpUsd < 2500) {
             continue;
           }
         }
@@ -276,10 +305,10 @@ export async function fetchLiveSolanaTokens(mode: string = 'ALL'): Promise<Token
         continue;
       }
 
-      const symbol = pair?.baseToken?.symbol || 'UNKNOWN';
-      const name = pair?.baseToken?.name || profile?.description?.slice(0, 24) || symbol;
+      const symbol = rawSymbol;
+      const name = pair.baseToken?.name || profile?.description?.slice(0, 24) || symbol;
 
-      const priceUsd = pair?.priceUsd ? parseFloat(pair.priceUsd) : 0.00002;
+      const priceUsd = pair.priceUsd ? parseFloat(pair.priceUsd) : 0.00002;
       const priceSol = +(priceUsd / 140).toFixed(8);
 
       const volumeDelta15s = +(totalBuys * 0.45 - totalSells * 0.15).toFixed(2);
