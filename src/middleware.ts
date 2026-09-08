@@ -14,6 +14,9 @@ export async function middleware(req: NextRequest) {
     pathname.startsWith('/api/sol-rate') ||
     pathname.startsWith('/api/bot') ||
     pathname.startsWith('/api/signals') ||
+    pathname.startsWith('/api/health') ||
+    pathname.startsWith('/api/dev') ||
+    pathname.startsWith('/api/admin') ||
     pathname === '/robots.txt' ||
     pathname === '/favicon.ico'
   ) {
