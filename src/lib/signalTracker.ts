@@ -120,7 +120,7 @@ export async function checkSignalTarget(
       changed: true,
       event: {
         signalId: signal.id,
-        symbol: signal.token.symbol,
+        symbol: (signal.token?.symbol || 'UNKNOWN').replace(/^\$+/, ''),
         previousStatus: signal.status,
         newStatus: 'EXPIRED',
         currentPriceSol: signal.entryZone.current,
@@ -204,7 +204,7 @@ export async function checkSignalTarget(
       changed,
       event: changed && eventType ? {
         signalId: signal.id,
-        symbol: signal.token.symbol,
+        symbol: (signal.token?.symbol || 'UNKNOWN').replace(/^\$+/, ''),
         previousStatus: signal.status,
         newStatus,
         currentPriceSol,
@@ -224,8 +224,14 @@ export async function processActiveSignals(
   signals: TradingSignal[],
   telegramConfig?: TelegramConfig
 ): Promise<TrackingResult> {
-  const activeSignals = signals.filter((s) => ['ACTIVE', 'TP1_HIT', 'TP2_HIT'].includes(s.status));
-  const resolvedSignals = signals.filter((s) => !['ACTIVE', 'TP1_HIT', 'TP2_HIT'].includes(s.status));
+  const activeSignals = signals.filter(
+    (s) => ['ACTIVE', 'TP1_HIT', 'TP2_HIT'].includes(s.status) &&
+           (!s.marketContext || (s.marketContext.marketCapUsd || 0) <= 30000)
+  );
+  const resolvedSignals = signals.filter(
+    (s) => !['ACTIVE', 'TP1_HIT', 'TP2_HIT'].includes(s.status) ||
+           (s.marketContext && (s.marketContext.marketCapUsd || 0) > 30000)
+  );
 
   if (activeSignals.length === 0) {
     return {

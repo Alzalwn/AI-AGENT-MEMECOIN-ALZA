@@ -45,10 +45,9 @@ function estimateMarketCapUsd(
   solRateUsd: number,
   lpUsd: number
 ): number {
-  // Estimasi berbasis LP: MC sering ~10-30x dari likuiditas untuk micro-cap
-  // Gunakan ratio konservatif 15x jika tidak ada supply data
-  const baseMcUsd = lpUsd * 15;
-  // Koreksi dengan harga relatif jika ada
+  // Untuk early-entry micro-caps di Pump.fun / initial pool:
+  // Rasio Market Cap terhadap Virtual LP berkisar antara 4.5x - 6.5x
+  const baseMcUsd = lpUsd > 0 ? lpUsd * 6.2 : 12000;
   return Math.round(baseMcUsd);
 }
 

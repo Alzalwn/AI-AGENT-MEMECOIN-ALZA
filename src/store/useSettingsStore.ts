@@ -45,11 +45,17 @@ export interface BotSettingsState {
   isSyncingCloud: boolean;
   lastCloudSyncAt: number | null;
 
+  // 7. Dynamic Data & Metrics (Purgeable runtime states)
+  dashboardFeed: any[];
+  walletBalance: number;
+  vetoedCoins: string[];
+
   // Actions
   setHasHydrated: (state: boolean) => void;
   updateSettings: (partial: Partial<BotSettingsState>) => void;
   setTradingStyle: (style: TradingStyle) => void;
   resetToDefaults: () => void;
+  purgeAllState: () => void;
 
   // Supabase Cloud Sync Actions (UPSERT & FETCH)
   saveToSupabase: (userId?: string) => Promise<{ success: boolean; error?: string }>;
@@ -66,7 +72,7 @@ const DEFAULT_SETTINGS = {
   autoSellEnabled: true,
 
   buyAmountSol: 0.02,
-  minLiquidityUsd: 10000,
+  minLiquidityUsd: 1500,
   minGrokViralityScore: 85,
   maxTop10HoldersPct: 20,
   maxDailyTrades: 10,
@@ -90,6 +96,10 @@ const DEFAULT_SETTINGS = {
   _hasHydrated: false,
   isSyncingCloud: false,
   lastCloudSyncAt: null,
+
+  dashboardFeed: [],
+  walletBalance: 0,
+  vetoedCoins: [],
 };
 
 export const useSettingsStore = create<BotSettingsState>()(
@@ -125,6 +135,32 @@ export const useSettingsStore = create<BotSettingsState>()(
 
       resetToDefaults: () => {
         set(DEFAULT_SETTINGS);
+      },
+
+      /**
+       * Purge all state (Extreme cleanup for production readiness)
+       * Mereset seluruh variabel kembali ke initial state (null, [], atau 0)
+       * dan membersihkan localStorage serta sessionStorage di browser.
+       */
+      purgeAllState: () => {
+        set({
+          ...DEFAULT_SETTINGS,
+          dashboardFeed: [],
+          walletBalance: 0,
+          vetoedCoins: [],
+          lastCloudSyncAt: null,
+          isSyncingCloud: false,
+        });
+
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.clear();
+            sessionStorage.clear();
+            window.dispatchEvent(new CustomEvent('gt_purge_all_state'));
+          } catch (err) {
+            console.warn('[Zustand] Gagal membersihkan storage browser:', err);
+          }
+        }
       },
 
       /**

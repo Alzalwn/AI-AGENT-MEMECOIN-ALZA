@@ -97,12 +97,66 @@ export async function testTelegramConnection(
 }
 
 // ─────────────────────────────────────────────────────────
+// ANTI-SPAM & DEDUPLIKASI 24 JAM
+// ─────────────────────────────────────────────────────────
+const DEDUP_KEY = 'GT_TELEGRAM_SENT_CAS';
+const GLOBAL_COOLDOWN_MS = 60 * 1000; // Minimal 60 detik jeda antar notifikasi Telegram
+let lastTelegramSentAt = 0;
+
+function isCaAlertedRecently(mint: string): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const raw = localStorage.getItem(DEDUP_KEY);
+    if (!raw) return false;
+    const map: Record<string, number> = JSON.parse(raw);
+    const lastTime = map[mint];
+    if (lastTime && (Date.now() - lastTime) < 24 * 3600 * 1000) {
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+function recordCaAlerted(mint: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const raw = localStorage.getItem(DEDUP_KEY);
+    const map: Record<string, number> = raw ? JSON.parse(raw) : {};
+    map[mint] = Date.now();
+    const cutoff = Date.now() - 24 * 3600 * 1000;
+    for (const [k, v] of Object.entries(map)) {
+      if (v < cutoff) delete map[k];
+    }
+    localStorage.setItem(DEDUP_KEY, JSON.stringify(map));
+  } catch {}
+}
+
+// ─────────────────────────────────────────────────────────
 // MAIN: Kirim sinyal baru ke Telegram (format profesional)
 // ─────────────────────────────────────────────────────────
 export async function sendSignalAlert(
   signal: TradingSignal,
   config: TelegramConfig
 ): Promise<boolean> {
+  // 1. EARLY ENTRY GUARD: Drop jika Market Cap > $30,000 USD
+  if (signal.marketContext && signal.marketContext.marketCapUsd > 30000) {
+    console.warn(`[Telegram Alert Dropped] MC $${signal.marketContext.marketCapUsd.toLocaleString()} > $30,000 (Early-Entry Guard)`);
+    return false;
+  }
+
+  // 2. ANTI-SPAM DEDUPLIKASI: 1 Koin hanya boleh dikirim 1x per 24 jam
+  if (signal.token?.mint && isCaAlertedRecently(signal.token.mint)) {
+    console.warn(`[Telegram Alert Dropped] CA ${signal.token.mint} sudah pernah dikirim dalam 24 jam terakhir.`);
+    return false;
+  }
+
+  // 3. GLOBAL RATE LIMITING: Jeda minimal antar pengiriman sinyal
+  const now = Date.now();
+  if (now - lastTelegramSentAt < GLOBAL_COOLDOWN_MS) {
+    console.warn(`[Telegram Alert Dropped] Global cooldown Telegram aktif (tunggu ${Math.round((GLOBAL_COOLDOWN_MS - (now - lastTelegramSentAt)) / 1000)} detik).`);
+    return false;
+  }
+
   const { token, entryZone, stopLoss, targets, marketContext, tradingLinks } = signal;
   const [tp1, tp2, tp3] = targets;
 
@@ -130,9 +184,10 @@ export async function sendSignalAlert(
   const fmtSol = (n: number) => n < 0.0001 ? n.toFixed(9) : n.toFixed(6);
   const fmtUsd = (n: number) => n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${n.toFixed(0)}`;
 
+  const cleanSymbol = (token?.symbol || 'UNKNOWN').replace(/^\$+/, '');
   const text =
     `🚨 <b>SOLANA AI ALPHA SIGNAL</b> 🚨\n` +
-    `${tierEmoji} <b>${tierLabel} · $${token.symbol}</b> — ${token.name}\n` +
+    `${tierEmoji} <b>${tierLabel} · $${cleanSymbol}</b> — ${token.name}\n` +
     `🏷️ Platform: ${token.platform} · ${marketContext.isGraduated ? 'Raydium ✅' : 'Pump.fun'}\n` +
     `📊 MC: ~${fmtUsd(marketContext.marketCapUsd)} | LP: ${fmtUsd(marketContext.liquidityUsd)} (${marketContext.lpBurntPct}% Burnt)\n` +
     `⭐ Confidence: ${confBar} [${confLabel}]\n` +
@@ -171,7 +226,12 @@ export async function sendSignalAlert(
     ],
   ];
 
-  return sendTelegramMessage(config, text, keyboard);
+  const sent = await sendTelegramMessage(config, text, keyboard);
+  if (sent) {
+    lastTelegramSentAt = Date.now();
+    if (token.mint) recordCaAlerted(token.mint);
+  }
+  return sent;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -210,9 +270,10 @@ export async function sendSignalUpdate(
     detail = `Sinyal kedaluwarsa tanpa TP/SL hit. Momentum tidak berkembang.`;
   }
 
+  const cleanSymbol = (token?.symbol || 'UNKNOWN').replace(/^\$+/, '');
   const text =
     `${emoji} <b>${title}</b>\n\n` +
-    `🪙 <b>$${token.symbol}</b> — ${token.name}\n` +
+    `🪙 <b>$${cleanSymbol}</b> — ${token.name}\n` +
     `<code>${token.mint}</code>\n\n` +
     `${detail}\n\n` +
     `<a href="${signal.tradingLinks.dexscreener}">📊 Lihat Chart</a>`;
@@ -230,9 +291,10 @@ export async function sendTelegramAlphaAlert(
   sentiment: string = 'BULLISH'
 ): Promise<boolean> {
   const dexUrl = token.dexUrl || `https://dexscreener.com/solana/${token.mint}`;
+  const cleanSymbol = (token?.symbol || 'UNKNOWN').replace(/^\$+/, '');
   const text =
     `🚨 <b>ALPHA SIGNAL</b> 🚨\n\n` +
-    `🪙 <b>$${token.symbol}</b> (${token.name})\n` +
+    `🪙 <b>$${cleanSymbol}</b> (${token.name})\n` +
     `🌐 Platform: ${token.platform}\n` +
     `🔑 Mint: <code>${token.mint}</code>\n\n` +
     `⚡ Consensus: <b>5/5 AI AGENTS APPROVED</b> ✅\n` +
@@ -249,9 +311,10 @@ export async function sendTelegramBuyAlert(
   txSignature: string,
   _jitoTipSol?: number  // retained for backward-compat, not used in signal-only mode
 ): Promise<boolean> {
+  const cleanSymbol = (token?.symbol || 'UNKNOWN').replace(/^\$+/, '');
   const text =
     `🎯 <b>POSITION ALERT</b>\n\n` +
-    `🪙 <b>$${token.symbol}</b>\n` +
+    `🪙 <b>$${cleanSymbol}</b>\n` +
     `💰 Amount: ${amountSol.toFixed(3)} SOL\n` +
     `🔑 <code>${token.mint}</code>\n` +
     `🔗 <a href="https://solscan.io/tx/${txSignature}">Solscan TX</a>`;
@@ -273,9 +336,10 @@ export async function sendTelegramExitAlert(
   const isProfit = trade.pnlSol >= 0;
   const sign = isProfit ? '+' : '';
   const emoji = isProfit ? '🟢' : '🔴';
+  const cleanSymbol = (trade.token?.symbol || 'UNKNOWN').replace(/^\$+/, '');
   const text =
     `${emoji} <b>${isProfit ? 'PROFIT' : 'LOSS'} ALERT</b>\n\n` +
-    `🪙 <b>$${trade.token.symbol}</b>\n` +
+    `🪙 <b>$${cleanSymbol}</b>\n` +
     `📊 P&L: <b>${sign}${trade.pnlSol.toFixed(4)} SOL (${sign}${trade.pnlPct.toFixed(2)}%)</b>\n` +
     `📝 Reason: ${trade.exitReason}`;
   return sendTelegramMessage(config, text);
@@ -286,9 +350,10 @@ export async function sendTelegramRugpullWarning(
   config: TelegramConfig,
   riskDetails: string
 ): Promise<boolean> {
+  const cleanSymbol = (token?.symbol || 'UNKNOWN').replace(/^\$+/, '');
   const text =
     `⚠️ <b>RUGPULL / RISK DETECTED</b>\n\n` +
-    `🪙 <b>$${token.symbol}</b>\n` +
+    `🪙 <b>$${cleanSymbol}</b>\n` +
     `🚨 Risk: ${riskDetails}\n` +
     `🛡️ Sinyal DIBATALKAN oleh Risk Agent.`;
   return sendTelegramMessage(config, text);
@@ -388,8 +453,9 @@ export async function sendPersonalActionAlert(
   const dexUrl = `https://dexscreener.com/solana/${token.mint}`;
 
   // Format Pesan Sesuai Permintaan Spesifik (Action-Oriented & Monospace CA)
+  const cleanSymbol = (token?.symbol || 'UNKNOWN').replace(/^\$+/, '').toUpperCase();
   const text =
-    `🟢 <b>${token.name} / $${token.symbol.toUpperCase()}</b>\n` +
+    `🟢 <b>${token.name} / $${cleanSymbol}</b>\n` +
     `<code>${token.mint}</code>\n\n` +
     `Data: LP ${fmtLp} | Kecepatan Tx: ${txSpeed}/detik | Paus: ${whales} masuk\n\n` +
     `Aksi Cepat:\n` +

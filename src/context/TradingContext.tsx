@@ -26,6 +26,7 @@ import { ExecutionConfig, DEFAULT_EXECUTION_CONFIG } from '../components/Executi
 import { generateRandomTokenSignal } from '../engine/simulator';
 import { getInitialSeedSignals } from '../engine/initialSignals';
 import { runAgentConsensus, runConsensusAndBuildSignal } from '../agents/consensus';
+import { evaluateEarlyEntryGuard } from '../lib/earlyGuard';
 import { evaluateExitAgent } from '../agents/exit';
 import { soundFx } from '../engine/audioEngine';
 import { STRATEGY_PRESETS, JITO_TIP_TIERS, TRADING_STYLE_PRESETS } from '../config/constants';
@@ -240,11 +241,36 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const saved = localStorage.getItem('GT_ACTIVE_SIGNALS');
         if (saved) {
           const parsed = JSON.parse(saved) as TradingSignal[];
-          if (parsed && parsed.length > 0) return parsed;
+          if (parsed && Array.isArray(parsed)) {
+            // Auto-clean: buang token dengan MC > $30k & deduplikasi ketat per CA (mint)
+            const seenMints = new Set<string>();
+            const cleaned = parsed.filter((s) => {
+              if (!s || !s.token || !s.token.mint) return false;
+              if (s.marketContext && s.marketContext.marketCapUsd > 30000) return false;
+              if (s.token.initialLpUsd && s.token.initialLpUsd > 30000) return false;
+              if (seenMints.has(s.token.mint)) return false;
+              seenMints.add(s.token.mint);
+              return true;
+            });
+            if (cleaned.length > 0) {
+              if (cleaned.length !== parsed.length) {
+                localStorage.setItem('GT_ACTIVE_SIGNALS', JSON.stringify(cleaned));
+              }
+              return cleaned;
+            }
+            // Semua token lama kedaluwarsa (> $30k MC) — ganti dengan seed microcap early entry baru (< $30k)
+            const freshSeeds = getInitialSeedSignals().activeSignals;
+            localStorage.setItem('GT_ACTIVE_SIGNALS', JSON.stringify(freshSeeds));
+            return freshSeeds;
+          }
         }
       } catch {}
     }
-    return getInitialSeedSignals().activeSignals;
+    const seed = getInitialSeedSignals();
+    if (typeof window !== 'undefined') {
+      try { localStorage.setItem('GT_ACTIVE_SIGNALS', JSON.stringify(seed.activeSignals)); } catch {}
+    }
+    return seed.activeSignals;
   });
 
   const [signalHistory, setSignalHistoryState] = useState<TradingSignal[]>(() => {
@@ -324,21 +350,54 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   /**
    * broadcastSignal: Kirim sinyal yang sudah dikalkulasi ke Telegram + simpan di state
-   * Dipanggil setelah runConsensusAndBuildSignal menghasilkan signal bukan null
+   * Menerapkan Early-Entry Guard ($30k ceiling), 24h Deduplikasi CA, & Anti-Spam
    */
   const broadcastSignal = useCallback(async (
     signal: TradingSignal,
     telegramConfig: WebhookTelegramConfig
   ): Promise<void> => {
-    // 1. Tambah ke activeSignals
+    // 0. EARLY ENTRY GUARD: Drop jika Market Cap > $30,000 USD
+    if (signal.marketContext && signal.marketContext.marketCapUsd > 30000) {
+      console.warn(`[broadcastSignal] DROPPED by Early Guard: MC $${signal.marketContext.marketCapUsd.toLocaleString()} > $30,000`);
+      return;
+    }
+
+    // 0b. 24-HOUR DEDUPLIKASI CA (Single Alert Rule per Token)
+    const DEDUP_KEY = 'GT_ALERTED_CA_CACHE';
+    const mint = signal.token?.mint;
+    if (typeof window !== 'undefined' && mint) {
+      try {
+        const raw = localStorage.getItem(DEDUP_KEY);
+        const map: Record<string, number> = raw ? JSON.parse(raw) : {};
+        const lastSent = map[mint];
+        if (lastSent && (Date.now() - lastSent) < 24 * 3600 * 1000) {
+          console.warn(`[broadcastSignal] DROPPED: CA ${mint} sudah pernah dijadikan sinyal dalam 24 jam terakhir.`);
+          return;
+        }
+        map[mint] = Date.now();
+        const cutoff = Date.now() - 24 * 3600 * 1000;
+        for (const [k, v] of Object.entries(map)) {
+          if (v < cutoff) delete map[k];
+        }
+        localStorage.setItem(DEDUP_KEY, JSON.stringify(map));
+      } catch {}
+    }
+
+    // 1. Tambah ke activeSignals (Deduplikasi ketat by token.mint, buang legacy > $30k)
     setActiveSignals((prev) => {
-      const next = [signal, ...prev.filter((s) => s.id !== signal.id)].slice(0, 50);
+      if (prev.some((s) => s.token?.mint === signal.token?.mint)) {
+        return prev;
+      }
+      const cleanPrev = prev.filter((s) => s.token?.mint !== signal.token?.mint && (s.marketContext?.marketCapUsd || 0) <= 30000);
+      const next = [signal, ...cleanPrev].slice(0, 50);
       try { localStorage.setItem('GT_ACTIVE_SIGNALS', JSON.stringify(next)); } catch {}
       return next;
     });
+
     // 2. Tambah ke history
     addSignalToHistory(signal);
-    // 3. Kirim ke Telegram
+
+    // 3. Kirim ke Telegram (hanya jika lolos deduplikasi & guard)
     if (telegramConfig.isEnabled && telegramConfig.botToken && telegramConfig.chatId) {
       try {
         await sendSignalAlert(signal, {
@@ -436,6 +495,32 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [closedTrades]);
 
+  // Extreme state purge listener (triggered by purgeAllState() or admin nuke)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleExtremePurge = () => {
+      setActiveSignals([]);
+      setSignalHistoryState([]);
+      setActivePositionState(null);
+      setClosedTradesState([]);
+      setConsensusFeed([]);
+      setSelectedResult(null);
+      setLogs([]);
+      positionMutex.releaseLock();
+      setTelemetry((prev) => ({
+        ...prev,
+        totalPnlSol: 0,
+        winCount: 0,
+        lossCount: 0,
+        scannedCount: 0,
+        vetoCount: 0,
+        activePositionLocked: false,
+      }));
+    };
+    window.addEventListener('gt_purge_all_state', handleExtremePurge);
+    return () => window.removeEventListener('gt_purge_all_state', handleExtremePurge);
+  }, []);
+
   // Wallet — persisted in localStorage so wallet stays connected after page refresh
   const [walletState, setWalletState] = useState<WalletState>(() => {
     if (typeof window !== 'undefined') {
@@ -491,7 +576,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       isEnabled: true, // AUTO-SNIPE ON OTOMATIS: Bot langsung eksekusi beli saat 5/5 APPROVED!
       buyAmountSol: 0.02, // Safe small buy amount
       minGrokViralityScore: 85,
-      minLiquidityUsd: 10000,
+      minLiquidityUsd: 1500,
       maxTop10HoldersPct: 20,
       jitoTipTier: 'ECONOMY', // Ultra-low fee tier
       takeProfitMultiplierR: 3.0,
@@ -2015,31 +2100,29 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         soundFx.playApproval();
         appendLog('SCAN', 'SUCCESS', `Signal APPROVED: ${consensus.token.symbol} (Score: ${consensus.token.narrativeCosineSim})`);
 
-        // ─── AI Alpha Signal Terminal: Kalkulasi Sinyal & Broadcast ke Telegram ───
-        try {
-          const { signal } = runConsensusAndBuildSignal(consensus.token, {
-            thresholds: STRATEGY_PRESETS.BALANCED,
-            grokViralityScore: consensus.token.narrativeCosineSim,
-            solRateUsd: 140,
-          });
+        // ─── AI Alpha Signal Terminal: HANYA broadcast jika token adalah REAL ON-CHAIN DATA ───
+        // Simulator mock TIDAK BOLEH dikirim ke Telegram atau ditambahkan ke live active signals!
+        if (consensus.token.isRealData) {
+          try {
+            const { signal } = runConsensusAndBuildSignal(consensus.token, {
+              thresholds: STRATEGY_PRESETS.BALANCED,
+              grokViralityScore: consensus.token.narrativeCosineSim,
+              solRateUsd: 140,
+            });
 
-          if (signal) {
-            await broadcastSignal(signal, telegramConfig);
-            appendLog(
-              'TELEGRAM',
-              'SUCCESS',
-              `📡 [SIGNAL BROADCAST] $${signal.token.symbol} Entry: ${signal.entryZone.low.toFixed(6)}-${signal.entryZone.high.toFixed(6)} SOL | TP1: ${signal.targets[0].priceSol.toFixed(6)} | TP2: ${signal.targets[1].priceSol.toFixed(6)} | TP3: ${signal.targets[2].priceSol.toFixed(6)} | SL: ${signal.stopLoss.priceSol.toFixed(6)} SOL (R/R 1:${signal.riskRewardRatio})`
-            );
+            if (signal) {
+              await broadcastSignal(signal, telegramConfig);
+              const cleanSym = (signal.token?.symbol || 'UNKNOWN').replace(/^\$+/, '');
+              appendLog(
+                'TELEGRAM',
+                'SUCCESS',
+                `📡 [SIGNAL BROADCAST] $${cleanSym} Entry: ${signal.entryZone.low.toFixed(6)}-${signal.entryZone.high.toFixed(6)} SOL | TP1: ${signal.targets[0].priceSol.toFixed(6)} | TP2: ${signal.targets[1].priceSol.toFixed(6)} | TP3: ${signal.targets[2].priceSol.toFixed(6)} | SL: ${signal.stopLoss.priceSol.toFixed(6)} SOL (R/R 1:${signal.riskRewardRatio})`
+              );
+            }
+          } catch (sigErr) {
+            console.warn('[SignalBroadcast] Error generating signal:', sigErr);
           }
-        } catch (sigErr) {
-          console.warn('[SignalBroadcast] Error generating signal:', sigErr);
         }
-
-        appendLog(
-          'SCAN',
-          'SUCCESS',
-          `🎯 [SIGNAL LIVE] $${consensus.token.symbol} disiarkan. Cek tab Sinyal Alpha Live untuk target Entry, TP, dan SL.`
-        );
       }
     }, 2800);
 
@@ -2457,7 +2540,7 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
             }
 
             for (const ev of (data.events || [])) {
-              const sym = ev.symbol;
+              const sym = (ev.symbol || 'UNKNOWN').replace(/^\$+/, '');
               if (ev.newStatus === 'TP1_HIT') {
                 soundFx.playTakeProfit();
                 appendLog('TELEGRAM', 'SUCCESS', `🎯 [TP1 HIT] $${sym} menyentuh Target 1 (+${ev.gainPct}%)! Modal awal aman.`);

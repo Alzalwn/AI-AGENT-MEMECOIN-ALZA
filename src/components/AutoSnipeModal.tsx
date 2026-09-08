@@ -63,7 +63,7 @@ export const AutoSnipeModal: React.FC<AutoSnipeModalProps> = ({
         ttlUnlimited: store.ttlUnlimited ?? config.ttlUnlimited ?? false,
         autoSellEnabled: store.autoSellEnabled ?? config.autoSellEnabled ?? true,
         buyAmountSol: store.buyAmountSol ?? config.buyAmountSol ?? 0.05,
-        minLiquidityUsd: store.minLiquidityUsd ?? config.minLiquidityUsd ?? 10000,
+        minLiquidityUsd: store.minLiquidityUsd ?? config.minLiquidityUsd ?? 1500,
         minGrokViralityScore: store.minGrokViralityScore ?? config.minGrokViralityScore ?? 85,
         maxTop10HoldersPct: store.maxTop10HoldersPct ?? config.maxTop10HoldersPct ?? 20,
         jitoTipTier: (store.jitoTipTier as any) ?? config.jitoTipTier ?? 'STANDARD',
@@ -132,7 +132,7 @@ export const AutoSnipeModal: React.FC<AutoSnipeModalProps> = ({
       maxHoldTimeSec: 14400,
       ttlUnlimited: false,
       minGrokViralityScore: 85,
-      minLiquidityUsd: 10000,
+      minLiquidityUsd: 1500,
       maxTop10HoldersPct: 20,
       maxSignalsPer5m: 3,
       dedup24hEnabled: true,
@@ -493,11 +493,11 @@ export const AutoSnipeModal: React.FC<AutoSnipeModalProps> = ({
                 <span className="text-zinc-500">$</span>
                 <input
                   type="number"
-                  min="2000"
-                  step="1000"
+                  min="500"
+                  step="500"
                   max="50000"
                   value={form.minLiquidityUsd}
-                  onChange={(e) => setForm(f => ({ ...f, minLiquidityUsd: parseInt(e.target.value, 10) || 5000 }))}
+                  onChange={(e) => setForm(f => ({ ...f, minLiquidityUsd: parseInt(e.target.value, 10) || 1500 }))}
                   className="w-24 bg-zinc-950 border border-zinc-800 focus:border-cyan-500 rounded px-2 py-0.5 text-zinc-100 text-right font-bold outline-none"
                 />
               </div>

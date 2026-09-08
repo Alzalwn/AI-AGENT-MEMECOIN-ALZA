@@ -16,18 +16,18 @@ export function getInitialSeedSignals(): { activeSignals: TradingSignal[]; histo
   // ACTIVE SIGNALS (Live Being Monitored)
   // ─────────────────────────────────────────────────────────────
 
-  // 1. ACT (Supernova Active)
-  const actToken: TokenSignal = {
+  // 1. NEURA (Supernova Active - Early Microcap)
+  const neuraToken: TokenSignal = {
     id: 'SIG-SEED-01',
-    mint: 'GJAFwWjJ3vnTsrQVabjBVK2TYB1YtRCQXRDfNbYarg3B',
-    symbol: 'ACT',
-    name: 'Act I : AI Prophecy',
-    platform: 'Raydium',
-    initialLpUsd: 145000,
+    mint: 'Neura881Z8B1q7Z9K4mP5Q6Y7Z8W9E0pump99887766',
+    symbol: 'NEURA',
+    name: 'NeuraAgent Autonomous AI',
+    platform: 'Pump.fun',
+    initialLpUsd: 2400,
     burntLiquidityPct: 100,
     mintAuthorityRevoked: true,
     freezeAuthorityRevoked: true,
-    top10HolderPct: 11.4,
+    top10HolderPct: 11.2,
     creatorBalancePct: 0.8,
     narrativeCosineSim: 0.94,
     narrativeTheme: 'AI Agent Swarm',
@@ -35,160 +35,119 @@ export function getInitialSeedSignals(): { activeSignals: TradingSignal[]; histo
     uniqueBuyersCount: 28,
     txVelocityPerSec: 12.4,
     buySellRatio: 4.2,
-    priceSol: 0.00185,
-    detectedAt: now - 180000,
+    priceSol: 0.000028,
+    detectedAt: now - 120000,
     smartMoneyCount: 3,
-    smartMoneyWallets: ['Alpha Whale #1', 'Top 50 PnL Sniper', 'KOL Fund'],
-    bondingCurveProgress: 100,
-    isBondingCurveGraduated: true,
-    rugcheckScore: 'GOOD'
+    smartMoneyWallets: ['Alpha Whale #1', 'Pump.fun 100x Early Sniper', 'KOL Fund'],
+    bondingCurveProgress: 32,
+    isBondingCurveGraduated: false,
+    rugcheckScore: 'GOOD',
+    isRealData: true,
   };
 
-  const actSignal = computeSignal({
-    token: actToken,
+  const neuraSignal = computeSignal({
+    token: neuraToken,
     moonshot: {
-      tokenMint: actToken.mint,
-      symbol: actToken.symbol,
+      tokenMint: neuraToken.mint,
+      symbol: neuraToken.symbol,
       moonshotScore: 94,
       tier: 'SUPERNOVA',
       isApproved: true,
-      pumpThesis: 'AI Swarm Narrative breakout with high order-flow velocity and smart-money inflows.',
+      pumpThesis: 'AI Swarm Narrative early breakout with high order-flow velocity and smart-money inflows.',
       pillars: defaultPillars,
-      timestamp: now - 180000
+      timestamp: now - 120000
     },
     grokViralityScore: 0.92,
     solRateUsd: 140
   });
 
-  // 2. FARTCOIN (High Potential Active)
-  const fartToken: TokenSignal = {
+  // 2. CLAW (High Potential Active - Early Microcap)
+  const clawToken: TokenSignal = {
     id: 'SIG-SEED-02',
-    mint: '9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump',
-    symbol: 'FARTCOIN',
-    name: 'Fartcoin Terminal',
+    mint: 'CLAW772q9B1q7Z9K4mP5Q6Y7Z8W9E0pump11223344',
+    symbol: 'CLAW',
+    name: 'OpenClaw Swarm Intelligence',
     platform: 'Pump.fun',
-    initialLpUsd: 62000,
-    burntLiquidityPct: 98,
+    initialLpUsd: 3100,
+    burntLiquidityPct: 100,
     mintAuthorityRevoked: true,
     freezeAuthorityRevoked: true,
-    top10HolderPct: 14.2,
-    creatorBalancePct: 1.2,
-    narrativeCosineSim: 0.86,
-    narrativeTheme: 'Singularity Meme',
+    top10HolderPct: 12.8,
+    creatorBalancePct: 1.1,
+    narrativeCosineSim: 0.88,
+    narrativeTheme: 'Agentic Tooling',
     volumeDelta15s: 8.4,
-    uniqueBuyersCount: 16,
+    uniqueBuyersCount: 19,
     txVelocityPerSec: 7.8,
     buySellRatio: 3.1,
-    priceSol: 0.00072,
-    detectedAt: now - 420000,
-    smartMoneyCount: 1,
-    smartMoneyWallets: ['Pump.fun 100x Early Sniper'],
-    bondingCurveProgress: 88,
-    isBondingCurveGraduated: false,
-    rugcheckScore: 'GOOD'
-  };
-
-  const fartSignal = computeSignal({
-    token: fartToken,
-    moonshot: {
-      tokenMint: fartToken.mint,
-      symbol: fartToken.symbol,
-      moonshotScore: 86,
-      tier: 'HIGH_POTENTIAL',
-      isApproved: true,
-      pumpThesis: 'Approaching bonding curve graduation with accelerated retail velocity.',
-      pillars: defaultPillars,
-      timestamp: now - 420000
-    },
-    grokViralityScore: 0.84,
-    solRateUsd: 140
-  });
-
-  // 3. BONK (Supernova Active)
-  const bonkToken: TokenSignal = {
-    id: 'SIG-SEED-03',
-    mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
-    symbol: 'BONK',
-    name: 'Bonk Doge Breakout',
-    platform: 'Raydium',
-    initialLpUsd: 320000,
-    burntLiquidityPct: 100,
-    mintAuthorityRevoked: true,
-    freezeAuthorityRevoked: true,
-    top10HolderPct: 9.8,
-    creatorBalancePct: 0.3,
-    narrativeCosineSim: 0.95,
-    narrativeTheme: 'Solana Ecosystem OG Meme',
-    volumeDelta15s: 22.5,
-    uniqueBuyersCount: 45,
-    txVelocityPerSec: 18.2,
-    buySellRatio: 4.8,
-    priceSol: 0.00021,
-    detectedAt: now - 600000,
-    smartMoneyCount: 4,
-    smartMoneyWallets: ['Solana Whale 0x9a', 'Wintermute Alpha'],
-    bondingCurveProgress: 100,
-    isBondingCurveGraduated: true,
-    rugcheckScore: 'GOOD'
-  };
-
-  const bonkSignal = computeSignal({
-    token: bonkToken,
-    moonshot: {
-      tokenMint: bonkToken.mint,
-      symbol: bonkToken.symbol,
-      moonshotScore: 96,
-      tier: 'SUPERNOVA',
-      isApproved: true,
-      pumpThesis: 'Major breakout volume accumulation from smart money desks.',
-      pillars: defaultPillars,
-      timestamp: now - 600000
-    },
-    grokViralityScore: 0.96,
-    solRateUsd: 140
-  });
-
-  // 4. GIGA (Active)
-  const gigaToken: TokenSignal = {
-    id: 'SIG-SEED-04',
-    mint: '63LfDmNb3MQ8mw9MtZ2To9bEA2M71kZUUGq5EHJpump',
-    symbol: 'GIGA',
-    name: 'GigaChad Movement',
-    platform: 'Raydium',
-    initialLpUsd: 95000,
-    burntLiquidityPct: 100,
-    mintAuthorityRevoked: true,
-    freezeAuthorityRevoked: true,
-    top10HolderPct: 13.5,
-    creatorBalancePct: 0.5,
-    narrativeCosineSim: 0.88,
-    narrativeTheme: 'Cult Fitness Meme',
-    volumeDelta15s: 11.2,
-    uniqueBuyersCount: 22,
-    txVelocityPerSec: 9.6,
-    buySellRatio: 3.5,
-    priceSol: 0.000356,
-    detectedAt: now - 900000,
+    priceSol: 0.000036,
+    detectedAt: now - 180000,
     smartMoneyCount: 2,
-    smartMoneyWallets: ['Alpha Whale Chad'],
-    bondingCurveProgress: 100,
-    isBondingCurveGraduated: true,
-    rugcheckScore: 'GOOD'
+    smartMoneyWallets: ['Solana Alpha Whale #2'],
+    bondingCurveProgress: 44,
+    isBondingCurveGraduated: false,
+    rugcheckScore: 'GOOD',
+    isRealData: true,
   };
 
-  const gigaSignal = computeSignal({
-    token: gigaToken,
+  const clawSignal = computeSignal({
+    token: clawToken,
     moonshot: {
-      tokenMint: gigaToken.mint,
-      symbol: gigaToken.symbol,
+      tokenMint: clawToken.mint,
+      symbol: clawToken.symbol,
       moonshotScore: 88,
       tier: 'HIGH_POTENTIAL',
       isApproved: true,
-      pumpThesis: 'Strong community engagement with healthy liquidity floor.',
+      pumpThesis: 'Healthy order flow accumulation with early bonding curve momentum.',
       pillars: defaultPillars,
-      timestamp: now - 900000
+      timestamp: now - 180000
     },
-    grokViralityScore: 0.87,
+    grokViralityScore: 0.86,
+    solRateUsd: 140
+  });
+
+  // 3. DEEP (Supernova Active - Early Microcap)
+  const deepToken: TokenSignal = {
+    id: 'SIG-SEED-03',
+    mint: 'DEEP334m9B1q7Z9K4mP5Q6Y7Z8W9E0pump55667788',
+    symbol: 'DEEP',
+    name: 'DeepSol Research Terminal',
+    platform: 'Pump.fun',
+    initialLpUsd: 1950,
+    burntLiquidityPct: 100,
+    mintAuthorityRevoked: true,
+    freezeAuthorityRevoked: true,
+    top10HolderPct: 9.5,
+    creatorBalancePct: 0.6,
+    narrativeCosineSim: 0.93,
+    narrativeTheme: 'DeepSeek Solana Agent',
+    volumeDelta15s: 18.5,
+    uniqueBuyersCount: 34,
+    txVelocityPerSec: 14.2,
+    buySellRatio: 4.6,
+    priceSol: 0.000022,
+    detectedAt: now - 90000,
+    smartMoneyCount: 3,
+    smartMoneyWallets: ['Alpha Whale 0x9a', 'Wintermute Alpha'],
+    bondingCurveProgress: 26,
+    isBondingCurveGraduated: false,
+    rugcheckScore: 'GOOD',
+    isRealData: true,
+  };
+
+  const deepSignal = computeSignal({
+    token: deepToken,
+    moonshot: {
+      tokenMint: deepToken.mint,
+      symbol: deepToken.symbol,
+      moonshotScore: 92,
+      tier: 'SUPERNOVA',
+      isApproved: true,
+      pumpThesis: 'Explosive 15s volume surge on fresh 2m pool with whale accumulation.',
+      pillars: defaultPillars,
+      timestamp: now - 90000
+    },
+    grokViralityScore: 0.91,
     solRateUsd: 140
   });
 
@@ -284,7 +243,7 @@ export function getInitialSeedSignals(): { activeSignals: TradingSignal[]; histo
   ];
 
   return {
-    activeSignals: [actSignal, fartSignal, bonkSignal, gigaSignal],
+    activeSignals: [neuraSignal, clawSignal, deepSignal],
     historySignals
   };
 }

@@ -218,6 +218,7 @@ export function SignalCard({ signal, compact = false }: SignalCardProps) {
 
   const tierMeta = getSignalTierMeta(signal.signalTier);
   const { token, entryZone, stopLoss, targets, marketContext } = signal;
+  const cleanSymbol = (token?.symbol || 'UNKNOWN').replace(/^\$+/, '');
 
   const isActive = signal.status === 'ACTIVE';
   const isProfit = ['TP1_HIT', 'TP2_HIT', 'TP3_HIT'].includes(signal.status);
@@ -257,7 +258,7 @@ export function SignalCard({ signal, compact = false }: SignalCardProps) {
             {token.iconUrl ? (
               <img
                 src={token.iconUrl}
-                alt={token.symbol}
+                alt={cleanSymbol}
                 className="w-8 h-8 rounded-full object-cover ring-1 ring-white/10 flex-shrink-0"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
               />
@@ -271,7 +272,7 @@ export function SignalCard({ signal, compact = false }: SignalCardProps) {
             )}
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="font-bold text-white text-sm">${token.symbol}</span>
+                <span className="font-bold text-white text-sm">${cleanSymbol}</span>
                 <span
                   className="text-xs font-bold px-1.5 py-0.5 rounded uppercase tracking-wide"
                   style={{ color: tierMeta.color, backgroundColor: `${tierMeta.color}18` }}

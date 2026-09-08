@@ -96,7 +96,7 @@ export const LiveTerminalPanel: React.FC = () => {
         <div className="flex items-center gap-2.5">
           <TerminalIcon className="w-4 h-4 text-[#3ecf8e]" />
           <span className="font-bold text-zinc-200">
-            pm2: <span className="text-[#3ecf8e]">ghost-sniper-bot</span> (id: 0)
+            pm2: <span className="text-[#3ecf8e]">signal-daemon</span> (id: 0)
           </span>
           <span className="text-zinc-600 hidden sm:inline">•</span>
           <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#1f1f1f] border border-[#2b2b2b] text-[10px] text-zinc-400">
@@ -253,7 +253,7 @@ export const LiveTerminalPanel: React.FC = () => {
           <span>•</span>
           <span>Encoding: UTF-8</span>
           <span>•</span>
-          <span>Target: ~/.pm2/logs/ghost-sniper-out.log</span>
+          <span>Target: ~/.pm2/logs/signal-daemon-out.log</span>
         </div>
         <div className="flex items-center gap-2 text-[#3ecf8e]">
           <span className="w-1.5 h-1.5 rounded-full bg-[#3ecf8e]" />

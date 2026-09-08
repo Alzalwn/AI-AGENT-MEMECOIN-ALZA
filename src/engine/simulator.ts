@@ -1,16 +1,14 @@
 import { TokenSignal } from '../types/terminal';
 
 const SAMPLE_NAMES = [
-  { symbol: '$BONK', name: 'Bonk Memecoin', theme: 'ai agent', mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263' },
-  { symbol: '$WIF', name: 'dogwifhat', theme: 'solana mev', mint: 'EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm' },
-  { symbol: '$FARTCOIN', name: 'Fartcoin Terminal', theme: 'singularity', mint: '9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump' },
-  { symbol: '$TRUMP', name: 'Official Trump', theme: 'agentic', mint: '6p6xgHyF7AeQHyviSDaiMFFAbUx5unusPxQwg2qypump' },
-  { symbol: '$PENGU', name: 'Pudgy Penguins', theme: 'ai agent', mint: '2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv' },
-  { symbol: '$GOAT', name: 'Goatseus Maximus', theme: 'neural', mint: 'CzLSujWBLFsSjncfkh59rQDqJgRq6uUEZ3bpddG9pump' },
-  { symbol: '$ACT', name: 'Act I : AI Prophecy', theme: 'ai agent', mint: 'GJAFwWjJ3vnTsrQVabjBVK2TYB1YtRCQXRDfNbYarg3B' },
-  { symbol: '$POPCAT', name: 'Popcat Solana', theme: 'solana mev', mint: '7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr' },
-  { symbol: '$GIGA', name: 'GigaChad Memecoin', theme: 'agentic', mint: '63LfDmNb3MQ8mw9MtZ2To9bEA2M71kZUUGq5EHJpump' },
-  { symbol: '$MELANIA', name: 'Melania Meme', theme: 'unrelated meme', mint: 'FU1q8vJpZNUrmqsciSjp8bAKKidGsLmouB8CBdf8TKQv' }
+  { symbol: 'NEURA', name: 'NeuraAgent AI', theme: 'ai agent', mint: 'Neura881Z8B1q7Z9K4mP5Q6Y7Z8W9E0pump99887766' },
+  { symbol: 'CLAW', name: 'OpenClaw Swarm', theme: 'agentic', mint: 'CLAW772q9B1q7Z9K4mP5Q6Y7Z8W9E0pump11223344' },
+  { symbol: 'DEEP', name: 'DeepSol Agent', theme: 'neural', mint: 'DEEP334m9B1q7Z9K4mP5Q6Y7Z8W9E0pump55667788' },
+  { symbol: 'GROKX', name: 'GrokX Engine', theme: 'ai agent', mint: 'GrokX11111111111111111111111111111111111pump' },
+  { symbol: 'SOLCAT', name: 'SolCat Micro', theme: 'solana mev', mint: 'CAT111111111111111111111111111111111111pump' },
+  { symbol: 'ZEREBRO', name: 'Zerebro AI', theme: 'neural', mint: '8x5VqbHA8D7NkD52uNuS5nnt3PwA8pLD34ymbpspump' },
+  { symbol: 'SWARMS', name: 'Swarms Autonomous', theme: 'ai agent', mint: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU' },
+  { symbol: 'ELIZA', name: 'Eliza Framework', theme: 'agentic', mint: 'DuA1qY4XmC41Z1YVq1H4R4mH8Q4mP5Q6Y7Z8W9E0pump' }
 ];
 
 export function generateRandomTokenSignal(): TokenSignal {
@@ -19,11 +17,9 @@ export function generateRandomTokenSignal(): TokenSignal {
 
   const mint = meta.mint;
 
-  const platform = Math.random() > 0.4 ? 'Pump.fun' : 'Raydium';
-  const bondingCurveProgress = platform === 'Pump.fun'
-    ? Math.floor(Math.random() * 85) + 8
-    : 100;
-  const isBondingCurveGraduated = platform === 'Raydium' || bondingCurveProgress >= 100;
+  const platform = 'Pump.fun';
+  const bondingCurveProgress = Math.floor(Math.random() * 28) + 5;
+  const isBondingCurveGraduated = false;
 
   const mintAuthorityRevoked = isTrap ? Math.random() > 0.6 : true;
   const freezeAuthorityRevoked = isTrap ? Math.random() > 0.5 : true;
@@ -51,7 +47,7 @@ export function generateRandomTokenSignal(): TokenSignal {
     symbol: meta.symbol,
     name: meta.name,
     platform,
-    initialLpUsd: isTrap ? Math.floor(Math.random() * 3500) + 1000 : Math.floor(Math.random() * 20000) + 5500,
+    initialLpUsd: isTrap ? Math.floor(Math.random() * 2000) + 800 : Math.floor(Math.random() * 2400) + 1200,
     burntLiquidityPct: isTrap ? (Math.random() > 0.5 ? 0 : 70) : 100,
     mintAuthorityRevoked,
     freezeAuthorityRevoked,

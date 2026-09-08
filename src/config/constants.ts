@@ -5,7 +5,7 @@
 
 export const PRD_THRESHOLDS = {
   // Scanner Agent
-  MIN_INITIAL_LP_USD: 5000,
+  MIN_INITIAL_LP_USD: 1000, // Early pump.fun microcap threshold ($1,000+)
   MIN_BURNT_LIQUIDITY_PCT: 100,
 
   // Narrative Agent
@@ -62,7 +62,7 @@ export const JITO_TIP_TIERS = {
 export const STRATEGY_PRESETS = {
   BALANCED: {
     presetName: 'BALANCED' as const,
-    minInitialLpUsd: 5000,
+    minInitialLpUsd: 1000,
     minBurntLiquidityPct: 100,
     minCosineSimilarity: 0.85,
     maxTop10HoldersPct: 15,
@@ -76,7 +76,7 @@ export const STRATEGY_PRESETS = {
   },
   DEGEN: {
     presetName: 'DEGEN' as const,
-    minInitialLpUsd: 2500,
+    minInitialLpUsd: 800,
     minBurntLiquidityPct: 90,
     minCosineSimilarity: 0.80,
     maxTop10HoldersPct: 25,
@@ -104,7 +104,7 @@ export const STRATEGY_PRESETS = {
   },
   CUSTOM: {
     presetName: 'CUSTOM' as const,
-    minInitialLpUsd: 5000,
+    minInitialLpUsd: 1000,
     minBurntLiquidityPct: 100,
     minCosineSimilarity: 0.85,
     maxTop10HoldersPct: 15,
@@ -129,7 +129,7 @@ export const TRADING_STYLE_PRESETS = {
     trailingStopLossPct: 15,
     maxHoldTimeSec: 180, // 3 menit
     ttlUnlimited: false,
-    minLiquidityUsd: 5000,
+    minLiquidityUsd: 1000,
     minGrokViralityScore: 85,
     jitoTipTier: 'STANDARD' as const,
     autoSellEnabled: true

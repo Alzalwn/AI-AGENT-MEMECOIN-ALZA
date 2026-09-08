@@ -151,7 +151,7 @@ export function SignalHistoryTable({ signals }: SignalHistoryTableProps) {
       next.delete(id);
       return next;
     });
-    showNotification(`🗑️ Sinyal $${symbol} berhasil dihapus dari riwayat.`);
+    showNotification(`🗑️ Sinyal $${symbol.replace(/^\$+/, '')} berhasil dihapus dari riwayat.`);
   };
 
   // Delete selected signals
@@ -372,13 +372,13 @@ export function SignalHistoryTable({ signals }: SignalHistoryTableProps) {
                         {sig.token.iconUrl && (
                           <img
                             src={sig.token.iconUrl}
-                            alt={sig.token.symbol}
+                            alt={sig.token.symbol.replace(/^\$+/, '')}
                             className="w-6 h-6 rounded-full"
                             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                           />
                         )}
                         <div>
-                          <div className="font-mono font-bold text-white text-xs">${sig.token.symbol}</div>
+                          <div className="font-mono font-bold text-white text-xs">${sig.token.symbol.replace(/^\$+/, '')}</div>
                           <div className="text-white/30 text-[10px]">{sig.token.platform}</div>
                         </div>
                       </div>
@@ -455,7 +455,7 @@ export function SignalHistoryTable({ signals }: SignalHistoryTableProps) {
                         type="button"
                         onClick={() => handleDeleteSingle(sig.id, sig.token.symbol)}
                         className="p-1.5 rounded-lg text-white/20 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                        title={`Hapus sinyal $${sig.token.symbol}`}
+                        title={`Hapus sinyal $${(sig.token?.symbol || 'UNKNOWN').replace(/^\$+/, '')}`}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>

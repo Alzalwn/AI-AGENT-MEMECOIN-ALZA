@@ -87,7 +87,7 @@ export function QuickSignalScanner({ onOpenJupiterSwap }: QuickSignalScannerProp
         appendLog(
           'TELEGRAM',
           'SUCCESS',
-          `✅ [SINYAL DIBUAT] $${signal.token.symbol} berhasil dikalkulasi & ditambahkan ke live feed!`
+          `✅ [SINYAL DIBUAT] $${(signal.token?.symbol || 'UNKNOWN').replace(/^\$+/, '')} berhasil dikalkulasi & ditambahkan ke live feed!`
         );
       }
     } catch (err: unknown) {

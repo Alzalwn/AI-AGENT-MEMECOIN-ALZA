@@ -27,8 +27,8 @@ function generateMockLog(): LogEntry {
     },
     {
       level: 'INFO' as const,
-      source: 'Scanner:Raydium',
-      message: `Detected new CPMM pair: $${['NEO', 'PEPE2', 'SOLCAT', 'MOONAI', 'GROKx', 'CHAD'][Math.floor(Math.random() * 6)]} / SOL (Liquidity: $${Math.floor(18000 + Math.random() * 45000)})`,
+      source: 'Scanner:PumpFun',
+      message: `Detected new early pair: $${['NEURA', 'CLAW', 'DEEP', 'TRENCH', 'ALPHA', 'SYNAPSE'][Math.floor(Math.random() * 6)]} / SOL (Initial LP: $${Math.floor(1200 + Math.random() * 2400)} | MC: $${Math.floor(6000 + Math.random() * 18000)})`,
     },
     {
       level: 'SUCCESS' as const,
@@ -80,9 +80,11 @@ function generateMockLog(): LogEntry {
 // Function to safely read PM2 log lines from standard Linux/Windows PM2 paths
 function readPm2LogLines(maxLines: number = 50): LogEntry[] {
   const possiblePaths = [
+    path.join(os.homedir(), '.pm2', 'logs', 'signal-daemon-out.log'),
     path.join(os.homedir(), '.pm2', 'logs', 'ghost-sniper-out.log'),
     path.join(os.homedir(), '.pm2', 'logs', 'solana-bot-out.log'),
     path.join(os.homedir(), '.pm2', 'logs', 'next-server-out.log'),
+    '/root/.pm2/logs/signal-daemon-out.log',
     '/root/.pm2/logs/ghost-sniper-out.log',
   ];
 

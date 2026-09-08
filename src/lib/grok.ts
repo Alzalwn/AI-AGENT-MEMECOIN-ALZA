@@ -175,11 +175,12 @@ export function evaluateWithGrokHeuristic(token: TokenSignal): GrokNarrativeEval
   cosSim = +(Math.max(0.15, Math.min(0.96, cosSim))).toFixed(2);
   const isAiApproved = cosSim >= PRD_THRESHOLDS.MIN_COSINE_SIMILARITY;
 
+  const cleanSym = (token.symbol || 'UNKNOWN').replace(/^\$+/, '');
   let analysis = '';
   if (isAiApproved) {
-    analysis = `[xAI Grok Alpha] Ticker $${token.symbol} selaras kuat dengan klaster '${bestTheme}' di platform X. Momentum naratif tinggi (${virality}/100 virality score).`;
+    analysis = `[xAI Grok Alpha] Ticker $${cleanSym} selaras kuat dengan klaster '${bestTheme}' di platform X. Momentum naratif tinggi (${virality}/100 virality score).`;
   } else {
-    analysis = `[xAI Grok Veto] $${token.symbol} kekurangan resonansi kultural organik (${cosSim} < 0.85). Terdeteksi potensi distorsi volume / kebisingan bot.`;
+    analysis = `[xAI Grok Veto] $${cleanSym} kekurangan resonansi kultural organik (${cosSim} < 0.85). Terdeteksi potensi distorsi volume / kebisingan bot.`;
   }
 
   return {
