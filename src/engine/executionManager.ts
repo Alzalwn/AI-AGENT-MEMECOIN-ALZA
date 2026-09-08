@@ -242,7 +242,7 @@ export class ExecutionManager {
       const maxHoldTimeSec = ttlUnlimited ? 0 : (options.maxHoldTimeSec || 180);
 
       const newPosition: ActivePosition = {
-        id: `POS-${Date.now()}-${mint.slice(0, 6)}`,
+        id: isSimulation ? `SIM-POS-${Date.now()}-${mint.slice(0, 6)}` : `POS-${Date.now()}-${mint.slice(0, 6)}`,
         token: {
           ...token,
           decimals,
@@ -465,8 +465,8 @@ export class ExecutionManager {
     this.callbacks.onPositionUpdated?.(position);
 
     const mint = position.token.mint;
-    // Hanya simulasikan jika mint jelas palsu/mock (panjang < 32)
-    const isSimulation = (!mint || mint.length < 32) && (!position.token.isRealData || position.id.includes('SIM'));
+    // Deteksi mode simulasi jika posisi bertanda SIM atau mint dummy
+    const isSimulation = position.id.includes('SIM') || (!mint || mint.length < 32);
 
     this.log(
       'EXECUTION',
