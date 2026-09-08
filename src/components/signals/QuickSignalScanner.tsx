@@ -219,7 +219,7 @@ export function QuickSignalScanner({ onOpenJupiterSwap }: QuickSignalScannerProp
       );
     } catch (err: any) {
       console.error('Scan error:', err);
-      appendLog('SCAN', 'ERROR', `Gagal memindai token: ${err.message || 'Periksa koneksi'}`);
+      appendLog('SCAN', 'WARN', `Gagal memindai token: ${err.message || 'Periksa koneksi'}`);
       setNotFoundCA(ca);
     } finally {
       setIsScanning(false);
