@@ -9,6 +9,10 @@ import {
   Sliders,
   Eye,
   EyeOff,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
+  Timer,
 } from 'lucide-react';
 import { BinanceFuturesSignal, FuturesDirection } from '../../types/futures';
 
@@ -127,6 +131,7 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
   const [showMACD, setShowMACD] = useState<boolean>(true);
   const [showRSI, setShowRSI] = useState<boolean>(true);
   const [showRRBox, setShowRRBox] = useState<boolean>(true);
+  const [showChartAiAnalysis, setShowChartAiAnalysis] = useState<boolean>(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -898,6 +903,59 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
         {activeTab === 'PROJECTION' ? (
           <>
             <canvas ref={canvasRef} className="w-full h-full flex-1 cursor-crosshair block" />
+
+            {/* AI Confluence & Duration Explanation Strip */}
+            {signal?.indicatorExplanation && (
+              <div className="bg-zinc-950 border-t border-zinc-800/80 px-4 py-2 font-mono text-xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-yellow-400 font-bold flex items-center gap-1 text-[11px]">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Analisis AI Binance:</span>
+                    </span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                      isLong ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                    }`}>
+                      {isLong ? '🟢 REKOMENDASI: LONG' : '🔴 REKOMENDASI: SHORT'}
+                    </span>
+                    <span className="text-zinc-400 text-[11px] flex items-center gap-1">
+                      <Timer className="w-3 h-3 text-yellow-400" />
+                      <span>Waktu Tempuh: TP1 ({signal.indicatorExplanation.estimatedDuration.tp1Eta}) | TP2 ({signal.indicatorExplanation.estimatedDuration.tp2Eta})</span>
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowChartAiAnalysis(!showChartAiAnalysis)}
+                    className="flex items-center gap-1 text-yellow-400 hover:text-yellow-300 text-[11px] font-bold transition-colors cursor-pointer"
+                  >
+                    <span>{showChartAiAnalysis ? 'Tutup Detail' : 'Buka Detail Indikator'}</span>
+                    {showChartAiAnalysis ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+
+                {showChartAiAnalysis && (
+                  <div className="mt-2 pt-2 border-t border-zinc-800/80 grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px]">
+                    <div className="p-2.5 rounded-lg bg-zinc-900/90 border border-zinc-800 space-y-1.5">
+                      <span className="font-bold text-emerald-400 block text-xs">🎯 Keputusan Arah & Estimasi Waktu:</span>
+                      <p className="text-zinc-200 leading-relaxed text-[11px]">{signal.indicatorExplanation.directionVerdict}</p>
+                      <div className="pt-1.5 border-t border-zinc-800/80 text-[10px] text-zinc-400">
+                        <span className="text-yellow-400 font-bold block mb-0.5">⏱️ Ringkasan Durasi:</span>
+                        <p>{signal.indicatorExplanation.estimatedDuration.summaryText}</p>
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-zinc-900/90 border border-zinc-800 space-y-1">
+                      <span className="font-bold text-yellow-400 block text-xs">📊 Arti 4 Indikator Binance:</span>
+                      <p className="text-zinc-300 text-[10px] leading-relaxed">• <b>MA(7/25/99):</b> {signal.indicatorExplanation.maInsight}</p>
+                      <p className="text-zinc-300 text-[10px] leading-relaxed">• <b>BOLL(20,2):</b> {signal.indicatorExplanation.bollInsight}</p>
+                      <p className="text-zinc-300 text-[10px] leading-relaxed">• <b>MACD(12,26,9):</b> {signal.indicatorExplanation.macdInsight}</p>
+                      <p className="text-zinc-300 text-[10px] leading-relaxed">• <b>RSI(6/12/24):</b> {signal.indicatorExplanation.rsiInsight}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Bottom Risk / Reward Telemetry Strip */}
             <div className="p-3 bg-zinc-950/90 border-t border-zinc-800/80 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">

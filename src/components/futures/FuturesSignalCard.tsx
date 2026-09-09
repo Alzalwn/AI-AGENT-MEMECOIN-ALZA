@@ -16,6 +16,11 @@ import {
   Flame,
   ArrowUpRight,
   ArrowDownRight,
+  ChevronDown,
+  ChevronUp,
+  Sparkles,
+  Timer,
+  Info,
 } from 'lucide-react';
 import { BinanceFuturesSignal } from '../../types/futures';
 import { formatFuturesPrice } from '../../engine/futuresSignalEngine';
@@ -33,6 +38,7 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const [activeLeverageTab, setActiveLeverageTab] = useState<'both' | 'safe' | 'scalp'>('both');
+  const [showAiAnalysis, setShowAiAnalysis] = useState(false);
 
   const isLong = signal.direction === 'LONG';
   const isSupernova = signal.signalTier === 'SUPERNOVA';
@@ -45,11 +51,14 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
 📈 Strategi: ${signal.strategyLabel}
 
 💵 Entry Zone: ${signal.entryZone.label}
-🎯 Target TP1: $${formatFuturesPrice(signal.targets.tp1.price)} (+${signal.targets.tp1.gainPct.toFixed(1)}%)
-🎯 Target TP2: $${formatFuturesPrice(signal.targets.tp2.price)} (+${signal.targets.tp2.gainPct.toFixed(1)}%)
-🎯 Target TP3: $${formatFuturesPrice(signal.targets.tp3.price)} (+${signal.targets.tp3.gainPct.toFixed(1)}%)
+🎯 Target TP1: $${formatFuturesPrice(signal.targets.tp1.price)} (+${signal.targets.tp1.gainPct.toFixed(1)}%) ⏱️ ${signal.targets.tp1.eta}
+🎯 Target TP2: $${formatFuturesPrice(signal.targets.tp2.price)} (+${signal.targets.tp2.gainPct.toFixed(1)}%) ⏱️ ${signal.targets.tp2.eta}
+🎯 Target TP3: $${formatFuturesPrice(signal.targets.tp3.price)} (+${signal.targets.tp3.gainPct.toFixed(1)}%) ⏱️ ${signal.targets.tp3.eta}
 🛑 Stop Loss: ${signal.stopLoss.label}
 ⚖️ Risk/Reward: ${signal.riskRewardRatio}x
+
+⏳ Estimasi Waktu: ${signal.indicatorExplanation?.estimatedDuration.summaryText || `TP1: ${signal.targets.tp1.eta}`}
+🧠 Analisis Indikator: ${signal.indicatorExplanation?.directionVerdict || (isLong ? 'Konfluensi Bullish' : 'Konfluensi Bearish')}
 
 🛡️ Leverage Aman (Swing): ${signal.leverage.safe.range}
 ⚡ Leverage Scalp (Kilat): ${signal.leverage.scalp.range}
@@ -202,16 +211,22 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
 
         {/* Binance Technical Indicators Confluence (MA, BOLL, MACD, RSI) */}
         {signal.indicators && (
-          <div className="bg-zinc-900/60 p-2.5 rounded-xl border border-zinc-800/80 flex flex-col gap-1.5 font-mono text-[11px]">
-            <div className="flex items-center justify-between text-zinc-400 border-b border-zinc-800/50 pb-1">
+          <div className="bg-zinc-900/60 p-2.5 rounded-xl border border-zinc-800/80 flex flex-col gap-2 font-mono text-[11px]">
+            <div className="flex items-center justify-between text-zinc-400 border-b border-zinc-800/50 pb-1.5">
               <span className="font-bold text-zinc-300 flex items-center gap-1.5">
-                <span>📊</span> Indikator Binance (Confluence)
+                <Sparkles className="w-3.5 h-3.5 text-yellow-400" />
+                <span>Indikator Binance (Confluence)</span>
               </span>
-              <span className="text-[10px] text-yellow-400 font-bold">
-                {signal.indicators.ma.alignment === 'BULLISH' ? '🟢 BULLISH STACK' : '🔴 BEARISH STACK'}
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                signal.indicators.ma.alignment === 'BULLISH'
+                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                  : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+              }`}>
+                {signal.indicators.ma.alignment === 'BULLISH' ? '🟢 BULLISH CONFLUENCE' : '🔴 BEARISH CONFLUENCE'}
               </span>
             </div>
 
+            {/* Indicator Badges Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-center text-[10px]">
               <div className="bg-zinc-950 p-1.5 rounded-lg border border-zinc-800">
                 <span className="text-zinc-500 block">MA(7/25/99)</span>
@@ -242,6 +257,89 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
                 </span>
               </div>
             </div>
+
+            {/* AI Explanation Accordion & Timeline */}
+            {signal.indicatorExplanation && (
+              <div className="mt-1 border-t border-zinc-800/60 pt-2 flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAiAnalysis(!showAiAnalysis)}
+                  className="w-full flex items-center justify-between p-2 rounded-lg bg-zinc-950/90 hover:bg-zinc-800/60 border border-zinc-800 transition-colors text-left cursor-pointer"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs">🧠</span>
+                    <span className="text-[11px] font-bold text-zinc-200">
+                      Penjelasan AI: Arti Indikator & Waktu TP
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 text-[10px] text-yellow-400 font-bold">
+                    <span>{showAiAnalysis ? 'Tutup' : 'Lihat Analisis & Durasi'}</span>
+                    {showAiAnalysis ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </div>
+                </button>
+
+                {/* Expanded AI Panel */}
+                {showAiAnalysis && (
+                  <div className="p-3 bg-zinc-950 rounded-xl border border-zinc-800/90 space-y-2.5 text-[11px]">
+                    {/* Direction Verdict */}
+                    <div className={`p-2.5 rounded-lg border ${
+                      isLong
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                        : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                    }`}>
+                      <p className="font-semibold leading-relaxed">
+                        {signal.indicatorExplanation.directionVerdict}
+                      </p>
+                    </div>
+
+                    {/* Target Arrival ETA Timeline */}
+                    <div className="p-2.5 rounded-lg bg-zinc-900/80 border border-zinc-800 space-y-1.5">
+                      <div className="flex items-center gap-1.5 text-yellow-400 font-bold text-[10px] uppercase tracking-wider">
+                        <Timer className="w-3.5 h-3.5" />
+                        <span>Estimasi Waktu Tempuh Target (ETA):</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5 text-center text-[10px]">
+                        <div className="p-1 rounded bg-zinc-950 border border-zinc-800">
+                          <span className="text-zinc-500 block">TP1</span>
+                          <span className="font-bold text-zinc-200">{signal.indicatorExplanation.estimatedDuration.tp1Eta}</span>
+                        </div>
+                        <div className="p-1 rounded bg-zinc-950 border border-emerald-500/30">
+                          <span className="text-emerald-500 block">TP2</span>
+                          <span className="font-bold text-emerald-300">{signal.indicatorExplanation.estimatedDuration.tp2Eta}</span>
+                        </div>
+                        <div className="p-1 rounded bg-zinc-950 border border-yellow-500/30">
+                          <span className="text-yellow-500 block">TP3</span>
+                          <span className="font-bold text-yellow-300">{signal.indicatorExplanation.estimatedDuration.tp3Eta}</span>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-zinc-400 italic pt-1 border-t border-zinc-800/60 leading-tight">
+                        ⏱️ {signal.indicatorExplanation.estimatedDuration.summaryText}
+                      </p>
+                    </div>
+
+                    {/* Breakdown of 4 Indicators */}
+                    <div className="space-y-1.5 text-[10px]">
+                      <div className="p-2 rounded-lg bg-zinc-900/50 border border-yellow-500/20">
+                        <span className="font-bold text-yellow-400 block mb-0.5">🟡 MA(7, 25, 99) Tren:</span>
+                        <p className="text-zinc-300 leading-normal">{signal.indicatorExplanation.maInsight}</p>
+                      </div>
+                      <div className="p-2 rounded-lg bg-zinc-900/50 border border-purple-500/20">
+                        <span className="font-bold text-purple-300 block mb-0.5">🟣 BOLL(20, 2) Volatilitas:</span>
+                        <p className="text-zinc-300 leading-normal">{signal.indicatorExplanation.bollInsight}</p>
+                      </div>
+                      <div className="p-2 rounded-lg bg-zinc-900/50 border border-emerald-500/20">
+                        <span className="font-bold text-emerald-400 block mb-0.5">🟢 MACD(12, 26, 9) Momentum:</span>
+                        <p className="text-zinc-300 leading-normal">{signal.indicatorExplanation.macdInsight}</p>
+                      </div>
+                      <div className="p-2 rounded-lg bg-zinc-900/50 border border-pink-500/20">
+                        <span className="font-bold text-pink-400 block mb-0.5">🌸 Triple RSI(6, 12, 24) Kekuatan:</span>
+                        <p className="text-zinc-300 leading-normal">{signal.indicatorExplanation.rsiInsight}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

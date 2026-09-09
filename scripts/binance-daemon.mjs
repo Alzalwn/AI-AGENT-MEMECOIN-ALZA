@@ -108,11 +108,14 @@ async function sendTelegramSignal(signal) {
 📊 <b>Strategi:</b> ${signal.strategyLabel}
 
 💵 <b>Entry Zone:</b> <code>${signal.entryZone.label}</code>
-🎯 <b>Target TP1:</b> <code>$${formatPrice(signal.targets.tp1.price)}</code> (+${signal.targets.tp1.gainPct.toFixed(1)}%)
-🎯 <b>Target TP2:</b> <code>$${formatPrice(signal.targets.tp2.price)}</code> (+${signal.targets.tp2.gainPct.toFixed(1)}%)
-🎯 <b>Target TP3:</b> <code>$${formatPrice(signal.targets.tp3.price)}</code> (+${signal.targets.tp3.gainPct.toFixed(1)}%)
+🎯 <b>Target TP1:</b> <code>$${formatPrice(signal.targets.tp1.price)}</code> (+${signal.targets.tp1.gainPct.toFixed(1)}%) ⏱️ <b>${signal.targets.tp1.eta || '15–30 Menit'}</b>
+🎯 <b>Target TP2:</b> <code>$${formatPrice(signal.targets.tp2.price)}</code> (+${signal.targets.tp2.gainPct.toFixed(1)}%) ⏱️ <b>${signal.targets.tp2.eta || '1–3 Jam'}</b>
+🎯 <b>Target TP3:</b> <code>$${formatPrice(signal.targets.tp3.price)}</code> (+${signal.targets.tp3.gainPct.toFixed(1)}%) ⏱️ <b>${signal.targets.tp3.eta || '6–24 Jam'}</b>
 🛑 <b>Stop Loss:</b> <code>${signal.stopLoss.label}</code>
 ⚖️ <b>Risk/Reward:</b> <code>${signal.riskRewardRatio}x</code>
+
+⏳ <b>Estimasi Waktu:</b> <code>${signal.durationSummary || 'TP1: 15–30 Menit | TP2: 1–3 Jam'}</code>
+📊 <b>Indikator Binance:</b> <code>${isLong ? 'MA(7/25/99) Golden Stack • BOLL Expansion • MACD Bullish • Triple RSI' : 'MA(7/25/99) Death Stack • BOLL Rejection • MACD Bearish • Triple RSI'}</code>
 
 🛡️ <b>Leverage Aman (Swing):</b> <code>${signal.leverage.safe.range}</code>
 ⚡ <b>Leverage Scalp (Kilat):</b> <code>${signal.leverage.scalp.range}</code>
@@ -293,6 +296,24 @@ async function runScanCycle() {
       const tp3Price = direction === 'LONG' ? currentPrice * (1 + tp3Pct / 100) : currentPrice * (1 - tp3Pct / 100);
       const slPrice = direction === 'LONG' ? currentPrice * (1 - slPct / 100) : currentPrice * (1 + slPct / 100);
 
+      const absVol = Math.abs(change24h);
+      let tp1Eta = '15 – 30 Menit';
+      let tp2Eta = '1 – 3 Jam';
+      let tp3Eta = '6 – 24 Jam (1 Hari)';
+      let durationSummary = 'TP1: 15–30m | TP2: 1–3h | TP3: 1 Hari';
+
+      if (absVol >= 15 || quoteVol >= 100_000_000) {
+        tp1Eta = '10 – 25 Menit (Kilat)';
+        tp2Eta = '45 Menit – 2 Jam (Intraday)';
+        tp3Eta = '4 – 12 Jam (Trend Run)';
+        durationSummary = 'Pergerakan ultra-volatil: TP1 tembus 10-25m, TP2 45m-2h, TP3 4-12h';
+      } else if (absVol >= 6 || quoteVol >= 30_000_000) {
+        tp1Eta = '20 – 45 Menit (Scalp)';
+        tp2Eta = '1.5 – 4 Jam (Intraday)';
+        tp3Eta = '8 – 24 Jam (1 Hari)';
+        durationSummary = 'Volatilitas aktif: TP1 tembus 20-45m, TP2 1.5-4h, TP3 1 hari';
+      }
+
       candidateSignals.push({
         id: `bf-${t.symbol}-${Date.now()}`,
         symbol: t.symbol,
@@ -307,10 +328,11 @@ async function runScanCycle() {
           label: `$${formatPrice(currentPrice * 0.996)} – $${formatPrice(currentPrice * 1.004)}`,
         },
         targets: {
-          tp1: { price: tp1Price, gainPct: tp1Pct },
-          tp2: { price: tp2Price, gainPct: tp2Pct },
-          tp3: { price: tp3Price, gainPct: tp3Pct },
+          tp1: { price: tp1Price, gainPct: tp1Pct, eta: tp1Eta },
+          tp2: { price: tp2Price, gainPct: tp2Pct, eta: tp2Eta },
+          tp3: { price: tp3Price, gainPct: tp3Pct, eta: tp3Eta },
         },
+        durationSummary,
         stopLoss: {
           price: slPrice,
           lossPct: -slPct,

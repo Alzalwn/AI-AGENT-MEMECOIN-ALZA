@@ -119,6 +119,22 @@ export interface BinanceFuturesSignal {
   timestamp: number;
   isArchived?: boolean;
   indicators?: FuturesTechnicalIndicators;
+  indicatorExplanation?: IndicatorExplanation;
+}
+
+export interface IndicatorExplanation {
+  maInsight: string;          // Penjelasan arah MA7/25/99 (Golden/Death cross)
+  bollInsight: string;        // Penjelasan posisi harga terhadap pita Bollinger
+  macdInsight: string;        // Penjelasan momentum garis DIF, DEA & Histogram
+  rsiInsight: string;         // Penjelasan momentum dorongan Triple RSI
+  directionVerdict: string;   // Keputusan final: Mengapa LONG atau SHORT
+  timeframeRecommendation: string; // Rekomendasi timeframe
+  estimatedDuration: {
+    tp1Eta: string;           // Estimasi waktu tempuh TP1 (Menit)
+    tp2Eta: string;           // Estimasi waktu tempuh TP2 (Jam)
+    tp3Eta: string;           // Estimasi waktu tempuh TP3 (Hari/Jam)
+    summaryText: string;      // Rangkuman perkiraan waktu
+  };
 }
 
 export interface FuturesTechnicalIndicators {
