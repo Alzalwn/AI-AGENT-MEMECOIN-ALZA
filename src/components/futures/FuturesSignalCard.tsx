@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { BinanceFuturesSignal } from '../../types/futures';
 import { formatFuturesPrice } from '../../engine/futuresSignalEngine';
+import { generateCommunitySignalPost } from '../../utils/signalPostFormatter';
 
 interface FuturesSignalCardProps {
   signal: BinanceFuturesSignal;
@@ -44,27 +45,23 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
   const isSupernova = signal.signalTier === 'SUPERNOVA';
 
   const handleCopySignal = () => {
-    const text = `🎯 [BINANCE FUTURES SIGNAL] ${signal.symbol} (${signal.direction})
-━━━━━━━━━━━━━━━━━━━━
-⚡ Arah: ${isLong ? '🟢 LONG / BUY' : '🔴 SHORT / SELL'}
-🏆 Tier: ${signal.signalTier} (Skor AI: ${signal.overallScore}/100)
-📈 Strategi: ${signal.strategyLabel}
+    const cleanPair = `${signal.baseAsset}/USDT`;
+    const entryPrice = formatFuturesPrice(signal.entryZone.current);
+    const tpPrice = formatFuturesPrice(signal.targets.tp2.price);
+    const slPrice = formatFuturesPrice(signal.stopLoss.price);
 
-💵 Entry Zone: ${signal.entryZone.label}
-🎯 Target TP1: $${formatFuturesPrice(signal.targets.tp1.price)} (+${signal.targets.tp1.gainPct.toFixed(1)}%) ⏱️ ${signal.targets.tp1.eta}
-🎯 Target TP2: $${formatFuturesPrice(signal.targets.tp2.price)} (+${signal.targets.tp2.gainPct.toFixed(1)}%) ⏱️ ${signal.targets.tp2.eta}
-🎯 Target TP3: $${formatFuturesPrice(signal.targets.tp3.price)} (+${signal.targets.tp3.gainPct.toFixed(1)}%) ⏱️ ${signal.targets.tp3.eta}
-🛑 Stop Loss: ${signal.stopLoss.label}
-⚖️ Risk/Reward: ${signal.riskRewardRatio}x
+    const technicalContext = signal.indicatorExplanation?.maInsight
+      ? signal.indicatorExplanation.maInsight.replace(/^Angka Aktual:.*?\.\s*/, '')
+      : 'mayoritas moving average dan indikator teknikal saat ini masih solid mendukung arah tren';
 
-⏳ Estimasi Waktu: ${signal.indicatorExplanation?.estimatedDuration.summaryText || `TP1: ${signal.targets.tp1.eta}`}
-🧠 Analisis Indikator: ${signal.indicatorExplanation?.directionVerdict || (isLong ? 'Konfluensi Bullish' : 'Konfluensi Bearish')}
-
-🛡️ Leverage Aman (Swing): ${signal.leverage.safe.range}
-⚡ Leverage Scalp (Kilat): ${signal.leverage.scalp.range}
-📊 Funding Rate: ${signal.derivativesData.fundingRatePct.toFixed(4)}%
-
-🔗 Eksekusi di Binance: ${signal.binanceUrl}`;
+    const text = generateCommunitySignalPost({
+      pair: cleanPair,
+      position: signal.direction,
+      entry: entryPrice,
+      takeProfit: tpPrice,
+      stopLoss: slPrice,
+      technicalContext,
+    });
 
     navigator.clipboard.writeText(text);
     setCopied(true);
@@ -73,13 +70,12 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
 
   return (
     <div
-      className={`rounded-2xl border transition-all duration-300 relative flex flex-col overflow-hidden font-sans ${
-        isSupernova
+      className={`rounded-2xl border transition-all duration-300 relative flex flex-col overflow-hidden font-sans ${isSupernova
           ? 'bg-gradient-to-b from-yellow-500/[0.07] via-zinc-950 to-zinc-950 border-yellow-500/40 shadow-[0_0_25px_rgba(234,179,8,0.12)]'
           : isLong
-          ? 'bg-zinc-950/90 border-emerald-500/25 hover:border-emerald-500/40 shadow-lg'
-          : 'bg-zinc-950/90 border-rose-500/25 hover:border-rose-500/40 shadow-lg'
-      }`}
+            ? 'bg-zinc-950/90 border-emerald-500/25 hover:border-emerald-500/40 shadow-lg'
+            : 'bg-zinc-950/90 border-rose-500/25 hover:border-rose-500/40 shadow-lg'
+        }`}
     >
       {/* Supernova Top Glow Accent */}
       {isSupernova && (
@@ -91,11 +87,10 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
         <div className="flex items-center gap-3">
           {/* Direction Icon Badge */}
           <div
-            className={`w-11 h-11 rounded-xl flex items-center justify-center font-black text-sm border shadow-inner ${
-              isLong
+            className={`w-11 h-11 rounded-xl flex items-center justify-center font-black text-sm border shadow-inner ${isLong
                 ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.25)]'
                 : 'bg-rose-500/15 border-rose-500/40 text-rose-400 shadow-[0_0_15px_rgba(244,63,94,0.25)]'
-            }`}
+              }`}
           >
             {isLong ? <TrendingUp className="w-6 h-6" /> : <TrendingDown className="w-6 h-6" />}
           </div>
@@ -106,11 +101,10 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
                 {signal.symbol}
               </span>
               <span
-                className={`px-2.5 py-0.5 rounded-full text-xs font-black tracking-wider flex items-center gap-1 ${
-                  isLong
+                className={`px-2.5 py-0.5 rounded-full text-xs font-black tracking-wider flex items-center gap-1 ${isLong
                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                     : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                }`}
+                  }`}
               >
                 {isLong ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
                 {signal.direction}
@@ -217,37 +211,49 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
                 <Sparkles className="w-3.5 h-3.5 text-yellow-400" />
                 <span>Indikator Binance (Confluence)</span>
               </span>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
                 signal.indicators.ma.alignment === 'BULLISH'
-                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                  : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                  ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                  : signal.indicators.ma.alignment === 'BEARISH'
+                  ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+                  : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
               }`}>
-                {signal.indicators.ma.alignment === 'BULLISH' ? '🟢 BULLISH CONFLUENCE' : '🔴 BEARISH CONFLUENCE'}
+                {signal.indicators.ma.alignment === 'BULLISH'
+                  ? '🟢 BULLISH CONFLUENCE'
+                  : signal.indicators.ma.alignment === 'BEARISH'
+                  ? '🔴 BEARISH CONFLUENCE'
+                  : '🟡 WAIT & SEE / NEUTRAL'}
               </span>
             </div>
 
-            {/* Indicator Badges Grid */}
+            {/* Indicator Badges Grid (Protokol Universal) */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-center text-[10px]">
               <div className="bg-zinc-950 p-1.5 rounded-lg border border-zinc-800">
                 <span className="text-zinc-500 block">MA(7/25/99)</span>
                 <span className="font-bold text-yellow-400 block mt-0.5">
-                  {signal.indicators.ma.alignment}
+                  {signal.indicators.ma.alignment === 'BULLISH'
+                    ? 'GOLDEN STACK'
+                    : signal.indicators.ma.alignment === 'BEARISH'
+                    ? 'DEATH STACK'
+                    : 'SIDEWAYS'}
                 </span>
               </div>
               <div className="bg-zinc-950 p-1.5 rounded-lg border border-zinc-800">
                 <span className="text-zinc-500 block">BOLL(20,2)</span>
                 <span className="font-bold text-purple-300 block mt-0.5">
                   {signal.indicators.bollingerBands.status === 'UPPER_BREAKOUT'
-                    ? '⚡ BREAKOUT'
+                    ? '⚡ BREAKOUT ATAS'
                     : signal.indicators.bollingerBands.status === 'LOWER_BOUNCE'
-                    ? '🔄 BOUNCE'
-                    : 'NORMAL'}
+                    ? '📉 LOWER TEST'
+                    : '⚖️ KONSOLIDASI'}
                 </span>
               </div>
               <div className="bg-zinc-950 p-1.5 rounded-lg border border-zinc-800">
                 <span className="text-zinc-500 block">MACD(12,26,9)</span>
-                <span className="font-bold text-emerald-400 block mt-0.5">
-                  {signal.indicators.macd.trend}
+                <span className={`font-bold block mt-0.5 ${
+                  signal.indicators.macd.dif > signal.indicators.macd.dea ? 'text-emerald-400' : 'text-rose-400'
+                }`}>
+                  {signal.indicators.macd.dif > signal.indicators.macd.dea ? 'DIF > DEA (BULL)' : 'DIF < DEA (BEAR)'}
                 </span>
               </div>
               <div className="bg-zinc-950 p-1.5 rounded-lg border border-zinc-800">
@@ -282,11 +288,10 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
                 {showAiAnalysis && (
                   <div className="p-3 bg-zinc-950 rounded-xl border border-zinc-800/90 space-y-2.5 text-[11px]">
                     {/* Direction Verdict */}
-                    <div className={`p-2.5 rounded-lg border ${
-                      isLong
+                    <div className={`p-2.5 rounded-lg border ${isLong
                         ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
                         : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
-                    }`}>
+                      }`}>
                       <p className="font-semibold leading-relaxed">
                         {signal.indicatorExplanation.directionVerdict}
                       </p>
@@ -392,13 +397,12 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
           <div>
             <span className="text-zinc-500 block text-[10px]">Funding Rate</span>
             <span
-              className={`font-bold ${
-                signal.derivativesData.fundingRatePct < 0
+              className={`font-bold ${signal.derivativesData.fundingRatePct < 0
                   ? 'text-emerald-400'
                   : signal.derivativesData.fundingRatePct > 0.04
-                  ? 'text-rose-400'
-                  : 'text-zinc-300'
-              }`}
+                    ? 'text-rose-400'
+                    : 'text-zinc-300'
+                }`}
             >
               {signal.derivativesData.fundingRatePct > 0 ? '+' : ''}
               {signal.derivativesData.fundingRatePct.toFixed(4)}%
@@ -415,9 +419,8 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
           <div className="text-right">
             <span className="text-zinc-500 block text-[10px]">Perubahan 24h</span>
             <span
-              className={`font-bold ${
-                signal.derivativesData.priceChange24hPct >= 0 ? 'text-emerald-400' : 'text-rose-400'
-              }`}
+              className={`font-bold ${signal.derivativesData.priceChange24hPct >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                }`}
             >
               {signal.derivativesData.priceChange24hPct >= 0 ? '+' : ''}
               {signal.derivativesData.priceChange24hPct.toFixed(2)}%
@@ -454,11 +457,10 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
 
         <button
           onClick={handleCopySignal}
-          className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
-            copied
+          className={`p-2.5 rounded-xl border transition-all cursor-pointer ${copied
               ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
               : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700 hover:border-zinc-600 text-zinc-300 hover:text-white'
-          }`}
+            }`}
           title="Salin Sinyal untuk Telegram / Komunitas"
         >
           {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}

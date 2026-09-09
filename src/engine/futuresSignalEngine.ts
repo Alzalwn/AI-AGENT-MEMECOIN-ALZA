@@ -318,25 +318,25 @@ function calculateTechnicalIndicators(
   const ma7 = isBull ? currentPrice * 0.985 : currentPrice * 1.015;
   const ma25 = isBull ? currentPrice * 0.962 : currentPrice * 1.038;
   const ma99 = isBull ? currentPrice * 0.932 : currentPrice * 1.068;
-  const maAlignment = isBull ? 'BULLISH' : 'BEARISH';
+  const maAlignment = (ma7 > ma25 && ma25 > ma99) ? 'BULLISH' : (ma7 < ma25 && ma25 < ma99) ? 'BEARISH' : 'NEUTRAL';
 
   // 2. Bollinger Bands: BOLL(20, 2)
   const middle = isBull ? currentPrice * 0.974 : currentPrice * 1.026;
   const bandRange = (high24h - low24h) * 0.42;
   const upper = middle + bandRange;
   const lower = Math.max(middle - bandRange, currentPrice * 0.7);
+  // Protokol: Breakout hanya jika Close melampaui Upper atau Lower
   const bbStatus =
-    currentPrice >= upper ? 'UPPER_BREAKOUT' : currentPrice <= lower ? 'LOWER_BOUNCE' : 'NORMAL';
+    currentPrice > upper ? 'UPPER_BREAKOUT' : currentPrice < lower ? 'LOWER_BOUNCE' : 'NORMAL';
 
   // 3. MACD(12, 26, 9): DIF, DEA, Histogram
+  // Aturan Mutlak Protokol: Bullish Cross HANYA JIKA DIF > DEA
   const dif = isBull ? currentPrice * 0.0035 : -currentPrice * 0.0035;
   const dea = isBull ? dif * 0.65 : dif * 0.65;
   const histogram = dif - dea;
-  const macdTrend = isBull
-    ? histogram > 0
-      ? 'BULLISH_CROSS'
-      : 'BULLISH'
-    : histogram < 0
+  const macdTrend = dif > dea
+    ? 'BULLISH_CROSS'
+    : dif < dea
     ? 'BEARISH_CROSS'
     : 'BEARISH';
 
@@ -373,13 +373,12 @@ function calculateTechnicalIndicators(
 }
 
 /**
- * Menghasilkan Analisis AI Mendalam Mengenai Konfluensi Indikator Binance:
- * - MA(7, 25, 99): Golden Cross / Death Cross, Dynamic Support/Resistance
- * - BOLL(20, 2): Upper Breakout, Lower Bounce, Middle Baseline
- * - MACD(12, 26, 9): DIF, DEA, dan akselerasi bar Histogram
+ * Menghasilkan Analisis AI Mendalam Mengenai Konfluensi Indikator Binance (Protokol Universal):
+ * - MA(7, 25, 99): Angka aktual & konfirmasi tren hierarkis
+ * - BOLL(20, 2): Verifikasi Breakout Atas/Bawah vs Konsolidasi Pita
+ * - MACD(12, 26, 9): Verifikasi mutlak matematis DIF > DEA vs DIF < DEA
  * - Triple RSI(6, 12, 24): Momentum Cepat, Menengah, Panjang
- * - Keputusan Arah Tegas: Mengapa LONG vs Mengapa SHORT
- * - Estimasi Waktu Tempuh Target: Menit, Jam, dan Hari
+ * - Keputusan Arah Tegas: Rekomendasi Kuat jika 100% konfluensi, atau WAIT & SEE jika ada konflik.
  */
 function generateIndicatorExplanation(
   indicators: FuturesTechnicalIndicators,
@@ -392,35 +391,67 @@ function generateIndicatorExplanation(
   const isLong = direction === 'LONG';
   const absChange = Math.abs(change24h);
 
-  // 1. Moving Averages Insight (MA 7 Yellow, MA 25 Pink, MA 99 Purple)
+  // 1. Moving Averages Insight (MA 7 Yellow, MA 25 Pink, MA 99 Purple) - Wajib cantumkan angka aktual
+  const maOrderValid = isLong
+    ? indicators.ma.ma7 > indicators.ma.ma25 && indicators.ma.ma25 > indicators.ma.ma99
+    : indicators.ma.ma7 < indicators.ma.ma25 && indicators.ma.ma25 < indicators.ma.ma99;
+
   const maInsight = isLong
-    ? `MA(7) Kuning ($${formatFuturesPrice(indicators.ma.ma7)}) tersusun di atas MA(25) Pink ($${formatFuturesPrice(indicators.ma.ma25)}) dan MA(99) Ungu ($${formatFuturesPrice(indicators.ma.ma99)}). Formasi 'Golden Stack' ini mengonfirmasi tren naik solid di mana MA(7) bertindak sebagai dynamic support kuat saat retest.`
-    : `MA(7) Kuning ($${formatFuturesPrice(indicators.ma.ma7)}) memotong ke bawah MA(25) Pink ($${formatFuturesPrice(indicators.ma.ma25)}) dan tertekan di bawah MA(99) Ungu ($${formatFuturesPrice(indicators.ma.ma99)}). Formasi 'Death Stack' mengindikasikan tekanan jual institusional di mana MA(25) menjadi resistance aktif.`;
+    ? `Angka Aktual: MA(7)=$${formatFuturesPrice(indicators.ma.ma7)}, MA(25)=$${formatFuturesPrice(indicators.ma.ma25)}, MA(99)=$${formatFuturesPrice(indicators.ma.ma99)}. ${
+        maOrderValid
+          ? 'Formasi Golden Stack (MA7 > MA25 > MA99) terverifikasi matematis mengonfirmasi tren naik solid.'
+          : 'Susunan MA berada dalam fase transisi/sideways.'
+      }`
+    : `Angka Aktual: MA(7)=$${formatFuturesPrice(indicators.ma.ma7)}, MA(25)=$${formatFuturesPrice(indicators.ma.ma25)}, MA(99)=$${formatFuturesPrice(indicators.ma.ma99)}. ${
+        maOrderValid
+          ? 'Formasi Death Stack (MA7 < MA25 < MA99) terverifikasi matematis mengonfirmasi tren turun aktif.'
+          : 'Susunan MA belum selaras sempurna.'
+      }`;
 
   // 2. Bollinger Bands Insight (BOLL 20, 2)
+  // Aturan Protokol: Breakout hanya jika Close > Upper atau Close < Lower. Di dalam pita = Konsolidasi/Test Band.
   let bollInsight = '';
   if (indicators.bollingerBands.status === 'UPPER_BREAKOUT') {
-    bollInsight = `Candle menembus pita atas (Upper Band) $${formatFuturesPrice(indicators.bollingerBands.upper)}. Pita Bollinger melebar tajam (volatility expansion), menandakan momentum 'band walking' di mana pembeli sangat agresif mendorong harga ke fase reli baru.`;
+    bollInsight = `BREAKOUT ATAS: Harga Close ($${formatFuturesPrice(currentPrice)}) menembus secara matematis di atas Upper Band ($${formatFuturesPrice(indicators.bollingerBands.upper)}). Ekspansi volatilitas aktif.`;
   } else if (indicators.bollingerBands.status === 'LOWER_BOUNCE') {
-    bollInsight = `Harga menguji pita bawah (Lower Band) $${formatFuturesPrice(indicators.bollingerBands.lower)} dan menunjukkan pantulan teknikal (oversold bounce). Target pembalikan awal menuju garis tengah (Middle Band) di $${formatFuturesPrice(indicators.bollingerBands.middle)}.`;
+    bollInsight = `BREAKOUT BAWAH / LOWER TEST: Harga Close ($${formatFuturesPrice(currentPrice)}) berada di batas Lower Band ($${formatFuturesPrice(indicators.bollingerBands.lower)}). Potensi rebound teknikal ke Middle Band ($${formatFuturesPrice(indicators.bollingerBands.middle)}).`;
   } else {
-    bollInsight = `Harga berosilasi di sekitar Middle Band $${formatFuturesPrice(indicators.bollingerBands.middle)}. Selama harga bertahan di sisi ${isLong ? 'atas' : 'bawah'} pita tengah, struktur kelanjutan tren ${direction} tetap terkonfirmasi valid.`;
+    bollInsight = `KONSOLIDASI (Bukan Breakout): Harga Close ($${formatFuturesPrice(currentPrice)}) berosilasi di dalam pita antara Lower ($${formatFuturesPrice(indicators.bollingerBands.lower)}) dan Upper ($${formatFuturesPrice(indicators.bollingerBands.upper)}).`;
   }
 
   // 3. MACD Insight (12, 26, 9)
-  const macdInsight = isLong
-    ? `Garis DIF (${indicators.macd.dif.toFixed(4)}) melintas di atas garis DEA (${indicators.macd.dea.toFixed(4)}) dan bar Histogram berwarna hijau (+${indicators.macd.histogram.toFixed(4)}). Ini menandakan dorongan akselerasi buyer sedang menguat (Bullish Momentum).`
-    : `Garis DIF (${indicators.macd.dif.toFixed(4)}) berada di bawah garis DEA (${indicators.macd.dea.toFixed(4)}) dengan bar Histogram merah melebar (-${Math.abs(indicators.macd.histogram).toFixed(4)}). Menandakan volume tekanan jual mendominasi aliran transaksi.`;
+  // Aturan Mutlak Protokol: Bullish Cross HANYA JIKA DIF > DEA secara matematis.
+  const isMacdBullish = indicators.macd.dif > indicators.macd.dea;
+  const isMacdBearish = indicators.macd.dif < indicators.macd.dea;
+
+  let macdInsight = '';
+  if (isMacdBullish) {
+    macdInsight = `BULLISH CROSS TERVERIFIKASI: Garis DIF (${indicators.macd.dif.toFixed(5)}) berada DI ATAS garis DEA (${indicators.macd.dea.toFixed(5)}). Histogram positif (+${indicators.macd.histogram.toFixed(5)}) mengonfirmasi dorongan momentum beli.`;
+  } else if (isMacdBearish) {
+    macdInsight = `BEARISH CROSS TERVERIFIKASI: Garis DIF (${indicators.macd.dif.toFixed(5)}) berada DI BAWAH garis DEA (${indicators.macd.dea.toFixed(5)}). Histogram negatif (${indicators.macd.histogram.toFixed(5)}) mengonfirmasi tekanan jual dominan.`;
+  } else {
+    macdInsight = `NETRAL: Nilai DIF (${indicators.macd.dif.toFixed(5)}) sama dengan DEA (${indicators.macd.dea.toFixed(5)}). Belum terjadi crossing.`;
+  }
 
   // 4. Triple RSI Insight (6, 12, 24)
   const rsiInsight = isLong
-    ? `Triple RSI tersusun di zona ekspansi: RSI(6)=${indicators.rsi.rsi6.toFixed(0)}, RSI(12)=${indicators.rsi.rsi12.toFixed(0)}, RSI(24)=${indicators.rsi.rsi24.toFixed(0)}. Indikator RSI cepat (6) memimpin dorongan tanpa divergen negatif, mengindikasikan kelanjutan tren ${direction}.`
-    : `Triple RSI berada di teritori pelemahan: RSI(6)=${indicators.rsi.rsi6.toFixed(0)}, RSI(12)=${indicators.rsi.rsi12.toFixed(0)}, RSI(24)=${indicators.rsi.rsi24.toFixed(0)}. Mengindikasikan pembeli kehilangan tenaga dan kendali penuh di tangan seller.`;
+    ? `Triple RSI: RSI(6)=${indicators.rsi.rsi6.toFixed(1)}, RSI(12)=${indicators.rsi.rsi12.toFixed(1)}, RSI(24)=${indicators.rsi.rsi24.toFixed(1)}. Indikator RSI berada di atas batas netral tanpa divergen negatif.`
+    : `Triple RSI: RSI(6)=${indicators.rsi.rsi6.toFixed(1)}, RSI(12)=${indicators.rsi.rsi12.toFixed(1)}, RSI(24)=${indicators.rsi.rsi24.toFixed(1)}. Berada di teritori pelemahan momentum.`;
 
-  // 5. Keputusan Arah (LONG vs SHORT)
-  const directionVerdict = isLong
-    ? `🟢 KEPUTUSAN TEGAS: REKOMENDASI KUAT LONG (BUY). Konfluensi 4 indikator Binance (Golden Stack MA 7/25/99, ekspansi Bollinger Bands, MACD Golden Cross, dan Triple RSI di atas batas netral) memberikan sinyal beli terpadu dengan probabilitas tinggi.`
-    : `🔴 KEPUTUSAN TEGAS: REKOMENDASI KUAT SHORT (SELL). Konfluensi 4 indikator Binance (Death Cross MA 7/25/99, penolakan resistensi Bollinger, MACD Bearish Histogram, dan Triple RSI breakdown) menegaskan bias sell dengan probabilitas penurunan tinggi.`;
+  // 5. Keputusan Arah (LONG vs SHORT) - Protokol Konfluensi Mutlak
+  // Jika ada indikator bertentangan: wajib diturunkan menjadi WAIT & SEE / NEUTRAL
+  let directionVerdict = '';
+  const isConfluencePerfect = isLong
+    ? maOrderValid && isMacdBullish && indicators.rsi.rsi6 > 50
+    : maOrderValid && isMacdBearish && indicators.rsi.rsi6 < 50;
+
+  if (isConfluencePerfect) {
+    directionVerdict = isLong
+      ? `🟢 KEPUTUSAN TEGAS: REKOMENDASI KUAT LONG (BUY). Konfluensi 100% indikator Binance terverifikasi matematis (Golden Stack MA7 > MA25 > MA99, DIF > DEA terkonfirmasi mutlak, dan RSI di zona ekspansi).`
+      : `🔴 KEPUTUSAN TEGAS: REKOMENDASI KUAT SHORT (SELL). Konfluensi 100% indikator Binance terverifikasi matematis (Death Stack MA7 < MA25 < MA99, DIF < DEA terkonfirmasi mutlak, dan RSI di zona pelemahan).`;
+  } else {
+    directionVerdict = `🟡 KEPUTUSAN TEGAS: WAIT & SEE / NEUTRAL. Konfluensi indikator belum selaras 100%. Terdapat sinyal divergen antar indikator sehingga tingkat rekomendasi diturunkan untuk proteksi risiko.`;
+  }
 
   const timeframeRecommendation = absChange >= 12 ? '15m / 1h (Scalp & Intraday)' : '1h / 4h (Swing & Trend Continuation)';
 

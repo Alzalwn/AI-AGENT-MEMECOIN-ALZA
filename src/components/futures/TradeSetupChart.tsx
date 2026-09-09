@@ -13,8 +13,16 @@ import {
   ChevronDown,
   ChevronUp,
   Timer,
+  ShieldAlert,
+  CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react';
 import { BinanceFuturesSignal, FuturesDirection } from '../../types/futures';
+import {
+  analyzeTechnicalProtocol,
+  formatExactPrice,
+  ProtocolVerificationResult,
+} from '../../engine/technicalProtocolAnalyzer';
 
 interface KlineData {
   time: number;
@@ -226,6 +234,12 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
 
   // Calculate Technical Indicator Series
   const closePrices = useMemo(() => klines.map((k) => k.close), [klines]);
+
+  // Universal Technical Protocol Result (Kalkulasi 100% Real-Time dari Close Candle Terakhir)
+  const liveProtocol = useMemo(() => {
+    if (closePrices.length === 0) return null;
+    return analyzeTechnicalProtocol(closePrices, timeframe);
+  }, [closePrices, timeframe]);
 
   const ma7Series = useMemo(() => calculateSMA(closePrices, 7), [closePrices]);
   const ma25Series = useMemo(() => calculateSMA(closePrices, 25), [closePrices]);
@@ -579,11 +593,12 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
       ctx.fillStyle = '#18181b';
       ctx.fillRect(padding.left, macdTop, chartW, 1);
 
-      // MACD Header Label
-      ctx.fillStyle = '#a1a1aa';
+      // MACD Header Label (Protokol Mutlak DIF vs DEA)
+      const isMacdBull = currentDIF > currentDEA;
+      ctx.fillStyle = isMacdBull ? '#34d399' : '#f87171';
       ctx.font = '9px monospace';
       ctx.fillText(
-        `MACD(12,26,9)  DIF:${currentDIF.toFixed(5)}  DEA:${currentDEA.toFixed(5)}  Hist:${currentHist.toFixed(5)}`,
+        `MACD(12,26,9)  DIF:${currentDIF.toFixed(5)}  DEA:${currentDEA.toFixed(5)}  Hist:${currentHist.toFixed(5)}  [${isMacdBull ? 'DIF > DEA (BULLISH)' : 'DIF < DEA (BEARISH)'}]`,
         padding.left,
         macdTop + 11
       );
@@ -904,53 +919,166 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
           <>
             <canvas ref={canvasRef} className="w-full h-full flex-1 cursor-crosshair block" />
 
-            {/* AI Confluence & Duration Explanation Strip */}
-            {signal?.indicatorExplanation && (
+            {/* Protokol Analisis Teknikal Universal - Real-Time Close Candle Telemetry */}
+            {liveProtocol && (
               <div className="bg-zinc-950 border-t border-zinc-800/80 px-4 py-2 font-mono text-xs">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-yellow-400 font-bold flex items-center gap-1 text-[11px]">
+                    <span className="text-yellow-400 font-bold flex items-center gap-1.5 text-[11px]">
                       <Sparkles className="w-3.5 h-3.5" />
-                      <span>Analisis AI Binance:</span>
+                      <span>Protokol Analisis ({timeframe}):</span>
                     </span>
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                      isLong ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                    }`}>
-                      {isLong ? '🟢 REKOMENDASI: LONG' : '🔴 REKOMENDASI: SHORT'}
+
+                    {/* Verdict Badge Sesuai Protokol */}
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                        liveProtocol.verdict.status === 'STRONG_BUY'
+                          ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
+                          : liveProtocol.verdict.status === 'STRONG_SELL'
+                          ? 'bg-rose-500/15 text-rose-300 border-rose-500/40'
+                          : 'bg-amber-500/15 text-amber-300 border-amber-500/40'
+                      }`}
+                    >
+                      {liveProtocol.verdict.badgeLabel}
                     </span>
-                    <span className="text-zinc-400 text-[11px] flex items-center gap-1">
-                      <Timer className="w-3 h-3 text-yellow-400" />
-                      <span>Waktu Tempuh: TP1 ({signal.indicatorExplanation.estimatedDuration.tp1Eta}) | TP2 ({signal.indicatorExplanation.estimatedDuration.tp2Eta})</span>
-                    </span>
+
+                    {/* Live Micro Badges */}
+                    <div className="hidden sm:flex items-center gap-1.5 text-[10px]">
+                      {/* MACD DIF vs DEA */}
+                      <span
+                        className={`px-1.5 py-0.5 rounded border ${
+                          liveProtocol.indicators.macd.isDIFAboveDEA
+                            ? 'bg-emerald-950/60 text-emerald-400 border-emerald-800/50'
+                            : 'bg-rose-950/60 text-rose-400 border-rose-800/50'
+                        }`}
+                      >
+                        MACD: {liveProtocol.indicators.macd.isDIFAboveDEA ? 'DIF > DEA ↗' : 'DIF < DEA ↘'}
+                      </span>
+
+                      {/* Bollinger Status */}
+                      <span className="px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-purple-300">
+                        BOLL: {liveProtocol.indicators.bollingerBands.status}
+                      </span>
+
+                      {/* MA Stack */}
+                      <span className="px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-yellow-300">
+                        MA: {liveProtocol.indicators.ma.alignment === 'BULLISH_UPTREND' ? 'Golden Stack' : liveProtocol.indicators.ma.alignment === 'BEARISH_DOWNTREND' ? 'Death Stack' : 'Transisi'}
+                      </span>
+                    </div>
+
+                    {signal?.indicatorExplanation && (
+                      <span className="text-zinc-400 text-[11px] hidden md:flex items-center gap-1">
+                        <Timer className="w-3 h-3 text-yellow-400" />
+                        <span>Waktu: TP1 ({signal.indicatorExplanation.estimatedDuration.tp1Eta}) | TP2 ({signal.indicatorExplanation.estimatedDuration.tp2Eta})</span>
+                      </span>
+                    )}
                   </div>
 
                   <button
                     type="button"
                     onClick={() => setShowChartAiAnalysis(!showChartAiAnalysis)}
-                    className="flex items-center gap-1 text-yellow-400 hover:text-yellow-300 text-[11px] font-bold transition-colors cursor-pointer"
+                    className="flex items-center gap-1 text-yellow-400 hover:text-yellow-300 text-[11px] font-bold transition-colors cursor-pointer bg-yellow-500/10 hover:bg-yellow-500/20 px-2.5 py-1 rounded-lg border border-yellow-500/30"
                   >
-                    <span>{showChartAiAnalysis ? 'Tutup Detail' : 'Buka Detail Indikator'}</span>
+                    <span>{showChartAiAnalysis ? 'Tutup Audit' : 'Audit 4 Indikator'}</span>
                     {showChartAiAnalysis ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                   </button>
                 </div>
 
+                {/* Expanded Detailed 4-Pillar Verification Panel */}
                 {showChartAiAnalysis && (
-                  <div className="mt-2 pt-2 border-t border-zinc-800/80 grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px]">
-                    <div className="p-2.5 rounded-lg bg-zinc-900/90 border border-zinc-800 space-y-1.5">
-                      <span className="font-bold text-emerald-400 block text-xs">🎯 Keputusan Arah & Estimasi Waktu:</span>
-                      <p className="text-zinc-200 leading-relaxed text-[11px]">{signal.indicatorExplanation.directionVerdict}</p>
-                      <div className="pt-1.5 border-t border-zinc-800/80 text-[10px] text-zinc-400">
-                        <span className="text-yellow-400 font-bold block mb-0.5">⏱️ Ringkasan Durasi:</span>
-                        <p>{signal.indicatorExplanation.estimatedDuration.summaryText}</p>
+                  <div className="mt-2 pt-2 border-t border-zinc-800/80 space-y-2 text-[11px]">
+                    {/* Verdict & Confluence Summary */}
+                    <div
+                      className={`p-2.5 rounded-lg border ${
+                        liveProtocol.verdict.status === 'STRONG_BUY'
+                          ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200'
+                          : liveProtocol.verdict.status === 'STRONG_SELL'
+                          ? 'bg-rose-950/30 border-rose-500/40 text-rose-200'
+                          : 'bg-amber-950/30 border-amber-500/40 text-amber-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-bold flex items-center gap-1.5 text-xs">
+                          {liveProtocol.verdict.status === 'WAIT_AND_SEE_NEUTRAL' ? (
+                            <AlertTriangle className="w-4 h-4 text-amber-400" />
+                          ) : (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          )}
+                          <span>Keputusan Protokol: {liveProtocol.verdict.badgeLabel}</span>
+                        </span>
+                        <span className="font-bold text-[10px] px-2 py-0.5 rounded bg-black/50 border border-current">
+                          Konfluensi: {liveProtocol.verdict.confluenceRate}%
+                        </span>
                       </div>
+                      <p className="leading-relaxed text-[11px]">{liveProtocol.verdict.summary}</p>
                     </div>
 
-                    <div className="p-2.5 rounded-lg bg-zinc-900/90 border border-zinc-800 space-y-1">
-                      <span className="font-bold text-yellow-400 block text-xs">📊 Arti 4 Indikator Binance:</span>
-                      <p className="text-zinc-300 text-[10px] leading-relaxed">• <b>MA(7/25/99):</b> {signal.indicatorExplanation.maInsight}</p>
-                      <p className="text-zinc-300 text-[10px] leading-relaxed">• <b>BOLL(20,2):</b> {signal.indicatorExplanation.bollInsight}</p>
-                      <p className="text-zinc-300 text-[10px] leading-relaxed">• <b>MACD(12,26,9):</b> {signal.indicatorExplanation.macdInsight}</p>
-                      <p className="text-zinc-300 text-[10px] leading-relaxed">• <b>RSI(6/12/24):</b> {signal.indicatorExplanation.rsiInsight}</p>
+                    {/* Conflict Warnings if not 100% Confluence */}
+                    {liveProtocol.verdict.conflicts.length > 0 && (
+                      <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 space-y-1">
+                        <span className="font-bold flex items-center gap-1 text-[11px]">
+                          <ShieldAlert className="w-3.5 h-3.5" />
+                          <span>Peringatan Konflik Indikator (Wajib Diterapkan):</span>
+                        </span>
+                        <ul className="list-disc list-inside space-y-0.5 text-[10px] text-amber-200/90 pl-1">
+                          {liveProtocol.verdict.conflicts.map((c, i) => (
+                            <li key={i}>{c}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* 4 Pillars Verification Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[10px]">
+                      {/* Pillar 1: MACD */}
+                      <div className="p-2 rounded-lg bg-zinc-900/70 border border-zinc-800 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-emerald-400">1. Verifikasi MACD (Mutlak)</span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded font-bold ${
+                              liveProtocol.indicators.macd.isDIFAboveDEA
+                                ? 'bg-emerald-500/20 text-emerald-300'
+                                : 'bg-rose-500/20 text-rose-300'
+                            }`}
+                          >
+                            {liveProtocol.indicators.macd.isDIFAboveDEA ? 'DIF > DEA (Bullish)' : 'DIF < DEA (Bearish)'}
+                          </span>
+                        </div>
+                        <p className="text-zinc-300 leading-relaxed">{liveProtocol.indicators.macd.displayText}</p>
+                      </div>
+
+                      {/* Pillar 2: Bollinger Bands */}
+                      <div className="p-2 rounded-lg bg-zinc-900/70 border border-zinc-800 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-purple-300">2. Verifikasi Bollinger Bands</span>
+                          <span className="px-1.5 py-0.5 rounded font-bold bg-purple-500/20 text-purple-300">
+                            {liveProtocol.indicators.bollingerBands.status}
+                          </span>
+                        </div>
+                        <p className="text-zinc-300 leading-relaxed">{liveProtocol.indicators.bollingerBands.displayText}</p>
+                      </div>
+
+                      {/* Pillar 3: Moving Averages */}
+                      <div className="p-2 rounded-lg bg-zinc-900/70 border border-zinc-800 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-yellow-400">3. Verifikasi Moving Average</span>
+                          <span className="px-1.5 py-0.5 rounded font-bold bg-yellow-500/20 text-yellow-300">
+                            {liveProtocol.indicators.ma.alignment}
+                          </span>
+                        </div>
+                        <p className="text-zinc-300 leading-relaxed">{liveProtocol.indicators.ma.displayText}</p>
+                      </div>
+
+                      {/* Pillar 4: Triple RSI Momentum */}
+                      <div className="p-2 rounded-lg bg-zinc-900/70 border border-zinc-800 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-pink-400">4. Verifikasi Triple RSI</span>
+                          <span className="px-1.5 py-0.5 rounded font-bold bg-pink-500/20 text-pink-300">
+                            {liveProtocol.indicators.rsi.status}
+                          </span>
+                        </div>
+                        <p className="text-zinc-300 leading-relaxed">{liveProtocol.indicators.rsi.displayText}</p>
+                      </div>
                     </div>
                   </div>
                 )}
