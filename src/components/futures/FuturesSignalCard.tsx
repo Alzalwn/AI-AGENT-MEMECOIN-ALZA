@@ -200,6 +200,51 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
           </div>
         </div>
 
+        {/* Binance Technical Indicators Confluence (MA, BOLL, MACD, RSI) */}
+        {signal.indicators && (
+          <div className="bg-zinc-900/60 p-2.5 rounded-xl border border-zinc-800/80 flex flex-col gap-1.5 font-mono text-[11px]">
+            <div className="flex items-center justify-between text-zinc-400 border-b border-zinc-800/50 pb-1">
+              <span className="font-bold text-zinc-300 flex items-center gap-1.5">
+                <span>📊</span> Indikator Binance (Confluence)
+              </span>
+              <span className="text-[10px] text-yellow-400 font-bold">
+                {signal.indicators.ma.alignment === 'BULLISH' ? '🟢 BULLISH STACK' : '🔴 BEARISH STACK'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-center text-[10px]">
+              <div className="bg-zinc-950 p-1.5 rounded-lg border border-zinc-800">
+                <span className="text-zinc-500 block">MA(7/25/99)</span>
+                <span className="font-bold text-yellow-400 block mt-0.5">
+                  {signal.indicators.ma.alignment}
+                </span>
+              </div>
+              <div className="bg-zinc-950 p-1.5 rounded-lg border border-zinc-800">
+                <span className="text-zinc-500 block">BOLL(20,2)</span>
+                <span className="font-bold text-purple-300 block mt-0.5">
+                  {signal.indicators.bollingerBands.status === 'UPPER_BREAKOUT'
+                    ? '⚡ BREAKOUT'
+                    : signal.indicators.bollingerBands.status === 'LOWER_BOUNCE'
+                    ? '🔄 BOUNCE'
+                    : 'NORMAL'}
+                </span>
+              </div>
+              <div className="bg-zinc-950 p-1.5 rounded-lg border border-zinc-800">
+                <span className="text-zinc-500 block">MACD(12,26,9)</span>
+                <span className="font-bold text-emerald-400 block mt-0.5">
+                  {signal.indicators.macd.trend}
+                </span>
+              </div>
+              <div className="bg-zinc-950 p-1.5 rounded-lg border border-zinc-800">
+                <span className="text-zinc-500 block">RSI(6/12/24)</span>
+                <span className="font-bold text-pink-400 block mt-0.5">
+                  {signal.indicators.rsi.rsi6.toFixed(0)}/{signal.indicators.rsi.rsi12.toFixed(0)}/{signal.indicators.rsi.rsi24.toFixed(0)}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Dual Leverage Profile Section (Rekomendasi Aman & Scalp) */}
         <div className="bg-zinc-900/50 p-3 rounded-xl border border-zinc-800/80">
           <div className="flex items-center justify-between mb-2">

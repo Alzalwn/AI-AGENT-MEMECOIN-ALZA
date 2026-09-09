@@ -118,6 +118,34 @@ export interface BinanceFuturesSignal {
   tradingViewSymbol: string;   // BINANCE:{SYMBOL}.P
   timestamp: number;
   isArchived?: boolean;
+  indicators?: FuturesTechnicalIndicators;
+}
+
+export interface FuturesTechnicalIndicators {
+  ma: {
+    ma7: number;
+    ma25: number;
+    ma99: number;
+    alignment: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  };
+  bollingerBands: {
+    upper: number;
+    middle: number;
+    lower: number;
+    status: 'UPPER_BREAKOUT' | 'LOWER_BOUNCE' | 'SQUEEZE' | 'NORMAL';
+  };
+  macd: {
+    dif: number;
+    dea: number;
+    histogram: number;
+    trend: 'BULLISH_CROSS' | 'BEARISH_CROSS' | 'BULLISH' | 'BEARISH';
+  };
+  rsi: {
+    rsi6: number;
+    rsi12: number;
+    rsi24: number;
+    status: 'OVERBOUGHT' | 'OVERSOLD' | 'BULLISH_MOMENTUM' | 'BEARISH_MOMENTUM' | 'NEUTRAL';
+  };
 }
 
 export interface FuturesMarketStats {
