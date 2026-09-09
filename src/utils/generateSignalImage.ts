@@ -19,6 +19,34 @@ export interface SignalImageParams {
 }
 
 /**
+ * Polyfill helper untuk Canvas roundRect
+ */
+function drawRoundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
+) {
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(x, y, w, h, r);
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+}
+
+/**
  * Menghasilkan Blob PNG gambar grafik analisis sinyal
  */
 export async function generateSignalImageBlob(params: SignalImageParams): Promise<Blob> {
@@ -110,7 +138,7 @@ export async function generateSignalImageBlob(params: SignalImageParams): Promis
   ctx.strokeStyle = isLong ? '#10b981' : '#f43f5e';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.roundRect(badgeX, badgeY, 78, 24, 6);
+  drawRoundRect(ctx, badgeX, badgeY, 78, 24, 6);
   ctx.fill();
   ctx.stroke();
 
@@ -130,9 +158,7 @@ export async function generateSignalImageBlob(params: SignalImageParams): Promis
     const x = chartLeft + i * candleWidth + candleWidth / 2;
     const progress = i / candleCount;
     // Tren mendekati entry
-    const drift = isLong
-      ? (params.entryPrice - simPrice) * (0.04 + progress * 0.08)
-      : (params.entryPrice - simPrice) * (0.04 + progress * 0.08);
+    const drift = (params.entryPrice - simPrice) * (0.04 + progress * 0.08);
     const noise = (Math.sin(i * 0.8) + (i % 2 === 0 ? 0.3 : -0.3)) * (params.entryPrice * 0.005);
     const open = simPrice;
     const close = i === candleCount - 1 ? params.entryPrice : open + drift + noise;
@@ -215,7 +241,7 @@ export async function generateSignalImageBlob(params: SignalImageParams): Promis
   ctx.strokeStyle = '#10b981';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.roundRect(setupStartX + 120, tpY - 32, 95, 24, 6);
+  drawRoundRect(ctx, setupStartX + 120, tpY - 32, 95, 24, 6);
   ctx.fill();
   ctx.stroke();
 
@@ -227,7 +253,7 @@ export async function generateSignalImageBlob(params: SignalImageParams): Promis
   // Badge Harga TP di Sumbu Kanan
   ctx.fillStyle = '#10b981';
   ctx.beginPath();
-  ctx.roundRect(width - 76, tpY - 13, 68, 25, 4);
+  drawRoundRect(ctx, width - 76, tpY - 13, 68, 25, 4);
   ctx.fill();
   ctx.fillStyle = '#042f2e';
   ctx.font = 'bold 12px monospace';
@@ -246,7 +272,7 @@ export async function generateSignalImageBlob(params: SignalImageParams): Promis
   ctx.strokeStyle = '#64748b';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.roundRect(setupStartX + 130, entryY - 28, 75, 24, 6);
+  drawRoundRect(ctx, setupStartX + 130, entryY - 28, 75, 24, 6);
   ctx.fill();
   ctx.stroke();
 
@@ -257,7 +283,7 @@ export async function generateSignalImageBlob(params: SignalImageParams): Promis
   // Badge Harga Entry di Sumbu Kanan
   ctx.fillStyle = '#ffffff';
   ctx.beginPath();
-  ctx.roundRect(width - 76, entryY - 13, 68, 25, 4);
+  drawRoundRect(ctx, width - 76, entryY - 13, 68, 25, 4);
   ctx.fill();
   ctx.fillStyle = '#020617';
   ctx.font = 'bold 12px monospace';
@@ -276,7 +302,7 @@ export async function generateSignalImageBlob(params: SignalImageParams): Promis
   ctx.strokeStyle = '#f43f5e';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.roundRect(setupStartX + 120, slY + 8, 95, 24, 6);
+  drawRoundRect(ctx, setupStartX + 120, slY + 8, 95, 24, 6);
   ctx.fill();
   ctx.stroke();
 
@@ -287,7 +313,7 @@ export async function generateSignalImageBlob(params: SignalImageParams): Promis
   // Badge Harga SL di Sumbu Kanan
   ctx.fillStyle = '#f43f5e';
   ctx.beginPath();
-  ctx.roundRect(width - 76, slY - 13, 68, 25, 4);
+  drawRoundRect(ctx, width - 76, slY - 13, 68, 25, 4);
   ctx.fill();
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 12px monospace';
@@ -347,6 +373,48 @@ export async function generateSignalImageBlob(params: SignalImageParams): Promis
 }
 
 /**
+ * Salin Gambar Murni (PNG) ke Clipboard
+ * Saat user paste (Ctrl+V) di Telegram Desktop/Discord, Telegram langsung membuka dialog upload foto!
+ */
+export async function copyImageToClipboard(imageBlob: Blob): Promise<boolean> {
+  try {
+    if (typeof ClipboardItem !== 'undefined' && navigator.clipboard && navigator.clipboard.write) {
+      const item = new ClipboardItem({ 'image/png': imageBlob });
+      await navigator.clipboard.write([item]);
+      return true;
+    }
+  } catch (err) {
+    console.warn('[Clipboard] copyImageToClipboard gagal:', err);
+  }
+  return false;
+}
+
+/**
+ * Salin Teks Format Caption Saja ke Clipboard
+ */
+export async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.opacity = '0';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    const successful = document.execCommand('copy');
+    document.body.removeChild(textArea);
+    return successful;
+  } catch (err) {
+    console.warn('[Clipboard] copyTextToClipboard gagal:', err);
+    return false;
+  }
+}
+
+/**
  * Salin Teks Sinyal Sekaligus Gambar ke Clipboard Browser
  * Mendukung paste langsung (Ctrl+V) foto & caption di Telegram/Discord
  */
@@ -354,38 +422,52 @@ export async function copySignalWithImageToClipboard(
   text: string,
   imageBlob: Blob
 ): Promise<{ success: boolean; fallbackDownloaded?: boolean }> {
+  let copiedImage = false;
+  let copiedText = false;
+
   try {
-    // 1. Coba ClipboardItem multi-MIME modern (image/png + text/plain)
     if (typeof ClipboardItem !== 'undefined' && navigator.clipboard && navigator.clipboard.write) {
+      // Buat data URL base64 untuk mendukung aplikasi yang membaca text/html
+      const dataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(imageBlob);
+      });
+
+      const escapedText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const htmlPayload = `<div><p><img src="${dataUrl}" alt="Signal Chart" style="max-width: 100%; height: auto; border-radius: 8px;" /></p><pre style="white-space: pre-wrap; font-family: sans-serif;">${escapedText}</pre></div>`;
+
+      // 1. Coba ClipboardItem multi-MIME lengkap (image/png + text/html + text/plain)
       try {
         const item = new ClipboardItem({
           'image/png': imageBlob,
+          'text/html': new Blob([htmlPayload], { type: 'text/html' }),
           'text/plain': new Blob([text], { type: 'text/plain' }),
         });
         await navigator.clipboard.write([item]);
-        return { success: true };
-      } catch (e) {
-        console.warn('[Clipboard] Multi-MIME write failed, trying image-only then text:', e);
-        // Coba gambar dulu ke clipboard
+        copiedImage = true;
+        copiedText = true;
+      } catch (errMulti) {
+        console.warn('[Clipboard] Multi-MIME write failed, trying image-only:', errMulti);
         try {
-          const item = new ClipboardItem({ 'image/png': imageBlob });
-          await navigator.clipboard.write([item]);
-          return { success: true };
+          const imgItem = new ClipboardItem({ 'image/png': imageBlob });
+          await navigator.clipboard.write([imgItem]);
+          copiedImage = true;
         } catch {
-          // Fallback salin teks saja
           await navigator.clipboard.writeText(text);
+          copiedText = true;
         }
       }
     } else {
       await navigator.clipboard.writeText(text);
+      copiedText = true;
     }
   } catch (err) {
-    console.error('[Clipboard] Error:', err);
+    console.error('[Clipboard] copySignalWithImageToClipboard error:', err);
   }
 
-  // Auto-download gambar sebagai fallback andal jika aplikasi target tidak menerima paste gambar
-  downloadImageBlob(imageBlob, 'signal-analysis.png');
-  return { success: true, fallbackDownloaded: true };
+  return { success: copiedImage || copiedText };
 }
 
 /**

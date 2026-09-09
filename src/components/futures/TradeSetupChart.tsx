@@ -32,6 +32,7 @@ import {
   copySignalWithImageToClipboard,
   downloadImageBlob,
 } from '../../utils/generateSignalImage';
+import { SignalShareModal } from './SignalShareModal';
 
 interface KlineData {
   time: number;
@@ -153,6 +154,12 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
   const [isCopyingChart, setIsCopyingChart] = useState<boolean>(false);
   const [isDownloadingChart, setIsDownloadingChart] = useState<boolean>(false);
 
+  // State Modal Bagikan Sinyal & Gambar
+  const [shareModalOpen, setShareModalOpen] = useState<boolean>(false);
+  const [shareImageBlob, setShareImageBlob] = useState<Blob | null>(null);
+  const [shareImageUrl, setShareImageUrl] = useState<string | null>(null);
+  const [shareFormattedText, setShareFormattedText] = useState<string>('');
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -208,8 +215,15 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
       canvas.toBlob(async (blob) => {
         if (blob) {
           await copySignalWithImageToClipboard(text, blob);
+          // Auto-download file PNG chart
+          downloadImageBlob(blob, `${symbol.replace('/', '-')}-${direction}-chart.png`);
+          const imgUrl = URL.createObjectURL(blob);
+          setShareImageBlob(blob);
+          setShareImageUrl(imgUrl);
+          setShareFormattedText(text);
+          setShareModalOpen(true);
           setCopiedChart(true);
-          setTimeout(() => setCopiedChart(false), 2500);
+          setTimeout(() => setCopiedChart(false), 3000);
         }
       }, 'image/png');
     } catch (err) {
@@ -1247,6 +1261,21 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
           />
         )}
       </div>
+
+      {/* Modal Preview & Opsi Salin Sinyal + Gambar */}
+      <SignalShareModal
+        isOpen={shareModalOpen}
+        onClose={() => setShareModalOpen(false)}
+        symbol={symbol.includes('/') ? symbol : `${symbol.replace('USDT', '')}/USDT`}
+        direction={direction}
+        formattedText={shareFormattedText}
+        imageBlob={shareImageBlob}
+        imageUrl={shareImageUrl}
+        strategyLabel={signal?.strategyLabel}
+        entryPrice={entryPrice}
+        tpPrice={selectedTargetPrice}
+        slPrice={stopLossPrice}
+      />
     </div>
   );
 };

@@ -23,6 +23,7 @@ import {
   Info,
   Download,
   Image as ImageIcon,
+  Share2,
 } from 'lucide-react';
 import { BinanceFuturesSignal } from '../../types/futures';
 import { formatFuturesPrice } from '../../engine/futuresSignalEngine';
@@ -32,6 +33,7 @@ import {
   copySignalWithImageToClipboard,
   downloadImageBlob,
 } from '../../utils/generateSignalImage';
+import { SignalShareModal } from './SignalShareModal';
 
 interface FuturesSignalCardProps {
   signal: BinanceFuturesSignal;
@@ -49,6 +51,12 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
   const [isDownloading, setIsDownloading] = useState(false);
   const [activeLeverageTab, setActiveLeverageTab] = useState<'both' | 'safe' | 'scalp'>('both');
   const [showAiAnalysis, setShowAiAnalysis] = useState(false);
+
+  // State Modal Bagikan Sinyal & Gambar
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareImageBlob, setShareImageBlob] = useState<Blob | null>(null);
+  const [shareImageUrl, setShareImageUrl] = useState<string | null>(null);
+  const [shareFormattedText, setShareFormattedText] = useState('');
 
   const isLong = signal.direction === 'LONG';
   const isSupernova = signal.signalTier === 'SUPERNOVA';
@@ -114,8 +122,19 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
       // Salin Teks dan Gambar ke Clipboard
       await copySignalWithImageToClipboard(text, imageBlob);
 
+      // Auto-download file PNG agar pengguna memiliki file gambar yang siap di-drag ke Telegram
+      const filename = `${signal.symbol.replace('/', '-')}-${signal.direction}-analisis.png`;
+      downloadImageBlob(imageBlob, filename);
+
+      // Buka modal preview agar pengguna dapat melihat gambar dan memilih opsi salin tambahan
+      const imgUrl = URL.createObjectURL(imageBlob);
+      setShareImageBlob(imageBlob);
+      setShareImageUrl(imgUrl);
+      setShareFormattedText(text);
+      setShareModalOpen(true);
+
       setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
+      setTimeout(() => setCopied(false), 3000);
     } catch (err) {
       console.error('Gagal menyalin sinyal beserta gambar:', err);
     } finally {
@@ -137,7 +156,7 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
         stopLossPrice: signal.stopLoss.price,
         strategyLabel: signal.strategyLabel,
       });
-      downloadImageBlob(blob, `${signal.symbol}-${signal.direction}-analisis.png`);
+      downloadImageBlob(blob, `${signal.symbol.replace('/', '-')}-${signal.direction}-analisis.png`);
     } catch (err) {
       console.error('Gagal mendownload gambar:', err);
     } finally {
@@ -567,6 +586,21 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
           )}
         </button>
       </div>
+
+      {/* Modal Preview & Opsi Salin Sinyal + Gambar */}
+      <SignalShareModal
+        isOpen={shareModalOpen}
+        onClose={() => setShareModalOpen(false)}
+        symbol={`${signal.baseAsset}/USDT`}
+        direction={signal.direction}
+        formattedText={shareFormattedText}
+        imageBlob={shareImageBlob}
+        imageUrl={shareImageUrl}
+        strategyLabel={signal.strategyLabel}
+        entryPrice={signal.entryZone.current}
+        tpPrice={signal.targets.tp1.price}
+        slPrice={signal.stopLoss.price}
+      />
     </div>
   );
 };
