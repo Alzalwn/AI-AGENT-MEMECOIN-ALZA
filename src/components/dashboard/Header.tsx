@@ -37,6 +37,8 @@ import Button from '../ui/Button';
 import { ScannerStatus } from './ScannerStatus';
 
 interface HeaderProps {
+  activeDashboard?: 'memecoin' | 'binance-futures';
+  onSwitchDashboard?: (dashboard: 'memecoin' | 'binance-futures') => void;
   onOpenWallet: () => void;
   onOpenStrategy: () => void;
   onOpenAlerts: () => void;
@@ -53,6 +55,8 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({
+  activeDashboard = 'memecoin',
+  onSwitchDashboard,
   onOpenWallet,
   onOpenStrategy,
   onOpenAlerts,
@@ -96,17 +100,46 @@ export const Header: React.FC<HeaderProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="font-black text-sm sm:text-base tracking-wider text-zinc-100 uppercase">
-                  AI Alpha Signal
+                  {activeDashboard === 'binance-futures' ? 'Binance Futures' : 'AI Alpha Signal'}
                 </h1>
-                <Badge variant="cyan" size="xs">
-                  v2.0 PRO
+                <Badge variant={activeDashboard === 'binance-futures' ? 'amber' : 'cyan'} size="xs">
+                  {activeDashboard === 'binance-futures' ? 'RADAR' : 'v2.0 PRO'}
                 </Badge>
               </div>
               <p className="text-[10px] text-zinc-500 hidden sm:block">
-                Multi-Agent AI Consensus Signal Terminal
+                {activeDashboard === 'binance-futures' ? 'Derivatives Squeeze & Multi-Agent Signals' : 'Multi-Agent AI Consensus Signal Terminal'}
               </p>
             </div>
           </div>
+
+          {/* Dual-Dashboard Segmented Switcher */}
+          {onSwitchDashboard && (
+            <div className="hidden sm:flex items-center gap-1 bg-zinc-900/90 border border-zinc-700/80 p-1 rounded-xl shadow-inner">
+              <button
+                onClick={() => onSwitchDashboard('memecoin')}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  activeDashboard === 'memecoin'
+                    ? 'bg-gradient-to-r from-emerald-500/25 to-cyan-500/25 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <span>🦄</span>
+                <span>Memecoin</span>
+              </button>
+              <button
+                onClick={() => onSwitchDashboard('binance-futures')}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  activeDashboard === 'binance-futures'
+                    ? 'bg-gradient-to-r from-yellow-500/25 to-amber-500/25 text-yellow-300 border border-yellow-500/40 shadow-[0_0_12px_rgba(234,179,8,0.2)]'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <span>⚡</span>
+                <span>Binance Futures</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+              </button>
+            </div>
+          )}
 
           {/* Bot State Indicator & Style Badge */}
           <div className="flex items-center gap-2">
@@ -413,6 +446,40 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Mobile Slide-Down Drawer (Fix #16) */}
         {isMobileMenuOpen && (
           <div className="lg:hidden w-full pt-3 pb-1 border-t border-zinc-800/80 mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2 font-mono text-xs animate-in slide-in-from-top-2 duration-150">
+            {/* Mobile Dashboard Switcher */}
+            {onSwitchDashboard && (
+              <div className="col-span-2 sm:col-span-3 flex items-center gap-2 p-1 bg-zinc-900 border border-zinc-700/80 rounded-xl mb-1">
+                <button
+                  onClick={() => {
+                    onSwitchDashboard('memecoin');
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all ${
+                    activeDashboard === 'memecoin'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                      : 'text-zinc-400'
+                  }`}
+                >
+                  <span>🦄</span>
+                  <span>Solana Memecoin</span>
+                </button>
+                <button
+                  onClick={() => {
+                    onSwitchDashboard('binance-futures');
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all ${
+                    activeDashboard === 'binance-futures'
+                      ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 shadow-sm'
+                      : 'text-zinc-400'
+                  }`}
+                >
+                  <span>⚡</span>
+                  <span>Binance Futures</span>
+                </button>
+              </div>
+            )}
+
             {/* Strategy */}
             <button
               onClick={() => { onOpenStrategy(); setIsMobileMenuOpen(false); }}

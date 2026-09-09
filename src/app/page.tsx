@@ -12,6 +12,7 @@ import { SignalStats } from '../components/signals/SignalStats';
 import { SignalHeroStats } from '../components/signals/SignalHeroStats';
 import { QuickSignalScanner } from '../components/signals/QuickSignalScanner';
 import { SignalHistoryTable } from '../components/signals/SignalHistoryTable';
+import { FuturesDashboard } from '../components/futures/FuturesDashboard';
 import { SignalStats as SignalStatsType } from '../types/signal';
 
 // Modals
@@ -93,6 +94,9 @@ function TerminalAppInner() {
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState<boolean>(false);
   const [isSmartMoneyOpen, setIsSmartMoneyOpen] = useState<boolean>(false);
   const [isVpsBotOpen, setIsVpsBotOpen] = useState<boolean>(false);
+
+  // Dual-Dashboard Mode: 'memecoin' (Solana) | 'binance-futures' (Binance)
+  const [activeDashboard, setActiveDashboard] = useState<'memecoin' | 'binance-futures'>('memecoin');
 
   // Signal Terminal tab: 'signals' (default) | 'history' | 'trading'
   const [dashTab, setDashTab] = useState<'signals' | 'history' | 'trading'>('signals');
@@ -185,6 +189,8 @@ function TerminalAppInner() {
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans selection:bg-emerald-500/30 selection:text-emerald-300">
       {/* 1. Global Navigation Header */}
       <Header
+        activeDashboard={activeDashboard}
+        onSwitchDashboard={setActiveDashboard}
         onOpenWallet={() => setIsWalletModalOpen(true)}
         onOpenStrategy={() => setIsStrategyModalOpen(true)}
         onOpenAlerts={() => setIsTelegramModalOpen(true)}
@@ -202,13 +208,17 @@ function TerminalAppInner() {
 
       {/* Main Workspace Body */}
       <main className="p-3.5 sm:p-5 flex-1 flex flex-col gap-4 max-w-[1920px] mx-auto w-full">
-        {/* Top KPI Section: Live Signal Stats, Win-Rate & Telegram Webhook Telemetry */}
-        <SignalHeroStats
-          stats={signalStats}
-          onOpenTelegramModal={() => setIsTelegramModalOpen(true)}
-          onOpenVpsBot={() => setIsVpsBotOpen(true)}
-          isTelegramConnected={telegramConfig?.isEnabled && Boolean(telegramConfig?.botToken && telegramConfig?.chatId)}
-        />
+        {activeDashboard === 'binance-futures' ? (
+          <FuturesDashboard />
+        ) : (
+          <>
+            {/* Top KPI Section: Live Signal Stats, Win-Rate & Telegram Webhook Telemetry */}
+            <SignalHeroStats
+              stats={signalStats}
+              onOpenTelegramModal={() => setIsTelegramModalOpen(true)}
+              onOpenVpsBot={() => setIsVpsBotOpen(true)}
+              isTelegramConnected={telegramConfig?.isEnabled && Boolean(telegramConfig?.botToken && telegramConfig?.chatId)}
+            />
 
         {/* Quick Instant Signal Generator & CA Scanner */}
         <QuickSignalScanner
@@ -338,6 +348,8 @@ function TerminalAppInner() {
           </span>
         </footer>
         </>)}
+          </>
+        )}
       </main>
 
       {/* 7. Modal Dialogs */}
