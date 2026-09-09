@@ -103,7 +103,7 @@ export const FuturesDashboard: React.FC = () => {
     });
 
   return (
-    <div className="flex flex-col gap-5 font-sans">
+    <div className="flex flex-col gap-3 font-sans">
       {/* 1. Market Telemetry Hero */}
       <FuturesHeroStats
         stats={marketStats}
@@ -122,7 +122,7 @@ export const FuturesDashboard: React.FC = () => {
       />
 
       {/* 3. Filter & Control Bar */}
-      <div className="bg-[#0e0e0e] border border-white/10 rounded-2xl p-3.5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 shadow-lg">
+      <div className="bg-[#0e0e0e] border border-white/10 rounded-xl p-2.5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 shadow-lg">
         {/* Search Input for All Coins */}
         <div className="relative flex-1 max-w-md">
           <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />

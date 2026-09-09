@@ -91,15 +91,19 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <>
       <header className="bg-zinc-950/90 backdrop-blur-md border-b border-zinc-800/80 p-3 sm:px-6 flex flex-col md:flex-row items-center justify-between gap-4 font-mono sticky top-0 z-40">
-        {/* Left: Brand & Bot Status */}
-        <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-start">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/10 border border-emerald-500/40 flex items-center justify-center shadow-[0_0_12px_rgba(16,185,129,0.3)]">
-              <Zap className="w-5 h-5 text-emerald-400" />
+        {/* Left: Brand & Dashboard Switcher */}
+        <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-start shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center border shadow-sm ${
+              activeDashboard === 'binance-futures'
+                ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
+                : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+            }`}>
+              <Zap className="w-4 h-4" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="font-black text-sm sm:text-base tracking-wider text-zinc-100 uppercase">
+              <div className="flex items-center gap-1.5">
+                <h1 className="font-black text-xs sm:text-sm tracking-wider text-zinc-100 uppercase font-mono">
                   {activeDashboard === 'binance-futures' ? 'Binance Futures' : 'AI Alpha Signal'}
                 </h1>
                 <Badge variant={activeDashboard === 'binance-futures' ? 'amber' : 'cyan'} size="xs">
@@ -107,336 +111,300 @@ export const Header: React.FC<HeaderProps> = ({
                 </Badge>
               </div>
               <p className="text-[10px] text-zinc-500 hidden sm:block">
-                {activeDashboard === 'binance-futures' ? 'Derivatives Squeeze & Multi-Agent Signals' : 'Multi-Agent AI Consensus Signal Terminal'}
+                {activeDashboard === 'binance-futures' ? 'Derivatives Squeeze & Multi-Agent Radar' : 'Multi-Agent AI Consensus Terminal'}
               </p>
             </div>
           </div>
 
           {/* Dual-Dashboard Segmented Switcher */}
           {onSwitchDashboard && (
-            <div className="hidden sm:flex items-center gap-1 bg-zinc-900/90 border border-zinc-700/80 p-1 rounded-xl shadow-inner">
+            <div className="flex items-center gap-1 bg-zinc-900 border border-zinc-700/80 p-0.5 rounded-xl shadow-inner">
               <button
                 onClick={() => onSwitchDashboard('memecoin')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer font-mono ${
                   activeDashboard === 'memecoin'
-                    ? 'bg-gradient-to-r from-emerald-500/25 to-cyan-500/25 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
                     : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
                 <span>🦄</span>
-                <span>Memecoin</span>
+                <span className="hidden sm:inline">Memecoin</span>
               </button>
               <button
                 onClick={() => onSwitchDashboard('binance-futures')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer font-mono ${
                   activeDashboard === 'binance-futures'
-                    ? 'bg-gradient-to-r from-yellow-500/25 to-amber-500/25 text-yellow-300 border border-yellow-500/40 shadow-[0_0_12px_rgba(234,179,8,0.2)]'
+                    ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 shadow-[0_0_10px_rgba(234,179,8,0.2)]'
                     : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
                 <span>⚡</span>
-                <span>Binance Futures</span>
+                <span className="hidden sm:inline">Futures</span>
                 <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
               </button>
             </div>
           )}
 
-          {/* Bot State Indicator & Style Badge */}
-          <div className="flex items-center gap-2">
-            <Badge
-              variant={isAutonomous ? 'emerald' : 'amber'}
-              size="xs"
-              dot
-              pulse={isAutonomous}
-            >
-              {isAutonomous ? 'SIGNAL ENGINE: ON' : 'ENGINE: PAUSED'}
-            </Badge>
+          {/* Memecoin Engine State (Only on Memecoin dashboard) */}
+          {activeDashboard === 'memecoin' && (
+            <div className="hidden xl:flex items-center gap-2">
+              <Badge
+                variant={isAutonomous ? 'emerald' : 'amber'}
+                size="xs"
+                dot
+                pulse={isAutonomous}
+              >
+                {isAutonomous ? 'SIGNAL: ON' : 'PAUSED'}
+              </Badge>
 
+              <button
+                onClick={toggleEngine}
+                title={isAutonomous ? 'Jeda Engine Sinyal' : 'Mulai Engine Sinyal'}
+                className="p-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
+              >
+                {isAutonomous ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 text-emerald-400" />}
+              </button>
+
+              <button
+                onClick={() => (onOpenAutoSnipe ? onOpenAutoSnipe() : onOpenStrategy())}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-900/90 border border-zinc-800 text-[10px]"
+              >
+                <span className="text-zinc-500 font-bold">GAYA:</span>
+                <span className="font-bold text-emerald-400">
+                  {autoSnipeConfig.tradingStyle === 'HODL'
+                    ? '💎 MOONBAG'
+                    : autoSnipeConfig.tradingStyle === 'SWING'
+                    ? '📈 SWING'
+                    : '⚡ SCALP'}
+                </span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Middle Section: Context-Aware Telemetry */}
+        {activeDashboard === 'binance-futures' ? (
+          <div className="hidden lg:flex items-center gap-3 text-[11px] bg-zinc-900/80 border border-yellow-500/25 px-3.5 py-1 rounded-xl text-zinc-300 font-mono">
+            <span className="flex items-center gap-1.5 font-bold text-yellow-400">
+              <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+              BINANCE FUTURES LIVE
+            </span>
+            <span className="text-zinc-700">•</span>
+            <span className="text-zinc-300">570+ Koin USDT-M</span>
+            <span className="text-zinc-700">•</span>
+            <span className="text-emerald-400 font-bold">Public Stream (Zero-Risk)</span>
+          </div>
+        ) : (
+          <div className="hidden lg:flex items-center gap-4 text-[11px] bg-zinc-900/60 border border-zinc-800/80 px-3 py-1 rounded-xl">
             <button
-              onClick={toggleEngine}
-              title={isAutonomous ? 'Jeda Engine Sinyal' : 'Mulai Engine Sinyal'}
-              className="p-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
+              onClick={() => (onOpenRpc ? onOpenRpc() : rpcFailoverInstance.triggerFailover('Manual failover test'))}
+              title="Klik untuk membuka RPC Manager"
+              className="flex items-center gap-1.5 text-zinc-400 hover:text-zinc-100 transition-all cursor-pointer group"
             >
-              {isAutonomous ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 text-emerald-400" />}
+              <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+              <span>RPC:</span>
+              <span className="text-zinc-200 font-bold">{networkMetrics.rpcLabel}</span>
+              <span className="text-[10px] text-emerald-400">({networkMetrics.latencyMs}ms)</span>
             </button>
 
-            {/* Quick Trading Style Badge / Switcher */}
+            <div className="h-3 w-px bg-zinc-800" />
+
+            <div className="flex items-center gap-1 text-zinc-400">
+              <span>Slot:</span>
+              <span className="text-zinc-200 font-bold">#{networkMetrics.currentSlot}</span>
+            </div>
+
+            <div className="h-3 w-px bg-zinc-800" />
+
+            <ScannerStatus variant="compact" />
+
+            <div className="h-3 w-px bg-zinc-800" />
+
+            <SupabaseRealtimeIndicator />
+
+            <div className="h-3 w-px bg-zinc-800" />
+
             <button
-              onClick={() => (onOpenAutoSnipe ? onOpenAutoSnipe() : onOpenStrategy())}
-              title="Klik untuk membuka Pengaturan Sinyal (Profil Target, Throttling & Filter)"
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 hover:border-cyan-500/40 transition-all cursor-pointer text-[10px] shadow-sm"
+              onClick={() => onOpenConverter?.()}
+              className="flex items-center gap-1 text-zinc-300 hover:text-purple-300 transition-all cursor-pointer"
             >
-              <span className="text-zinc-500 font-bold">SINYAL:</span>
-              <span className={`font-black tracking-wide ${
-                autoSnipeConfig.tradingStyle === 'HODL'
-                  ? 'text-cyan-400'
-                  : autoSnipeConfig.tradingStyle === 'SWING'
-                  ? 'text-purple-400'
-                  : 'text-emerald-400'
-              }`}>
-                {autoSnipeConfig.tradingStyle === 'HODL'
-                  ? 'ðŸ’Ž MOONBAG'
-                  : autoSnipeConfig.tradingStyle === 'SWING'
-                  ? 'ðŸ“ˆ SWING'
-                  : 'âš¡ SCALP'}
+              <span className="text-purple-400 font-bold">1 SOL =</span>
+              <span className="text-emerald-400 font-bold">
+                {formatIdrShort(1)}
               </span>
             </button>
           </div>
-        </div>
+        )}
 
-        {/* Middle: RPC & Network Telemetry with Sub-100ms Failover (PRD Section 7.2) */}
-        <div className="hidden lg:flex items-center gap-5 text-[11px] bg-zinc-900/60 border border-zinc-800/80 px-3.5 py-1.5 rounded-xl">
-          <button
-            onClick={() => (onOpenRpc ? onOpenRpc() : rpcFailoverInstance.triggerFailover('Manual failover test'))}
-            title="Klik untuk membuka RPC Manager & Latency Benchmark (PRD Â§7.2)"
-            className="flex items-center gap-1.5 text-zinc-400 hover:text-zinc-100 transition-all cursor-pointer group"
-          >
-            <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse group-hover:scale-110" />
-            <span>RPC:</span>
-            <span className="text-zinc-200 font-bold group-hover:underline">{networkMetrics.rpcLabel}</span>
-            <span className="text-[10px] text-emerald-400">({networkMetrics.latencyMs}ms)</span>
-            <RefreshCw className="w-2.5 h-2.5 opacity-40 group-hover:opacity-100 transition-opacity ml-0.5" />
-          </button>
+        {/* Right Section: Quick Tools & Navigation */}
+        {/* Right: Quick Tools & Navigation */}
+        <div className="flex items-center gap-2 shrink-0 flex-nowrap justify-end">
+          {activeDashboard === 'binance-futures' ? (
+            <>
+              {/* Binance Futures Quick Link */}
+              <a
+                href="https://www.binance.com/en/futures"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-yellow-500/15 hover:bg-yellow-500/25 border border-yellow-500/40 text-yellow-300 text-xs font-bold transition-all shadow-sm font-mono"
+              >
+                <span>Buka Binance.com</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
 
-          <div className="h-3 w-px bg-zinc-800" />
+              {/* Telegram Alerts */}
+              <button
+                onClick={onOpenAlerts}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 text-xs font-bold transition-all font-mono"
+                title="Pengaturan Telegram Alerts"
+              >
+                <Bell className="w-3.5 h-3.5 text-yellow-400" />
+                <span className="hidden sm:inline">Alerts</span>
+              </button>
 
-          <div className="flex items-center gap-1.5 text-zinc-400">
-            <span>Slot:</span>
-            <span className="text-zinc-200 font-bold">#{networkMetrics.currentSlot}</span>
-          </div>
+              {/* Security / Ganti Password */}
+              {onOpenPassword && (
+                <button
+                  onClick={onOpenPassword}
+                  title="Ganti Password Master"
+                  className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-yellow-400 transition-all cursor-pointer"
+                >
+                  <KeyRound className="w-4 h-4" />
+                </button>
+              )}
 
-          <div className="h-3 w-px bg-zinc-800" />
+              {/* Logout */}
+              <button
+                onClick={async () => {
+                  if (confirm('Kunci terminal dan akhiri sesi admin sekarang?')) {
+                    await fetch('/api/auth/logout', { method: 'POST' });
+                    window.location.href = '/login';
+                  }
+                }}
+                title="Kunci Akses Terminal (Logout)"
+                className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-500 hover:text-rose-400 transition-all cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </>
+          ) : (
+            <>
+              {/* Quick SOL Converter Pill (Visible on mobile) */}
+              <button
+                onClick={() => onOpenConverter?.()}
+                title="Kalkulator Kurs: 1 SOL = Berapa Rupiah / USD"
+                className="lg:hidden flex items-center gap-1.5 bg-gradient-to-r from-purple-500/10 to-emerald-500/10 border border-purple-500/30 px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-zinc-200"
+              >
+                <span className="text-purple-400">SOL:</span>
+                <span className="text-emerald-400">{formatIdrShort(1)}</span>
+              </button>
 
-          <div className="flex items-center gap-1.5 text-zinc-400">
-            <Zap className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Jito Tip:</span>
-            <span className="text-cyan-400 font-bold">{networkMetrics.jitoTipSol} SOL</span>
-          </div>
+              {/* Audio Synthesizer */}
+              <button
+                onClick={toggleAudio}
+                title={isAudioMuted ? 'Aktifkan Audio Telemetri' : 'Bisukan Audio'}
+                className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
+              >
+                {isAudioMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
+              </button>
 
-          <div className="h-3 w-px bg-zinc-800" />
+              {/* Early Gems Hunter */}
+              <button
+                onClick={onOpenAnalytics}
+                className="hidden xl:flex p-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 transition-all cursor-pointer items-center gap-1.5 text-xs"
+                title="Radar Koin Early Sub-$100k MC"
+              >
+                <Sparkles className="w-4 h-4 text-emerald-400 animate-pulse" />
+                <span className="text-[11px] font-black">Gems &lt;$100k</span>
+              </button>
 
-          {/* Scanner Live Sniffing & Rejection Counter Heartbeat */}
-          <ScannerStatus variant="compact" />
+              {/* Smart Money Copy-Trading */}
+              {onOpenSmartMoney && (
+                <button
+                  onClick={onOpenSmartMoney}
+                  className="hidden 2xl:flex p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:text-emerald-300 transition-all cursor-pointer items-center gap-1.5 text-xs"
+                  title="Smart Money & Whale Tracker"
+                >
+                  <Users className="w-4 h-4 text-emerald-400" />
+                  <span className="text-[11px] font-bold">Copy-Trade</span>
+                </button>
+              )}
 
-          <div className="h-3 w-px bg-zinc-800" />
+              {/* VPS Monitor */}
+              <Link
+                href="/vps-explorer"
+                className="hidden xl:flex p-2 rounded-xl bg-[#3ecf8e]/10 border border-[#3ecf8e]/30 text-[#3ecf8e] transition-all cursor-pointer items-center gap-1.5 text-xs"
+                title="Buka VPS Monitor"
+              >
+                <Database className="w-4 h-4 text-[#3ecf8e]" />
+                <span className="text-[11px] font-bold">VPS</span>
+              </Link>
 
-          {/* Supabase Realtime Connection Indicator */}
-          <SupabaseRealtimeIndicator />
+              {/* Telegram Status Pill */}
+              <button
+                onClick={onOpenAlerts}
+                className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-mono font-bold border transition-all cursor-pointer ${
+                  telegramConfig?.isEnabled && telegramConfig?.botToken && telegramConfig?.chatId
+                    ? 'bg-blue-500/15 border-blue-500/40 text-blue-300'
+                    : 'bg-zinc-900/90 border-zinc-800 text-zinc-400'
+                }`}
+              >
+                <Send className={`w-3.5 h-3.5 ${telegramConfig?.isEnabled && telegramConfig?.botToken && telegramConfig?.chatId ? 'text-blue-400 animate-pulse' : 'text-zinc-500'}`} />
+                <span>{telegramConfig?.isEnabled && telegramConfig?.botToken && telegramConfig?.chatId ? 'TG: Aktif' : 'TG: Setup'}</span>
+              </button>
 
-          <div className="h-3 w-px bg-zinc-800" />
+              {/* Web3 Wallet Button */}
+              <Button
+                variant={walletState.isConnected ? 'outline' : 'secondary'}
+                size="sm"
+                onClick={onOpenWallet}
+                leftIcon={<Wallet className="w-3.5 h-3.5 text-emerald-400" />}
+              >
+                {walletState.isConnected ? (
+                  <span className="flex items-center gap-1 font-bold">
+                    <span className="text-emerald-400">
+                      {walletState.balanceSol < 1 && walletState.balanceSol > 0
+                        ? walletState.balanceSol.toFixed(4)
+                        : walletState.balanceSol.toFixed(2)}{' '}
+                      SOL
+                    </span>
+                  </span>
+                ) : (
+                  <span>Connect Wallet</span>
+                )}
+              </Button>
 
-          {/* Live SOL Price in Rupiah & USD */}
-          <button
-            onClick={() => onOpenConverter?.()}
-            title="Klik untuk membuka Kalkulator Kurs SOL â‡„ Rupiah (IDR) & USD"
-            aria-label="Kalkulator Kurs SOL ke Rupiah dan USD"
-            className="flex items-center gap-1.5 text-zinc-300 hover:text-purple-300 transition-all cursor-pointer group"
-          >
-            <span className="text-purple-400 font-bold">1 SOL =</span>
-            <span className="text-emerald-400 font-bold group-hover:underline">
-              {formatIdrShort(1)}
-            </span>
-            <span className="text-[10px] text-zinc-500 hidden xl:inline">
-              ({formatUsd(1)})
-            </span>
-            <span
-              className={`text-[9px] px-1 py-0.2 rounded font-bold ${
-                rate.change24h >= 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
-              }`}
-            >
-              {rate.change24h >= 0 ? '+' : ''}
-              {rate.change24h.toFixed(1)}%
-            </span>
-          </button>
-        </div>
+              {/* Password */}
+              {onOpenPassword && (
+                <button
+                  onClick={onOpenPassword}
+                  title="Ganti Password Master"
+                  className="hidden lg:flex p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-emerald-400 transition-all cursor-pointer"
+                >
+                  <KeyRound className="w-4 h-4" />
+                </button>
+              )}
 
-        {/* Right: Quick Tools & Emergency Kill Switch */}
-        <div className="flex items-center gap-2 w-full md:w-auto justify-end flex-wrap">
-          {/* Quick SOL Converter Pill (Visible on all screens) */}
-          <button
-            onClick={() => onOpenConverter?.()}
-            title="Kalkulator Kurs: 1 SOL = Berapa Rupiah / USD"
-            aria-label="Kalkulator Kurs SOL Mobile"
-            className="lg:hidden flex items-center gap-1.5 bg-gradient-to-r from-purple-500/10 to-emerald-500/10 hover:from-purple-500/20 hover:to-emerald-500/20 border border-purple-500/30 px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-zinc-200 transition-all cursor-pointer active:scale-95"
-          >
-            <span className="text-purple-400">SOL:</span>
-            <span className="text-emerald-400">{formatIdrShort(1)}</span>
-          </button>
-          {/* Audio Synthesizer */}
-          <button
-            onClick={toggleAudio}
-            title={isAudioMuted ? 'Aktifkan Audio Telemetri' : 'Bisukan Audio'}
-            aria-label={isAudioMuted ? 'Aktifkan Audio Telemetri' : 'Bisukan Audio'}
-            className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
-          >
-            {isAudioMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
-          </button>
-
-          {/* Keyboard Shortcuts Cheat Sheet (Desktop) */}
-          {onOpenShortcuts && (
-            <button
-              onClick={onOpenShortcuts}
-              title="Keyboard Shortcuts Cheat Sheet (?)"
-              aria-label="Buka Keyboard Shortcuts"
-              className="hidden lg:flex p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
-            >
-              <Keyboard className="w-4 h-4 text-purple-400" />
-            </button>
+              {/* Logout */}
+              <button
+                onClick={async () => {
+                  if (confirm('Kunci terminal dan akhiri sesi admin sekarang?')) {
+                    await fetch('/api/auth/logout', { method: 'POST' });
+                    window.location.href = '/login';
+                  }
+                }}
+                title="Logout"
+                className="hidden lg:flex p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-500 hover:text-rose-400 transition-all cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </>
           )}
 
-          {/* Strategy Presets (Desktop) */}
-          <button
-            onClick={onOpenStrategy}
-            className="hidden lg:flex p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer items-center gap-1.5 text-xs"
-            title="Konfigurasi Preset Strategi 5-Agen"
-            aria-label="Buka Strategy Presets"
-          >
-            <Sliders className="w-4 h-4 text-cyan-400" />
-            <span className="hidden xl:inline text-[11px] font-bold">Strategy</span>
-          </button>
-
-          {/* Omnichannel Alerts (Desktop) */}
-          <button
-            onClick={onOpenAlerts}
-            className="hidden lg:flex p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer items-center gap-1.5 text-xs"
-            title="Telegram & Discord Webhook Alerts"
-            aria-label="Buka Omnichannel Alerts"
-          >
-            <Bell className="w-4 h-4 text-emerald-400" />
-            <span className="hidden xl:inline text-[11px] font-bold">Alerts</span>
-          </button>
-
-          {/* Early Gems Hunter (<$100k MC) */}
-          <button
-            onClick={onOpenAnalytics}
-            className="hidden lg:flex p-2 rounded-xl bg-gradient-to-r from-emerald-500/10 via-cyan-500/10 to-teal-500/10 hover:from-emerald-500/20 hover:to-cyan-500/20 border border-emerald-500/40 text-emerald-400 hover:text-emerald-300 transition-all cursor-pointer items-center gap-1.5 text-xs shadow-[0_0_12px_rgba(16,185,129,0.18)]"
-            title="Radar Koin Early Sub-$100k Market Cap (Potensi 5x - 50x)"
-            aria-label="Buka Radar Koin Early Sub-$100k"
-          >
-            <Sparkles className="w-4 h-4 text-emerald-400 animate-pulse" />
-            <span className="hidden xl:inline text-[11px] font-black tracking-wide">Gems &lt;$100k</span>
-          </button>
-
-          {/* Smart Money Copy-Trading (Desktop) */}
-          {onOpenSmartMoney && (
-            <button
-              onClick={onOpenSmartMoney}
-              className="hidden lg:flex p-2 rounded-xl bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 hover:from-emerald-500/20 hover:to-cyan-500/20 border border-emerald-500/30 text-emerald-400 hover:text-emerald-300 transition-all cursor-pointer items-center gap-1.5 text-xs shadow-[0_0_10px_rgba(16,185,129,0.15)]"
-              title="Smart Money & Whale Tracker (Copy-Trading)"
-              aria-label="Buka Smart Money Tracker"
-            >
-              <Users className="w-4 h-4 text-emerald-400" />
-              <span className="hidden xl:inline text-[11px] font-bold">Copy-Trade</span>
-            </button>
-          )}
-
-          {/* VPS Autonomous Sniper 24/7 (Desktop) */}
-          {onOpenVpsBot && (
-            <button
-              onClick={onOpenVpsBot}
-              className="hidden lg:flex p-2 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 hover:text-purple-200 transition-all cursor-pointer items-center gap-1.5 text-xs shadow-[0_0_10px_rgba(168,85,247,0.15)]"
-              title="VPS 24/7 Autonomous Signal Bot (Hot Wallet & PM2)"
-              aria-label="Buka VPS Bot Status"
-            >
-              <Server className="w-4 h-4 text-purple-400" />
-              <span className="hidden xl:inline text-[11px] font-bold">VPS Bot (24/7)</span>
-            </button>
-          )}
-
-          {/* VPS Monitor & Supabase Data Explorer (Desktop) */}
-          <Link
-            href="/vps-explorer"
-            className="hidden lg:flex p-2 rounded-xl bg-[#3ecf8e]/10 hover:bg-[#3ecf8e]/20 border border-[#3ecf8e]/30 text-[#3ecf8e] hover:text-emerald-300 transition-all cursor-pointer items-center gap-1.5 text-xs shadow-[0_0_10px_rgba(62,207,142,0.15)]"
-            title="Buka VPS Monitor & Data Explorer (Supabase Table Editor & Live PM2 Terminal)"
-            aria-label="Buka VPS Monitor & Data Explorer"
-          >
-            <Database className="w-4 h-4 text-[#3ecf8e]" />
-            <span className="hidden xl:inline text-[11px] font-bold">VPS & Explorer</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-[#3ecf8e] animate-pulse" />
-          </Link>
-
-          {/* Telegram Live Broadcast Status Pill */}
-          <button
-            onClick={onOpenAlerts}
-            title={
-              telegramConfig?.isEnabled && telegramConfig?.botToken && telegramConfig?.chatId
-                ? 'Telegram Webhook Aktif: Sinyal otomatis disiarkan ke channel/chat Telegram'
-                : 'Klik untuk menghubungkan Bot Telegram (Auto-Broadcast)'
-            }
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-mono font-bold border transition-all cursor-pointer ${
-              telegramConfig?.isEnabled && telegramConfig?.botToken && telegramConfig?.chatId
-                ? 'bg-blue-500/15 border-blue-500/40 text-blue-300 shadow-[0_0_10px_rgba(59,130,246,0.25)]'
-                : 'bg-zinc-900/90 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
-            }`}
-          >
-            <Send className={`w-3.5 h-3.5 ${telegramConfig?.isEnabled && telegramConfig?.botToken && telegramConfig?.chatId ? 'text-blue-400 animate-pulse' : 'text-zinc-500'}`} />
-            <span className="hidden sm:inline text-zinc-400">TG:</span>
-            <span>{telegramConfig?.isEnabled && telegramConfig?.botToken && telegramConfig?.chatId ? 'Aktif âœ…' : 'Setup'}</span>
-          </button>
-
-          {/* AI Consensus Live Scanner Indicator */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-mono font-bold">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="hidden sm:inline">CONSENSUS</span>
-            <span>LIVE</span>
-          </div>
-
-          {/* Web3 Wallet Button */}
-          <Button
-            variant={walletState.isConnected ? 'outline' : 'secondary'}
-            size="sm"
-            onClick={onOpenWallet}
-            aria-label={walletState.isConnected ? `Wallet terhubung: ${walletState.balanceSol} SOL` : 'Koneksikan Web3 Solana Wallet'}
-            leftIcon={<Wallet className="w-3.5 h-3.5 text-emerald-400" />}
-          >
-            {walletState.isConnected ? (
-              <span className="flex items-center gap-1.5 font-bold">
-                <span className="text-emerald-400">
-                  {walletState.balanceSol < 1 && walletState.balanceSol > 0
-                    ? walletState.balanceSol.toFixed(4)
-                    : walletState.balanceSol.toFixed(2)}{' '}
-                  SOL
-                </span>
-                <span className="text-[10px] text-zinc-400 hidden xl:inline">
-                  ({walletState.publicKey})
-                </span>
-              </span>
-            ) : (
-              <span>Connect Wallet</span>
-            )}
-          </Button>
-
-          {/* GANTI PASSWORD / SECURITY (Desktop) */}
-          {onOpenPassword && (
-            <button
-              onClick={onOpenPassword}
-              title="Pengaturan Keamanan: Ganti Password Master (Aktif: Alza0839)"
-              aria-label="Ganti Password Master Terminal"
-              className="hidden lg:flex p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-emerald-400 hover:border-emerald-500/40 transition-all cursor-pointer"
-            >
-              <KeyRound className="w-4 h-4" />
-            </button>
-          )}
-
-          {/* LOCK / LOGOUT SESSION (Desktop) */}
-          <button
-            onClick={async () => {
-              if (confirm('Kunci terminal dan akhiri sesi admin sekarang?')) {
-                await fetch('/api/auth/logout', { method: 'POST' });
-                window.location.href = '/login';
-              }
-            }}
-            title="Kunci Akses Terminal (Logout)"
-            aria-label="Logout dan Kunci Terminal"
-            className="hidden lg:flex p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-500 hover:text-rose-400 hover:border-rose-500/40 transition-all cursor-pointer"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
-
-          {/* Mobile Hamburger Menu Toggle (Fix #16) */}
+          {/* Mobile Hamburger Menu Toggle */}
           <button
             onClick={() => setIsMobileMenuOpen((prev) => !prev)}
-            aria-label={isMobileMenuOpen ? 'Tutup menu navigasi terminal' : 'Buka menu navigasi terminal'}
+            aria-label="Menu"
             className="lg:hidden p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white transition-all cursor-pointer"
           >
             {isMobileMenuOpen ? <CloseIcon className="w-4 h-4 text-rose-400" /> : <Menu className="w-4 h-4 text-cyan-400" />}
@@ -642,7 +610,7 @@ function SupabaseRealtimeIndicator() {
             </div>
             {status === 'UNAVAILABLE' && (
               <div className="text-amber-400 mt-1.5 text-[9px] leading-tight">
-                âš  Set NEXT_PUBLIC_SUPABASE_URL di .env.local
+                ⚠️ Set NEXT_PUBLIC_SUPABASE_URL di .env.local
               </div>
             )}
           </div>
