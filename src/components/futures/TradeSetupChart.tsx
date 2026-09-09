@@ -16,13 +16,22 @@ import {
   ShieldAlert,
   CheckCircle2,
   AlertTriangle,
+  Copy,
+  Check,
+  Download,
 } from 'lucide-react';
 import { BinanceFuturesSignal, FuturesDirection } from '../../types/futures';
+import { formatFuturesPrice } from '../../engine/futuresSignalEngine';
 import {
   analyzeTechnicalProtocol,
   formatExactPrice,
   ProtocolVerificationResult,
 } from '../../engine/technicalProtocolAnalyzer';
+import { generateCommunitySignalPost } from '../../utils/signalPostFormatter';
+import {
+  copySignalWithImageToClipboard,
+  downloadImageBlob,
+} from '../../utils/generateSignalImage';
 
 interface KlineData {
   time: number;
@@ -140,12 +149,87 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
   const [showRSI, setShowRSI] = useState<boolean>(true);
   const [showRRBox, setShowRRBox] = useState<boolean>(true);
   const [showChartAiAnalysis, setShowChartAiAnalysis] = useState<boolean>(false);
+  const [copiedChart, setCopiedChart] = useState<boolean>(false);
+  const [isCopyingChart, setIsCopyingChart] = useState<boolean>(false);
+  const [isDownloadingChart, setIsDownloadingChart] = useState<boolean>(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const direction: FuturesDirection = signal?.direction || defaultDirection;
   const isLong = direction === 'LONG';
+
+  const handleCopyChartWithSignal = async () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    setIsCopyingChart(true);
+    try {
+      const cleanPair = symbol.includes('/') ? symbol : `${symbol.replace('USDT', '')}/USDT`;
+      const tp1P = signal ? formatFuturesPrice(signal.targets.tp1.price) : fmtP(selectedTargetPrice);
+      const tp2P = signal ? formatFuturesPrice(signal.targets.tp2.price) : fmtP(selectedTargetPrice);
+      const tp3P = signal ? formatFuturesPrice(signal.targets.tp3.price) : fmtP(selectedTargetPrice * 1.05);
+
+      const text = generateCommunitySignalPost({
+        pair: cleanPair,
+        position: direction,
+        entry: fmtP(entryPrice),
+        targets: {
+          tp1: {
+            price: tp1P,
+            gainPct: signal?.targets.tp1.gainPct || targetGainPct,
+            eta: signal?.targets.tp1.eta || '15 – 30 Menit',
+          },
+          tp2: {
+            price: tp2P,
+            gainPct: signal?.targets.tp2.gainPct || targetGainPct * 1.5,
+            eta: signal?.targets.tp2.eta || '1 – 3 Jam',
+          },
+          tp3: {
+            price: tp3P,
+            gainPct: signal?.targets.tp3.gainPct || targetGainPct * 2.2,
+            eta: signal?.targets.tp3.eta || '6 – 24 Jam',
+          },
+        },
+        stopLoss: fmtP(stopLossPrice),
+        technicalContext: liveProtocol
+          ? `${liveProtocol.indicators.ma.displayText} ${liveProtocol.indicators.macd.displayText}`
+          : 'mayoritas moving average dan indikator teknikal saat ini solid mendukung arah tren',
+        riskRewardRatio: Number(riskRewardRatio.toFixed(2)),
+        durationSummary: signal?.indicatorExplanation?.estimatedDuration.summaryText || 'TP1: 15-30m, TP2: 1-3j',
+        leverage: {
+          safe: signal?.leverage?.safe?.range || '5x – 10x',
+          scalp: signal?.leverage?.scalp?.range || `${leverage}x`,
+        },
+        fundingRatePct: signal?.derivativesData?.fundingRatePct,
+        binanceUrl: `https://www.binance.com/en/futures/${symbol}`,
+      });
+
+      canvas.toBlob(async (blob) => {
+        if (blob) {
+          await copySignalWithImageToClipboard(text, blob);
+          setCopiedChart(true);
+          setTimeout(() => setCopiedChart(false), 2500);
+        }
+      }, 'image/png');
+    } catch (err) {
+      console.error('Gagal menyalin chart beserta sinyal:', err);
+    } finally {
+      setIsCopyingChart(false);
+    }
+  };
+
+  const handleDownloadChart = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    setIsDownloadingChart(true);
+    canvas.toBlob((blob) => {
+      if (blob) {
+        downloadImageBlob(blob, `${symbol}-${direction}-chart.png`);
+      }
+      setIsDownloadingChart(false);
+    }, 'image/png');
+  };
 
   // Fetch Klines
   const fetchKlines = async () => {
@@ -843,15 +927,50 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
           </div>
         </div>
 
-        {/* Right: Eksekusi Binance & Refresh */}
+        {/* Right: Salin Chart+Sinyal, Download, Eksekusi Binance & Refresh */}
         <div className="flex items-center gap-2">
+          {/* Button Salin Gambar Chart + Teks Sinyal */}
+          <button
+            onClick={handleCopyChartWithSignal}
+            disabled={isCopyingChart}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold font-mono transition-all cursor-pointer ${
+              copiedChart
+                ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                : 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+            }`}
+            title="Salin Grafik Chart & Teks Sinyal ke Clipboard (Siap Paste ke Telegram/Discord)"
+          >
+            {isCopyingChart ? (
+              <div className="w-3.5 h-3.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+            ) : copiedChart ? (
+              <Check className="w-3.5 h-3.5 text-emerald-400" />
+            ) : (
+              <Copy className="w-3.5 h-3.5" />
+            )}
+            <span>{copiedChart ? 'Tersalin (+Chart)' : 'Salin + Chart'}</span>
+          </button>
+
+          {/* Button Download Gambar Chart */}
+          <button
+            onClick={handleDownloadChart}
+            disabled={isDownloadingChart}
+            className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 hover:text-white transition-all cursor-pointer"
+            title="Download Screenshot Chart (.PNG)"
+          >
+            {isDownloadingChart ? (
+              <div className="w-3.5 h-3.5 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Download className="w-3.5 h-3.5 text-sky-400" />
+            )}
+          </button>
+
           <a
             href={`https://www.binance.com/en/futures/${symbol}`}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-yellow-500/15 hover:bg-yellow-500/25 border border-yellow-500/40 text-yellow-300 text-xs font-bold font-mono transition-all"
           >
-            <span>Eksekusi di Binance</span>
+            <span>Binance</span>
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
 

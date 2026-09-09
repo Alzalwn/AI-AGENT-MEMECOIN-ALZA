@@ -21,10 +21,17 @@ import {
   Sparkles,
   Timer,
   Info,
+  Download,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { BinanceFuturesSignal } from '../../types/futures';
 import { formatFuturesPrice } from '../../engine/futuresSignalEngine';
 import { generateCommunitySignalPost } from '../../utils/signalPostFormatter';
+import {
+  generateSignalImageBlob,
+  copySignalWithImageToClipboard,
+  downloadImageBlob,
+} from '../../utils/generateSignalImage';
 
 interface FuturesSignalCardProps {
   signal: BinanceFuturesSignal;
@@ -38,59 +45,104 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
   onDismiss,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [isCopying, setIsCopying] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [activeLeverageTab, setActiveLeverageTab] = useState<'both' | 'safe' | 'scalp'>('both');
   const [showAiAnalysis, setShowAiAnalysis] = useState(false);
 
   const isLong = signal.direction === 'LONG';
   const isSupernova = signal.signalTier === 'SUPERNOVA';
 
-  const handleCopySignal = () => {
-    const cleanPair = `${signal.baseAsset}/USDT`;
-    const entryPrice = formatFuturesPrice(signal.entryZone.current);
-    const slPrice = formatFuturesPrice(signal.stopLoss.price);
+  const handleCopySignal = async () => {
+    setIsCopying(true);
+    try {
+      const cleanPair = `${signal.baseAsset}/USDT`;
+      const entryPrice = formatFuturesPrice(signal.entryZone.current);
+      const slPrice = formatFuturesPrice(signal.stopLoss.price);
 
-    const technicalContext = signal.indicatorExplanation?.maInsight
-      ? signal.indicatorExplanation.maInsight.replace(/^Angka Aktual:.*?\.\s*/, '')
-      : 'mayoritas moving average dan indikator teknikal saat ini masih solid mendukung arah tren';
+      const technicalContext = signal.indicatorExplanation?.maInsight
+        ? signal.indicatorExplanation.maInsight.replace(/^Angka Aktual:.*?\.\s*/, '')
+        : 'mayoritas moving average dan indikator teknikal saat ini masih solid mendukung arah tren';
 
-    const text = generateCommunitySignalPost({
-      pair: cleanPair,
-      position: signal.direction,
-      entry: entryPrice,
-      targets: {
-        tp1: {
-          price: formatFuturesPrice(signal.targets.tp1.price),
-          gainPct: signal.targets.tp1.gainPct,
-          eta: signal.targets.tp1.eta,
+      const text = generateCommunitySignalPost({
+        pair: cleanPair,
+        position: signal.direction,
+        entry: entryPrice,
+        targets: {
+          tp1: {
+            price: formatFuturesPrice(signal.targets.tp1.price),
+            gainPct: signal.targets.tp1.gainPct,
+            eta: signal.targets.tp1.eta,
+          },
+          tp2: {
+            price: formatFuturesPrice(signal.targets.tp2.price),
+            gainPct: signal.targets.tp2.gainPct,
+            eta: signal.targets.tp2.eta,
+          },
+          tp3: {
+            price: formatFuturesPrice(signal.targets.tp3.price),
+            gainPct: signal.targets.tp3.gainPct,
+            eta: signal.targets.tp3.eta,
+          },
         },
-        tp2: {
-          price: formatFuturesPrice(signal.targets.tp2.price),
-          gainPct: signal.targets.tp2.gainPct,
-          eta: signal.targets.tp2.eta,
+        stopLoss: slPrice,
+        technicalContext,
+        riskRewardRatio: signal.riskRewardRatio,
+        durationSummary: signal.indicatorExplanation?.estimatedDuration.summaryText || `TP1: ${signal.targets.tp1.eta}`,
+        leverage: {
+          safe: signal.leverage.safe.range,
+          scalp: signal.leverage.scalp.range,
         },
-        tp3: {
-          price: formatFuturesPrice(signal.targets.tp3.price),
-          gainPct: signal.targets.tp3.gainPct,
-          eta: signal.targets.tp3.eta,
-        },
-      },
-      stopLoss: slPrice,
-      technicalContext,
-      riskRewardRatio: signal.riskRewardRatio,
-      durationSummary: signal.indicatorExplanation?.estimatedDuration.summaryText || `TP1: ${signal.targets.tp1.eta}`,
-      leverage: {
-        safe: signal.leverage.safe.range,
-        scalp: signal.leverage.scalp.range,
-      },
-      fundingRatePct: signal.derivativesData.fundingRatePct,
-      binanceUrl: signal.binanceUrl,
-      overallScore: signal.overallScore,
-      strategyLabel: signal.strategyLabel,
-    });
+        fundingRatePct: signal.derivativesData.fundingRatePct,
+        binanceUrl: signal.binanceUrl,
+        overallScore: signal.overallScore,
+        strategyLabel: signal.strategyLabel,
+      });
 
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+      // Bangkitkan gambar grafik analisis berkualitas tinggi
+      const imageBlob = await generateSignalImageBlob({
+        symbol: cleanPair,
+        direction: signal.direction,
+        entryPrice: signal.entryZone.current,
+        tp1Price: signal.targets.tp1.price,
+        tp2Price: signal.targets.tp2.price,
+        tp3Price: signal.targets.tp3.price,
+        stopLossPrice: signal.stopLoss.price,
+        strategyLabel: signal.strategyLabel,
+      });
+
+      // Salin Teks dan Gambar ke Clipboard
+      await copySignalWithImageToClipboard(text, imageBlob);
+
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch (err) {
+      console.error('Gagal menyalin sinyal beserta gambar:', err);
+    } finally {
+      setIsCopying(false);
+    }
+  };
+
+  const handleDownloadImage = async () => {
+    setIsDownloading(true);
+    try {
+      const cleanPair = `${signal.baseAsset}/USDT`;
+      const blob = await generateSignalImageBlob({
+        symbol: cleanPair,
+        direction: signal.direction,
+        entryPrice: signal.entryZone.current,
+        tp1Price: signal.targets.tp1.price,
+        tp2Price: signal.targets.tp2.price,
+        tp3Price: signal.targets.tp3.price,
+        stopLossPrice: signal.stopLoss.price,
+        strategyLabel: signal.strategyLabel,
+      });
+      downloadImageBlob(blob, `${signal.symbol}-${signal.direction}-analisis.png`);
+    } catch (err) {
+      console.error('Gagal mendownload gambar:', err);
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   return (
@@ -482,13 +534,37 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
 
         <button
           onClick={handleCopySignal}
-          className={`p-2.5 rounded-xl border transition-all cursor-pointer ${copied
+          disabled={isCopying}
+          className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-center gap-1.5 ${
+            copied
               ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
               : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700 hover:border-zinc-600 text-zinc-300 hover:text-white'
-            }`}
-          title="Salin Sinyal untuk Telegram / Komunitas"
+          }`}
+          title="Salin Teks Sinyal & Gambar Analisis ke Clipboard (Siap Paste ke Telegram/Discord)"
         >
-          {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+          {isCopying ? (
+            <div className="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+          ) : copied ? (
+            <Check className="w-4 h-4 text-emerald-400" />
+          ) : (
+            <Copy className="w-4 h-4 text-yellow-400" />
+          )}
+          <span className="text-[11px] font-mono font-bold hidden sm:inline">
+            {copied ? 'Tersalin (+Foto)' : 'Salin + Foto'}
+          </span>
+        </button>
+
+        <button
+          onClick={handleDownloadImage}
+          disabled={isDownloading}
+          className="p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 hover:border-zinc-600 text-zinc-300 hover:text-white transition-all cursor-pointer flex items-center gap-1.5"
+          title="Download Gambar Analisis (.PNG)"
+        >
+          {isDownloading ? (
+            <div className="w-4 h-4 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <Download className="w-4 h-4 text-sky-400" />
+          )}
         </button>
       </div>
     </div>
