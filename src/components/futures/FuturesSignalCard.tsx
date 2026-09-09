@@ -22,7 +22,7 @@ import { formatFuturesPrice } from '../../engine/futuresSignalEngine';
 
 interface FuturesSignalCardProps {
   signal: BinanceFuturesSignal;
-  onOpenChart: (symbol: string) => void;
+  onOpenChart: (symbol: string, signal?: BinanceFuturesSignal) => void;
   onDismiss?: (id: string) => void;
 }
 
@@ -301,11 +301,12 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
         </a>
 
         <button
-          onClick={() => onOpenChart(signal.symbol)}
-          className="p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 hover:border-zinc-600 text-zinc-300 hover:text-white transition-all cursor-pointer"
-          title="Buka Grafik TradingView"
+          onClick={() => onOpenChart(signal.symbol, signal)}
+          className="p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 hover:border-zinc-600 text-zinc-300 hover:text-white transition-all cursor-pointer flex items-center gap-1.5"
+          title="Lihat Chart & Setup Proyeksi R:R"
         >
-          <BarChart2 className="w-4 h-4" />
+          <BarChart2 className="w-4 h-4 text-yellow-400" />
+          <span className="text-[11px] font-mono font-bold hidden sm:inline">Chart R:R</span>
         </button>
 
         <button
