@@ -47,7 +47,6 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
   const handleCopySignal = () => {
     const cleanPair = `${signal.baseAsset}/USDT`;
     const entryPrice = formatFuturesPrice(signal.entryZone.current);
-    const tpPrice = formatFuturesPrice(signal.targets.tp2.price);
     const slPrice = formatFuturesPrice(signal.stopLoss.price);
 
     const technicalContext = signal.indicatorExplanation?.maInsight
@@ -58,9 +57,35 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
       pair: cleanPair,
       position: signal.direction,
       entry: entryPrice,
-      takeProfit: tpPrice,
+      targets: {
+        tp1: {
+          price: formatFuturesPrice(signal.targets.tp1.price),
+          gainPct: signal.targets.tp1.gainPct,
+          eta: signal.targets.tp1.eta,
+        },
+        tp2: {
+          price: formatFuturesPrice(signal.targets.tp2.price),
+          gainPct: signal.targets.tp2.gainPct,
+          eta: signal.targets.tp2.eta,
+        },
+        tp3: {
+          price: formatFuturesPrice(signal.targets.tp3.price),
+          gainPct: signal.targets.tp3.gainPct,
+          eta: signal.targets.tp3.eta,
+        },
+      },
       stopLoss: slPrice,
       technicalContext,
+      riskRewardRatio: signal.riskRewardRatio,
+      durationSummary: signal.indicatorExplanation?.estimatedDuration.summaryText || `TP1: ${signal.targets.tp1.eta}`,
+      leverage: {
+        safe: signal.leverage.safe.range,
+        scalp: signal.leverage.scalp.range,
+      },
+      fundingRatePct: signal.derivativesData.fundingRatePct,
+      binanceUrl: signal.binanceUrl,
+      overallScore: signal.overallScore,
+      strategyLabel: signal.strategyLabel,
     });
 
     navigator.clipboard.writeText(text);
