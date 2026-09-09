@@ -63,8 +63,8 @@ function evaluatePairSignal(
   const fundingRate = fundingInfo ? parseFloat(fundingInfo.lastFundingRate) : 0.0001;
   const fundingRatePct = fundingRate * 100;
 
-  // Filter likuiditas dasar: Volume 24 jam minimal $3,000,000 USD
-  if (isNaN(currentPrice) || currentPrice <= 0 || quoteVolume < 3_000_000) {
+  // Filter likuiditas anti-spam: Volume 24 jam minimal $12,000,000 USD agar terhindar dari koin illiquid/noise
+  if (isNaN(currentPrice) || currentPrice <= 0 || quoteVolume < 12_000_000) {
     return null;
   }
 
@@ -82,59 +82,59 @@ function evaluatePairSignal(
   let score = 75;
   let rationale = '';
 
-  // 1. SQUEEZE RADAR (Funding Rate Anomali)
-  if (fundingRatePct <= -0.02 && relativePosition > 0.45) {
+  // 1. SQUEEZE RADAR (Funding Rate Anomali Tinggi)
+  if (fundingRatePct <= -0.03 && relativePosition > 0.50) {
     // Negative funding tinggi + harga kuat = potensi SHORT SQUEEZE (Beli / LONG)
     direction = 'LONG';
     strategy = 'FUNDING_SQUEEZE';
     strategyLabel = '⚡ Short Squeeze Surge';
-    tier = fundingRatePct <= -0.05 ? 'SUPERNOVA' : 'HIGH';
-    score = 88;
-    rationale = `Funding rate sangat negatif (${fundingRatePct.toFixed(4)}%), menandakan dominasi posisi short yang rentan terlikuidasi paksa ke atas saat volume pembeli masuk.`;
-  } else if (fundingRatePct >= 0.05 && relativePosition < 0.55) {
+    tier = fundingRatePct <= -0.06 ? 'SUPERNOVA' : 'HIGH';
+    score = 92;
+    rationale = `Funding rate sangat negatif (${fundingRatePct.toFixed(4)}%), dominasi posisi short terjepit yang rentan terlikuidasi paksa ke atas saat volume pembeli masuk.`;
+  } else if (fundingRatePct >= 0.06 && relativePosition < 0.50) {
     // Positive funding ekstrem + harga melemah = potensi LONG SQUEEZE (Jual / SHORT)
     direction = 'SHORT';
     strategy = 'FUNDING_SQUEEZE';
     strategyLabel = '💥 Long Squeeze Dump';
-    tier = fundingRatePct >= 0.08 ? 'SUPERNOVA' : 'HIGH';
-    score = 86;
+    tier = fundingRatePct >= 0.10 ? 'SUPERNOVA' : 'HIGH';
+    score = 90;
     rationale = `Funding rate terlalu tinggi (+${fundingRatePct.toFixed(4)}%), pasar over-leveraged posisi long. Potensi likuidasi massal ke bawah jika support tertekan.`;
   }
-  // 2. BREAKOUT MOMENTUM
-  else if (relativePosition >= 0.88 && change24h > 3.0) {
+  // 2. BREAKOUT MOMENTUM PRESISI TINGGI (Ketat: Posisi ≥ 92% rentang 24h & Kenaikan ≥ 4.5%)
+  else if (relativePosition >= 0.92 && change24h >= 4.5 && quoteVolume >= 20_000_000) {
     direction = 'LONG';
     strategy = 'BREAKOUT_MOMENTUM';
     strategyLabel = '🚀 24h High Breakout';
-    score = relativePosition >= 0.94 ? 91 : 82;
+    score = relativePosition >= 0.96 ? 94 : 88;
     tier = score >= 90 ? 'SUPERNOVA' : 'HIGH';
-    rationale = `Harga menguji resistance 24h (${formatFuturesPrice(high24h)}) dengan momentum beli kuat (+${change24h.toFixed(2)}%) dan volume likuiditas $${(quoteVolume / 1e6).toFixed(1)}M.`;
-  } else if (relativePosition <= 0.12 && change24h < -3.0) {
+    rationale = `Harga menembus resistance 24h (${formatFuturesPrice(high24h)}) dengan momentum beli kuat (+${change24h.toFixed(2)}%) dan likuiditas masif $${(quoteVolume / 1e6).toFixed(1)}M.`;
+  } else if (relativePosition <= 0.08 && change24h <= -4.5 && quoteVolume >= 20_000_000) {
     direction = 'SHORT';
     strategy = 'BREAKOUT_MOMENTUM';
     strategyLabel = '📉 Support Breakdown';
-    score = relativePosition <= 0.06 ? 89 : 80;
+    score = relativePosition <= 0.04 ? 92 : 86;
     tier = score >= 90 ? 'SUPERNOVA' : 'HIGH';
-    rationale = `Harga menembus level terendah 24h (${formatFuturesPrice(low24h)}) dengan tekanan jual konsisten (${change24h.toFixed(2)}%).`;
+    rationale = `Harga menembus breakdown support 24h (${formatFuturesPrice(low24h)}) dengan tekanan jual konsisten (${change24h.toFixed(2)}%).`;
   }
-  // 3. REVERSAL / OVERSOLD - OVERBOUGHT
-  else if (relativePosition <= 0.15 && change24h < -6.0) {
+  // 3. REVERSAL / OVERSOLD - OVERBOUGHT EKSTREM
+  else if (relativePosition <= 0.10 && change24h <= -8.0 && quoteVolume >= 15_000_000) {
     direction = 'LONG';
     strategy = 'RSI_EXTREME_REVERSAL';
     strategyLabel = '🔄 Dip Buyer Oversold Reversal';
-    tier = 'MODERATE';
-    score = 78;
-    rationale = `Koreksi dalam mendekati dasar 24 jam dengan diskon signifikan (${change24h.toFixed(2)}%). Peluang teknikal bounce/scalp balik arah.`;
-  } else if (relativePosition >= 0.85 && change24h > 12.0) {
+    tier = 'HIGH';
+    score = 85;
+    rationale = `Koreksi ekstrem mendekati dasar 24 jam dengan diskon dalam (${change24h.toFixed(2)}%). Peluang technical rebound tajam dengan R:R tinggi.`;
+  } else if (relativePosition >= 0.90 && change24h >= 15.0 && quoteVolume >= 25_000_000) {
     direction = 'SHORT';
     strategy = 'RSI_EXTREME_REVERSAL';
     strategyLabel = '🎯 Overextended Exhaustion';
-    tier = 'MODERATE';
-    score = 76;
-    rationale = `Kenaikan parabola berlebih (+${change24h.toFixed(2)}%) dekat batas atas, potensi aksi profit taking dan pullback sehat.`;
+    tier = 'HIGH';
+    score = 84;
+    rationale = `Kenaikan parabola jenuh beli (+${change24h.toFixed(2)}%) mendekati batas atas, potensi aksi profit taking dan pullback sehat.`;
   }
 
-  // Jika tidak memenuhi kriteria sinyal yang terukur, skip
-  if (!direction) return null;
+  // Jika tidak memenuhi kriteria ketat, tolak (anti-spam)
+  if (!direction || score < 82) return null;
 
   // Kalkulasi Target TP1, TP2, TP3 dan Stop Loss
   // Kalibrasi persentase berdasarkan volatilitas koin
@@ -354,14 +354,17 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
     }
   }
 
-  // Urutkan sinyal: SUPERNOVA pertama, lalu berdasarkan skor tertinggi dan volume
+  // Urutkan sinyal: SUPERNOVA pertama, lalu berdasarkan skor konfluensi x R:R tertinggi x volume
   signals.sort((a, b) => {
     if (a.signalTier === 'SUPERNOVA' && b.signalTier !== 'SUPERNOVA') return -1;
     if (b.signalTier === 'SUPERNOVA' && a.signalTier !== 'SUPERNOVA') return 1;
-    return b.overallScore - a.overallScore || b.derivativesData.volume24hUsd - a.derivativesData.volume24hUsd;
+    const aPower = a.overallScore * a.riskRewardRatio;
+    const bPower = b.overallScore * b.riskRewardRatio;
+    return bPower - aPower || b.derivativesData.volume24hUsd - a.derivativesData.volume24hUsd;
   });
 
-  return signals;
+  // Anti-Spam & Kualitas Elit: Batasi maksimal Top 8 – 10 sinyal dengan konfluensi tertinggi
+  return signals.slice(0, 10);
 }
 
 /**

@@ -368,8 +368,8 @@ export const FuturesDashboard: React.FC = () => {
             <Radio className="w-4 h-4 text-emerald-400 animate-pulse" />
             Live Futures Alpha Signals
           </h3>
-          <span className="px-2 py-0.5 rounded-full text-xs font-bold font-mono bg-zinc-800 text-zinc-300 border border-zinc-700">
-            {filteredSignals.length} Sinyal Lolos Filter
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+            Top {filteredSignals.length} Sinyal Presisi Terpilih (Anti-Spam Aktif)
           </span>
         </div>
 
