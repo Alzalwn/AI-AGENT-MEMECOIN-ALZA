@@ -38,6 +38,7 @@ export const CoinSearchAnalysisSection: React.FC<CoinSearchAnalysisSectionProps>
   const [analyzedSignal, setAnalyzedSignal] = useState<BinanceFuturesSignal | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [scanStep, setScanStep] = useState<string>('');
+  const [customWalletUsd, setCustomWalletUsd] = useState<number>(20);
 
   // Telegram Sending State
   const [isSendingTg, setIsSendingTg] = useState(false);
@@ -392,6 +393,41 @@ export const CoinSearchAnalysisSection: React.FC<CoinSearchAnalysisSectionProps>
             </div>
           </div>
 
+          {/* PERISAI PASAR (BTC GUARD STATUS BANNER) */}
+          {analyzedSignal.btcContext && (
+            <div
+              className={`p-3 rounded-xl border flex items-start gap-2.5 text-xs font-mono shadow-md ${
+                !analyzedSignal.btcContext.isSafeForAltLong && analyzedSignal.direction === 'LONG'
+                  ? 'bg-rose-500/15 border-rose-500/40 text-rose-200'
+                  : analyzedSignal.btcContext.trend === 'STRONG_BULLISH' || analyzedSignal.btcContext.trend === 'BULLISH'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                  : 'bg-zinc-900 border-zinc-800 text-zinc-300'
+              }`}
+            >
+              <Shield className={`w-4 h-4 mt-0.5 flex-shrink-0 ${!analyzedSignal.btcContext.isSafeForAltLong ? 'text-rose-400 animate-pulse' : 'text-emerald-400'}`} />
+              <div className="space-y-0.5 flex-1">
+                <div className="flex items-center justify-between flex-wrap gap-1">
+                  <span className="font-bold text-[11px] uppercase tracking-wider text-yellow-300">
+                    🛡️ PERISAI PASAR (BTC GUARD) • BTC: ${formatFuturesPrice(analyzedSignal.btcContext.price)} ({analyzedSignal.btcContext.change15mPct >= 0 ? '+' : ''}{analyzedSignal.btcContext.change15mPct}% 15m)
+                  </span>
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded font-black ${
+                      analyzedSignal.btcContext.isSafeForAltLong
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                    }`}
+                  >
+                    {analyzedSignal.btcContext.isSafeForAltLong ? 'PASAR KONDUSIF' : '⚠️ RAWAN FAKEOUT'}
+                  </span>
+                </div>
+                <p className="text-[11px] leading-relaxed text-zinc-300">
+                  {analyzedSignal.btcContext.warningMessage ||
+                    'Kondisi pasar Bitcoin terpantau stabil, tidak terdeteksi crash/dump agresif yang berisiko menyeret sinyal ini.'}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Setup Plan Grid (Entry, TP1, TP2, TP3, SL) */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs font-mono">
             {/* Entry */}
@@ -456,6 +492,74 @@ export const CoinSearchAnalysisSection: React.FC<CoinSearchAnalysisSectionProps>
             </div>
           </div>
 
+          {/* KALKULATOR PROTEKSI MODAL & UKURAN MARGIN (ANTI-LOSS BERUNTUN) */}
+          <div className="p-3.5 rounded-xl bg-gradient-to-br from-zinc-900 to-zinc-950 border border-emerald-500/30 space-y-2.5 font-mono text-xs shadow-lg">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800 pb-2">
+              <div className="flex items-center gap-2">
+                <Shield className="w-4 h-4 text-emerald-400" />
+                <span className="font-bold text-white text-xs sm:text-sm">
+                  🛡️ Kalkulator Proteksi Modal (Position Sizing Otomatis)
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[10px] text-zinc-400">Pilih Saldo Modal:</span>
+                {[10, 20, 50, 100].map((amt) => (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => setCustomWalletUsd(amt)}
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer ${
+                      customWalletUsd === amt
+                        ? 'bg-emerald-500 text-black border-emerald-400'
+                        : 'bg-zinc-800 text-zinc-300 border-zinc-700 hover:bg-zinc-700'
+                    }`}
+                  >
+                    ${amt}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Sizing Calculations */}
+            {(() => {
+              const slPct = Math.abs(analyzedSignal.stopLoss.lossPct) || 1.5;
+              const maxRiskUsd = Number((customWalletUsd * 0.02).toFixed(2));
+              const lev = analyzedSignal.leverage.safe.multiplier || 5;
+              const notional = maxRiskUsd / (slPct / 100);
+              const suggestedMargin = Math.max(Number((notional / lev).toFixed(2)), 1);
+
+              return (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
+                    <div className="p-2.5 rounded-lg bg-zinc-950/80 border border-zinc-800/80">
+                      <span className="text-zinc-400 block text-[10px]">Toleransi Risiko (2% Modal):</span>
+                      <span className="text-rose-400 font-bold text-sm block mt-0.5">Maksimal -${maxRiskUsd} USD</span>
+                      <span className="text-[9.5px] text-zinc-500 block mt-0.5">Jika SL tertabrak, rugi terkontrol</span>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-zinc-950/80 border border-emerald-500/30 bg-emerald-500/[0.03]">
+                      <span className="text-zinc-400 block text-[10px]">Margin Order Masuk:</span>
+                      <span className="text-emerald-400 font-bold text-sm block mt-0.5">
+                        ${suggestedMargin} USD (Lev {lev}x)
+                      </span>
+                      <span className="text-[9.5px] text-zinc-400 block mt-0.5">
+                        Sisa modal (${(customWalletUsd - suggestedMargin).toFixed(2)}) disimpan aman
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-zinc-950/80 border border-zinc-800/80">
+                      <span className="text-zinc-400 block text-[10px]">Disiplin Trading:</span>
+                      <span className="text-cyan-400 font-bold text-[11px] block mt-0.5">Wajib Pasang Hard SL</span>
+                      <span className="text-[9.5px] text-zinc-400 block mt-0.5">
+                        Jangan geser SL atau average down saat floating minus!
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
           {/* Candlestick & Technical Rationale Box */}
           {analyzedSignal.candlestickPattern && (
             <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-1 text-xs">
@@ -508,6 +612,99 @@ export const CoinSearchAnalysisSection: React.FC<CoinSearchAnalysisSectionProps>
               </span>
             </div>
           </div>
+
+          {/* INDIKATOR RIIL (100 KLINES 15M) & DERIVATIF LIVE */}
+          {analyzedSignal.indicators && (
+            <div className="p-3 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-2 text-xs font-mono">
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-1.5">
+                <span className="font-bold text-zinc-300 flex items-center gap-1.5">
+                  <BarChart2 className="w-3.5 h-3.5 text-yellow-400" />
+                  Kalkulasi Indikator Riil (100 Klines 15m) & Telemetri Derivatif
+                </span>
+                <span className="text-[10px] text-emerald-400 font-bold">● Live Feed Binance</span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                <div className="p-2 rounded-lg bg-zinc-950 border border-zinc-800">
+                  <span className="text-zinc-500 block text-[10px]">MA(7, 25, 99) Riil</span>
+                  <span
+                    className={`font-bold text-xs ${
+                      analyzedSignal.indicators.ma.alignment === 'BULLISH'
+                        ? 'text-emerald-400'
+                        : analyzedSignal.indicators.ma.alignment === 'BEARISH'
+                        ? 'text-rose-400'
+                        : 'text-zinc-300'
+                    }`}
+                  >
+                    {analyzedSignal.indicators.ma.alignment === 'BULLISH'
+                      ? 'GOLDEN STACK'
+                      : analyzedSignal.indicators.ma.alignment === 'BEARISH'
+                      ? 'DEATH STACK'
+                      : 'NETRAL / TRANSISI'}
+                  </span>
+                  <span className="text-[9px] text-zinc-400 block mt-0.5">
+                    MA7: ${formatFuturesPrice(analyzedSignal.indicators.ma.ma7)}
+                  </span>
+                </div>
+
+                <div className="p-2 rounded-lg bg-zinc-950 border border-zinc-800">
+                  <span className="text-zinc-500 block text-[10px]">MACD (12, 26, 9) Riil</span>
+                  <span
+                    className={`font-bold text-xs ${
+                      analyzedSignal.indicators.macd.dif > analyzedSignal.indicators.macd.dea
+                        ? 'text-emerald-400'
+                        : 'text-rose-400'
+                    }`}
+                  >
+                    {analyzedSignal.indicators.macd.dif > analyzedSignal.indicators.macd.dea
+                      ? 'DIF > DEA (BULL)'
+                      : 'DIF < DEA (BEAR)'}
+                  </span>
+                  <span className="text-[9px] text-zinc-400 block mt-0.5">
+                    Hist: {analyzedSignal.indicators.macd.histogram.toFixed(4)}
+                  </span>
+                </div>
+
+                <div className="p-2 rounded-lg bg-zinc-950 border border-zinc-800">
+                  <span className="text-zinc-500 block text-[10px]">Triple RSI Riil</span>
+                  <span
+                    className={`font-bold text-xs ${
+                      analyzedSignal.indicators.rsi.rsi6 >= 50 ? 'text-emerald-400' : 'text-rose-400'
+                    }`}
+                  >
+                    RSI6: {analyzedSignal.indicators.rsi.rsi6.toFixed(1)}
+                  </span>
+                  <span className="text-[9px] text-zinc-400 block mt-0.5">
+                    RSI12: {analyzedSignal.indicators.rsi.rsi12.toFixed(1)} | 24: {analyzedSignal.indicators.rsi.rsi24.toFixed(1)}
+                  </span>
+                </div>
+
+                <div className="p-2 rounded-lg bg-zinc-950 border border-zinc-800">
+                  <span className="text-zinc-500 block text-[10px]">Live Open Interest</span>
+                  <span className="text-yellow-400 font-bold text-xs">
+                    ${(analyzedSignal.derivativesData.openInterestUsd / 1e6).toFixed(2)}M USD
+                  </span>
+                  <span className="text-[9px] text-zinc-400 block mt-0.5">
+                    L/S Akun: {analyzedSignal.derivativesData.longShortRatio.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              {analyzedSignal.indicatorExplanation?.directionVerdict && (
+                <div
+                  className={`p-2.5 rounded-lg border text-[11px] leading-relaxed font-mono ${
+                    analyzedSignal.indicatorExplanation.directionVerdict.includes('WAIT & SEE')
+                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-200'
+                      : analyzedSignal.indicatorExplanation.directionVerdict.includes('LONG')
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
+                      : 'bg-rose-500/10 border-rose-500/30 text-rose-200'
+                  }`}
+                >
+                  <strong>Keputusan Sistem:</strong> {analyzedSignal.indicatorExplanation.directionVerdict}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ACTION BUTTONS (Send to Telegram, Open Chart, Copy Text, Binance) */}
           <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-800/80 font-mono text-xs">

@@ -121,6 +121,27 @@ export interface BinanceFuturesSignal {
   indicators?: FuturesTechnicalIndicators;
   indicatorExplanation?: IndicatorExplanation;
   candlestickPattern?: CandlestickPatternResult;
+  btcContext?: BtcMarketContext;
+  positionSizing?: PositionSizingRecommendation;
+}
+
+export interface BtcMarketContext {
+  symbol: 'BTCUSDT';
+  price: number;
+  change15mPct: number;
+  change1hPct: number;
+  trend: 'STRONG_BULLISH' | 'BULLISH' | 'NEUTRAL' | 'BEARISH' | 'DUMP_ALERT';
+  warningMessage?: string;
+  isSafeForAltLong: boolean;
+}
+
+export interface PositionSizingRecommendation {
+  walletReferenceUsd: number; // e.g. $20 / $50
+  maxRiskPct: number;         // e.g. 2%
+  maxRiskAmountUsd: number;   // e.g. $0.40 - $1.00 USD
+  recommendedMarginUsd: number; // e.g. $3 - $5 USD
+  recommendedLeverage: number;  // e.g. 5x
+  note: string;
 }
 
 export interface CandlestickPatternResult {
@@ -140,9 +161,11 @@ export interface CandlestickPatternResult {
 
 export interface IndicatorExplanation {
   maInsight: string;          // Penjelasan arah MA7/25/99 (Golden/Death cross)
+  emaInsight?: string;        // Penjelasan arah EMA9/21/50
   bollInsight: string;        // Penjelasan posisi harga terhadap pita Bollinger
   macdInsight: string;        // Penjelasan momentum garis DIF, DEA & Histogram
   rsiInsight: string;         // Penjelasan momentum dorongan Triple RSI
+  stochRsiInsight?: string;   // Penjelasan %K dan %D dari StochRSI
   directionVerdict: string;   // Keputusan final: Mengapa LONG atau SHORT
   candlestickInsight?: string;// Analisis pola candlestick elit terdeteksi
   timeframeRecommendation: string; // Rekomendasi timeframe
@@ -159,6 +182,12 @@ export interface FuturesTechnicalIndicators {
     ma7: number;
     ma25: number;
     ma99: number;
+    alignment: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  };
+  ema?: {
+    ema9: number;
+    ema21: number;
+    ema50: number;
     alignment: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
   };
   bollingerBands: {
@@ -178,6 +207,11 @@ export interface FuturesTechnicalIndicators {
     rsi12: number;
     rsi24: number;
     status: 'OVERBOUGHT' | 'OVERSOLD' | 'BULLISH_MOMENTUM' | 'BEARISH_MOMENTUM' | 'NEUTRAL';
+  };
+  stochRsi?: {
+    k: number;
+    d: number;
+    status: 'OVERBOUGHT' | 'OVERSOLD' | 'BULLISH_CROSS' | 'BEARISH_CROSS' | 'NEUTRAL';
   };
 }
 

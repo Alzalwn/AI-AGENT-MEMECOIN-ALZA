@@ -4,6 +4,8 @@
  * Memiliki mekanisme failover otomatis jika endpoint utama dibatasi oleh ISP/WAF.
  */
 
+import { BtcMarketContext } from '../types/futures';
+
 // Bypass local Windows certificate issues in dev if necessary
 if (process.env.NODE_ENV !== 'production') {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
@@ -52,10 +54,14 @@ export async function fetchWithFailover(endpoint: string, options?: RequestInit)
 
   for (const baseUrl of urls) {
     try {
-      // Jika fallback ke data-api.binance.vision (spot API) sesuaikan path jika perlu
+      // Sesuaikan path jika menggunakan mirror data-api.binance.vision
       let finalUrl = `${baseUrl}${endpoint}`;
-      if (baseUrl.includes('binance.vision') && endpoint.startsWith('/fapi/v1/ticker/24hr')) {
-        finalUrl = `${baseUrl}/api/v3/ticker/24hr`;
+      if (baseUrl.includes('binance.vision')) {
+        if (endpoint.startsWith('/fapi/v1/ticker/24hr')) {
+          finalUrl = `${baseUrl}/api/v3/ticker/24hr${endpoint.replace('/fapi/v1/ticker/24hr', '')}`;
+        } else if (endpoint.startsWith('/fapi/v1/klines')) {
+          finalUrl = `${baseUrl}/api/v3/klines${endpoint.replace('/fapi/v1/klines', '')}`;
+        }
       }
 
       const controller = new AbortController();
@@ -69,16 +75,15 @@ export async function fetchWithFailover(endpoint: string, options?: RequestInit)
 
       clearTimeout(timeoutId);
 
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+
+      // Verifikasi bahwa status OK DAN content-type adalah JSON (mencegah halaman blokir HTML dari ISP)
+      if (res.ok && contentType.includes('application/json')) {
         return res;
       }
 
-      // Jika error 403 atau 451 (geoblocking), coba fallback berikutnya
-      if (res.status === 403 || res.status === 451 || res.status >= 500) {
-        continue;
-      }
-
-      return res;
+      // Jika response berupa HTML (indikasi ISP redirect/block page) atau error HTTP, coba mirror berikutnya
+      continue;
     } catch (err: unknown) {
       lastError = err instanceof Error ? err : new Error(String(err));
       // Coba endpoint selanjutnya
@@ -158,11 +163,12 @@ export async function getFundingRates(): Promise<Map<string, RawFundingRate>> {
 
 /**
  * Mengambil Klines (candlestick) untuk analisa teknikal (EMA, RSI, S/R)
+ * Default limit ditingkatkan ke 100 agar MA(99) dan MACD dapat dihitung dengan presisi penuh
  */
 export async function getKlines(
   symbol: string,
   interval: '15m' | '1h' | '4h' = '15m',
-  limit: number = 50
+  limit: number = 100
 ): Promise<number[][]> {
   const cacheKey = `klines_${symbol}_${interval}_${limit}`;
   const cached = getCached<number[][]>(cacheKey);
@@ -181,7 +187,7 @@ export async function getKlines(
         parseFloat(String(k[4])), // close
         parseFloat(String(k[5])), // volume
       ]);
-      setCached(cacheKey, parsed, 45_000);
+      setCached(cacheKey, parsed, 30_000); // 30 detik cache
       return parsed;
     }
   } catch (err) {
@@ -233,3 +239,130 @@ export async function getSingleFundingRate(symbol: string): Promise<RawFundingRa
   }
   return null;
 }
+
+/**
+ * Mengambil Open Interest Riil dari Binance Futures
+ */
+export async function getFuturesOpenInterest(symbol: string): Promise<number | null> {
+  const cleanSymbol = symbol.trim().toUpperCase();
+  const cacheKey = `open_interest_${cleanSymbol}`;
+  const cached = getCached<number>(cacheKey);
+  if (cached !== null) return cached;
+
+  try {
+    const res = await fetchWithFailover(`/fapi/v1/openInterest?symbol=${cleanSymbol}`);
+    const data = await res.json();
+    if (data && data.openInterest) {
+      const oi = parseFloat(data.openInterest);
+      if (!isNaN(oi)) {
+        setCached(cacheKey, oi, 20_000);
+        return oi;
+      }
+    }
+  } catch (err) {
+    console.warn(`[BinanceClient] Gagal mengambil Open Interest untuk ${cleanSymbol}:`, err);
+  }
+  return null;
+}
+
+/**
+ * Mengambil Global Long/Short Account Ratio Riil dari Binance Futures
+ */
+export async function getFuturesLongShortRatio(symbol: string): Promise<number | null> {
+  const cleanSymbol = symbol.trim().toUpperCase();
+  const cacheKey = `long_short_ratio_${cleanSymbol}`;
+  const cached = getCached<number>(cacheKey);
+  if (cached !== null) return cached;
+
+  try {
+    const res = await fetchWithFailover(`/futures/data/globalLongShortAccountRatio?symbol=${cleanSymbol}&period=15m&limit=1`);
+    const data = await res.json();
+    if (Array.isArray(data) && data.length > 0 && data[0].longShortRatio) {
+      const ratio = parseFloat(data[0].longShortRatio);
+      if (!isNaN(ratio)) {
+        setCached(cacheKey, ratio, 30_000);
+        return ratio;
+      }
+    }
+  } catch {
+    // Failover otomatis: jika endpoint data statistik tidak merespon di jaringan lokal, cache null sejenak
+    setCached(cacheKey, null as unknown as number, 60_000);
+  }
+  return null;
+}
+
+/**
+ * Memeriksa Kondisi Induk Pasar (BTC Market Guard) untuk proteksi sinyal Altcoin
+ */
+export async function getBtcMarketContext(): Promise<BtcMarketContext> {
+  const cacheKey = 'btc_market_context_telemetry';
+  const cached = getCached<BtcMarketContext>(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const [ticker, klines] = await Promise.all([
+      getFuturesSingleTicker('BTCUSDT'),
+      getKlines('BTCUSDT', '15m', 20),
+    ]);
+
+    const price = ticker ? parseFloat(ticker.lastPrice) : 65000;
+    let change15mPct = 0;
+    let change1hPct = 0;
+
+    if (klines && klines.length >= 4) {
+      const lastClose = klines[klines.length - 1][4];
+      const prev15mClose = klines[klines.length - 2][4];
+      const prev1hClose = klines[klines.length - 5]?.[4] ?? klines[0][4];
+
+      change15mPct = Number((((lastClose - prev15mClose) / prev15mClose) * 100).toFixed(2));
+      change1hPct = Number((((lastClose - prev1hClose) / prev1hClose) * 100).toFixed(2));
+    } else if (ticker) {
+      change15mPct = 0;
+      change1hPct = parseFloat(ticker.priceChangePercent) / 10;
+    }
+
+    let trend: BtcMarketContext['trend'] = 'NEUTRAL';
+    let isSafeForAltLong = true;
+    let warningMessage: string | undefined;
+
+    if (change15mPct <= -0.75 || change1hPct <= -1.8) {
+      trend = 'DUMP_ALERT';
+      isSafeForAltLong = false;
+      warningMessage = `🚨 WASPADA TINGGI: Bitcoin (BTC) sedang dump tajam (${change15mPct > 0 ? '+' : ''}${change15mPct}% 15m / ${change1hPct}% 1h). Sinyal LONG Altcoin/Memecoin sangat berisiko terkena fakeout terseret market!`;
+    } else if (change15mPct <= -0.35 || change1hPct <= -0.8) {
+      trend = 'BEARISH';
+      isSafeForAltLong = false;
+      warningMessage = `⚠️ PERINGATAN: Tren BTC 15m sedang melemah (${change15mPct}%). Sangat disarankan wait & see atau hindari posisi LONG agresif pada Altcoin/Memecoin.`;
+    } else if (change15mPct >= 0.75 || change1hPct >= 1.8) {
+      trend = 'STRONG_BULLISH';
+      isSafeForAltLong = true;
+    } else if (change15mPct >= 0.2 || change1hPct >= 0.5) {
+      trend = 'BULLISH';
+      isSafeForAltLong = true;
+    }
+
+    const context: BtcMarketContext = {
+      symbol: 'BTCUSDT',
+      price,
+      change15mPct,
+      change1hPct,
+      trend,
+      warningMessage,
+      isSafeForAltLong,
+    };
+
+    setCached(cacheKey, context, 20_000); // 20 detik cache
+    return context;
+  } catch (err) {
+    console.warn('[BinanceClient] Gagal menghitung BTC context:', err);
+    return {
+      symbol: 'BTCUSDT',
+      price: 0,
+      change15mPct: 0,
+      change1hPct: 0,
+      trend: 'NEUTRAL',
+      isSafeForAltLong: true,
+    };
+  }
+}
+

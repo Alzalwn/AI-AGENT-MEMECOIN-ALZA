@@ -346,7 +346,7 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
             </div>
 
             {/* Indicator Badges Grid (Protokol Universal) */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-center text-[10px]">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 text-center text-[10px]">
               <div className="bg-zinc-950 p-1.5 rounded-lg border border-zinc-800">
                 <span className="text-zinc-500 block">MA(7/25/99)</span>
                 <span className="font-bold text-yellow-400 block mt-0.5">
@@ -381,6 +381,26 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
                   {signal.indicators.rsi.rsi6.toFixed(0)}/{signal.indicators.rsi.rsi12.toFixed(0)}/{signal.indicators.rsi.rsi24.toFixed(0)}
                 </span>
               </div>
+              {signal.indicators.ema && (
+                <div className="bg-zinc-950 p-1.5 rounded-lg border border-zinc-800">
+                  <span className="text-zinc-500 block">EMA(9/21/50)</span>
+                  <span className="font-bold text-orange-400 block mt-0.5">
+                    {signal.indicators.ema.alignment === 'BULLISH'
+                      ? 'BULL ALIGN'
+                      : signal.indicators.ema.alignment === 'BEARISH'
+                      ? 'BEAR ALIGN'
+                      : 'SIDEWAYS'}
+                  </span>
+                </div>
+              )}
+              {signal.indicators.stochRsi && (
+                <div className="bg-zinc-950 p-1.5 rounded-lg border border-zinc-800">
+                  <span className="text-zinc-500 block">StochRSI(14)</span>
+                  <span className="font-bold text-indigo-400 block mt-0.5">
+                    {signal.indicators.stochRsi.status.replace('_', ' ')}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* AI Explanation Accordion & Timeline */}
@@ -441,24 +461,36 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
                       </p>
                     </div>
 
-                    {/* Breakdown of 4 Indicators */}
-                    <div className="space-y-1.5 text-[10px]">
-                      <div className="p-2 rounded-lg bg-zinc-900/50 border border-yellow-500/20">
-                        <span className="font-bold text-yellow-400 block mb-0.5">🟡 MA(7, 25, 99) Tren:</span>
-                        <p className="text-zinc-300 leading-normal">{signal.indicatorExplanation.maInsight}</p>
-                      </div>
-                      <div className="p-2 rounded-lg bg-zinc-900/50 border border-purple-500/20">
-                        <span className="font-bold text-purple-300 block mb-0.5">🟣 BOLL(20, 2) Volatilitas:</span>
-                        <p className="text-zinc-300 leading-normal">{signal.indicatorExplanation.bollInsight}</p>
-                      </div>
-                      <div className="p-2 rounded-lg bg-zinc-900/50 border border-emerald-500/20">
-                        <span className="font-bold text-emerald-400 block mb-0.5">🟢 MACD(12, 26, 9) Momentum:</span>
-                        <p className="text-zinc-300 leading-normal">{signal.indicatorExplanation.macdInsight}</p>
-                      </div>
-                      <div className="p-2 rounded-lg bg-zinc-900/50 border border-pink-500/20">
-                        <span className="font-bold text-pink-400 block mb-0.5">🌸 Triple RSI(6, 12, 24) Kekuatan:</span>
-                        <p className="text-zinc-300 leading-normal">{signal.indicatorExplanation.rsiInsight}</p>
-                      </div>
+                      {/* Breakdown of 6 Indicators */}
+                      <div className="space-y-1.5 text-[10px]">
+                        <div className="p-2 rounded-lg bg-zinc-900/50 border border-yellow-500/20">
+                          <span className="font-bold text-yellow-400 block mb-0.5">🟡 MA(7, 25, 99) Tren:</span>
+                          <p className="text-zinc-300 leading-normal">{signal.indicatorExplanation.maInsight}</p>
+                        </div>
+                        {signal.indicatorExplanation.emaInsight && (
+                          <div className="p-2 rounded-lg bg-zinc-900/50 border border-orange-500/20">
+                            <span className="font-bold text-orange-400 block mb-0.5">🟠 EMA(9, 21, 50) Tren Pendek:</span>
+                            <p className="text-zinc-300 leading-normal">{signal.indicatorExplanation.emaInsight}</p>
+                          </div>
+                        )}
+                        <div className="p-2 rounded-lg bg-zinc-900/50 border border-purple-500/20">
+                          <span className="font-bold text-purple-300 block mb-0.5">🟣 BOLL(20, 2) Volatilitas:</span>
+                          <p className="text-zinc-300 leading-normal">{signal.indicatorExplanation.bollInsight}</p>
+                        </div>
+                        <div className="p-2 rounded-lg bg-zinc-900/50 border border-emerald-500/20">
+                          <span className="font-bold text-emerald-400 block mb-0.5">🟢 MACD(12, 26, 9) Momentum:</span>
+                          <p className="text-zinc-300 leading-normal">{signal.indicatorExplanation.macdInsight}</p>
+                        </div>
+                        <div className="p-2 rounded-lg bg-zinc-900/50 border border-pink-500/20">
+                          <span className="font-bold text-pink-400 block mb-0.5">🌸 Triple RSI(6, 12, 24) Kekuatan:</span>
+                          <p className="text-zinc-300 leading-normal">{signal.indicatorExplanation.rsiInsight}</p>
+                        </div>
+                        {signal.indicatorExplanation.stochRsiInsight && (
+                          <div className="p-2 rounded-lg bg-zinc-900/50 border border-indigo-500/20">
+                            <span className="font-bold text-indigo-400 block mb-0.5">🔵 StochRSI(14) Osilator:</span>
+                            <p className="text-zinc-300 leading-normal">{signal.indicatorExplanation.stochRsiInsight}</p>
+                          </div>
+                        )}
 
                       {/* Candlestick Pattern Card Insight */}
                       {signal.candlestickPattern && (

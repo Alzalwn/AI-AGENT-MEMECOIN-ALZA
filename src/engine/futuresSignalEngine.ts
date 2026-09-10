@@ -15,6 +15,8 @@ import {
   FuturesTechnicalIndicators,
   IndicatorExplanation,
   CandlestickPatternResult,
+  BtcMarketContext,
+  PositionSizingRecommendation,
 } from '../types/futures';
 import {
   getFutures24hTickers,
@@ -22,10 +24,14 @@ import {
   getKlines,
   getFuturesSingleTicker,
   getSingleFundingRate,
+  getFuturesOpenInterest,
+  getFuturesLongShortRatio,
+  getBtcMarketContext,
   Raw24hTicker,
   RawFundingRate,
 } from '../lib/binanceClient';
 import { parseKlinesToCandles, detectCandlestickPatterns } from './candlestickPatternEngine';
+import { computeRealTechnicalIndicators } from './technicalIndicatorsEngine';
 
 /**
  * Format angka presisi dinamis berdasarkan harga koin (misal BTC vs PEPE)
@@ -38,23 +44,53 @@ export function formatFuturesPrice(price: number): string {
 }
 
 /**
- * Konfigurasi Dual Leverage (Safe 5x-10x dan Scalp 10x-20x)
+ * Kalkulator Manajemen Risiko Modal (Position Sizing & Anti-Rungkad)
+ * Menghitung batas margin yang aman agar risiko kerugian saat SL tidak melebihi toleransi (default 2% modal).
+ */
+export function calculatePositionSizing(
+  walletBalanceUsd: number = 20,
+  stopLossPct: number = 2.0,
+  leverageMultiplier: number = 5
+): PositionSizingRecommendation {
+  const maxRiskPct = 2.0; // Batas risiko maksimal 2% per trade
+  const maxRiskAmountUsd = Number(((walletBalanceUsd * maxRiskPct) / 100).toFixed(2));
+  
+  // Posisi nominal (notional) agar saat SL terkena, kerugian = maxRiskAmountUsd
+  const safeSlPct = Math.max(stopLossPct, 0.5);
+  const notionalUsd = maxRiskAmountUsd / (safeSlPct / 100);
+  
+  // Margin yang dimasukkan ke order Binance = Notional / Leverage
+  const rawMarginUsd = notionalUsd / leverageMultiplier;
+  const recommendedMarginUsd = Number(Math.max(rawMarginUsd, 1).toFixed(2));
+
+  return {
+    walletReferenceUsd: walletBalanceUsd,
+    maxRiskPct,
+    maxRiskAmountUsd,
+    recommendedMarginUsd,
+    recommendedLeverage: leverageMultiplier,
+    note: `Batas risiko ${maxRiskPct}% modal ($${walletBalanceUsd}): Jika SL (-${safeSlPct.toFixed(1)}%) tertabrak, kerugian Anda terkontrol hanya -$${maxRiskAmountUsd} USD.`,
+  };
+}
+
+/**
+ * Konfigurasi Dual Leverage yang Dikalibrasi Lebih Aman
  */
 function getDualLeverage(volatilityPct: number): DualLeverageConfig {
   const isHighVol = Math.abs(volatilityPct) > 15;
 
   return {
     safe: {
-      range: isHighVol ? '3x – 7x' : '5x – 10x',
-      multiplier: isHighVol ? 5 : 8,
+      range: isHighVol ? '2x – 5x' : '3x – 7x',
+      multiplier: isHighVol ? 3 : 5,
       mode: 'ISOLATED',
-      description: 'Aman / Swing Trade: Jarak likuidasi lebar, proteksi modal.',
+      description: 'Aman / Swing: Proteksi modal maksimal dari perburuan wick (jarak likuidasi lebar).',
     },
     scalp: {
-      range: isHighVol ? '8x – 12x' : '10x – 20x',
-      multiplier: isHighVol ? 10 : 15,
+      range: isHighVol ? '5x – 8x' : '7x – 12x',
+      multiplier: isHighVol ? 7 : 10,
       mode: 'ISOLATED',
-      description: 'Agresif / Scalp: Eksekusi kilat target TP1, disiplin Stop Loss ketat.',
+      description: 'Disiplin Scalp: Target TP1 cepat dengan eksekusi Stop Loss ketat.',
     },
   };
 }
@@ -418,6 +454,18 @@ function generateIndicatorExplanation(
           : 'Susunan MA belum selaras sempurna.'
       }`;
 
+  // 1b. EMA Insight (EMA 9, 21, 50)
+  let emaInsight = '';
+  if (indicators.ema) {
+    const emaOrderValid = isLong
+      ? indicators.ema.ema9 > indicators.ema.ema21 && indicators.ema.ema21 > indicators.ema.ema50
+      : indicators.ema.ema9 < indicators.ema.ema21 && indicators.ema.ema21 < indicators.ema.ema50;
+    
+    emaInsight = isLong
+      ? `EMA (9,21,50): ${emaOrderValid ? 'BULLISH ALIGNMENT. Harga terakselerasi naik di atas rata-rata eksponensial jangka pendek.' : 'Transisi/Sideways pada EMA jangka pendek.'}`
+      : `EMA (9,21,50): ${emaOrderValid ? 'BEARISH ALIGNMENT. Harga tertekan turun di bawah rata-rata eksponensial jangka pendek.' : 'Transisi/Sideways pada EMA jangka pendek.'}`;
+  }
+
   // 2. Bollinger Bands Insight (BOLL 20, 2)
   // Aturan Protokol: Breakout hanya jika Close > Upper atau Close < Lower. Di dalam pita = Konsolidasi/Test Band.
   let bollInsight = '';
@@ -448,6 +496,18 @@ function generateIndicatorExplanation(
     ? `Triple RSI: RSI(6)=${indicators.rsi.rsi6.toFixed(1)}, RSI(12)=${indicators.rsi.rsi12.toFixed(1)}, RSI(24)=${indicators.rsi.rsi24.toFixed(1)}. Indikator RSI berada di atas batas netral tanpa divergen negatif.`
     : `Triple RSI: RSI(6)=${indicators.rsi.rsi6.toFixed(1)}, RSI(12)=${indicators.rsi.rsi12.toFixed(1)}, RSI(24)=${indicators.rsi.rsi24.toFixed(1)}. Berada di teritori pelemahan momentum.`;
 
+  // 4b. Stochastic RSI Insight
+  let stochRsiInsight = '';
+  if (indicators.stochRsi) {
+    const k = indicators.stochRsi.k.toFixed(1);
+    const d = indicators.stochRsi.d.toFixed(1);
+    if (indicators.stochRsi.status === 'OVERBOUGHT') stochRsiInsight = `StochRSI (%K=${k}, %D=${d}): OVERBOUGHT (Jenuh Beli). Rawan koreksi.`;
+    else if (indicators.stochRsi.status === 'OVERSOLD') stochRsiInsight = `StochRSI (%K=${k}, %D=${d}): OVERSOLD (Jenuh Jual). Potensi pantulan naik.`;
+    else if (indicators.stochRsi.status === 'BULLISH_CROSS') stochRsiInsight = `StochRSI (%K=${k}, %D=${d}): BULLISH CROSS. Momentum pembalikan naik terkonfirmasi.`;
+    else if (indicators.stochRsi.status === 'BEARISH_CROSS') stochRsiInsight = `StochRSI (%K=${k}, %D=${d}): BEARISH CROSS. Momentum tekanan jual aktif.`;
+    else stochRsiInsight = `StochRSI (%K=${k}, %D=${d}): Berada di area tengah (Netral).`;
+  }
+
   // 5. Keputusan Arah (LONG vs SHORT) - Protokol Konfluensi Mutlak
   // Jika ada indikator bertentangan: wajib diturunkan menjadi WAIT & SEE / NEUTRAL
   let directionVerdict = '';
@@ -467,9 +527,11 @@ function generateIndicatorExplanation(
 
   return {
     maInsight,
+    emaInsight,
     bollInsight,
     macdInsight,
     rsiInsight,
+    stochRsiInsight,
     directionVerdict,
     timeframeRecommendation,
     estimatedDuration: etas,
@@ -480,9 +542,10 @@ function generateIndicatorExplanation(
  * Menghasilkan sinyal futures dari seluruh daftar koin Binance
  */
 export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> {
-  const [tickers, fundingMap] = await Promise.all([
+  const [tickers, fundingMap, btcContext] = await Promise.all([
     getFutures24hTickers(),
     getFundingRates(),
+    getBtcMarketContext(),
   ]);
 
   if (!tickers || tickers.length === 0) {
@@ -507,13 +570,49 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
   });
   const candidates = rawSignals.slice(0, 15);
 
-  // Analisis Pola Candlestick Elit (15m & 1h multi-candle scan)
+  // Analisis Pola Candlestick Elit & Kalkulasi Indikator Riil (100 Klines 15m)
   await Promise.allSettled(
     candidates.map(async (signal) => {
       try {
-        const rawKlines = await getKlines(signal.symbol, '15m', 35);
+        const rawKlines = await getKlines(signal.symbol, '15m', 100);
         if (rawKlines && rawKlines.length >= 5) {
           const candles = parseKlinesToCandles(rawKlines);
+          const closePrices = candles.map((c) => c.close);
+
+          // 1. Kalkulasi Indikator Riil dari Close Klines
+          const realIndicators = computeRealTechnicalIndicators(closePrices, signal.entryZone.current);
+          signal.indicators = realIndicators;
+          signal.indicatorExplanation = generateIndicatorExplanation(
+            realIndicators,
+            signal.entryZone.current,
+            signal.derivativesData.priceChange24hPct,
+            signal.direction,
+            signal.derivativesData.volume24hUsd,
+            {
+              tp1Eta: signal.targets.tp1.eta,
+              tp2Eta: signal.targets.tp2.eta,
+              tp3Eta: signal.targets.tp3.eta,
+              summaryText: '',
+            }
+          );
+
+          // 2. Tempelkan Konteks Induk Pasar (BTC Guard) & Rekomendasi Position Sizing
+          signal.btcContext = btcContext;
+          signal.positionSizing = calculatePositionSizing(
+            20,
+            Math.abs(signal.stopLoss.lossPct),
+            signal.leverage.safe.multiplier
+          );
+
+          // 3. Perisai Anti-Bull Trap: Jika BTC Sedang Dump, Batalkan / Turunkan Sinyal LONG Altcoin
+          if (signal.symbol !== 'BTCUSDT' && !btcContext.isSafeForAltLong && signal.direction === 'LONG') {
+            signal.overallScore -= 22;
+            signal.signalTier = 'MODERATE';
+            if (signal.indicatorExplanation) {
+              signal.indicatorExplanation.directionVerdict = `⚠️ KEPUTUSAN TEGAS: WAIT & SEE. ${btcContext.warningMessage || 'Bitcoin sedang melemah tajam, risiko tinggi masuk posisi LONG pada Altcoin!'}`;
+            }
+          }
+
           const pattern = detectCandlestickPatterns(candles);
           if (pattern) {
             signal.candlestickPattern = pattern;
@@ -551,6 +650,12 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
                 // Kalibrasi ulang R:R
                 const tp2Gain = signal.targets.tp2.gainPct;
                 signal.riskRewardRatio = Number((tp2Gain / Math.max(slPct, 0.5)).toFixed(2));
+                // Update position sizing dengan SL baru
+                signal.positionSizing = calculatePositionSizing(
+                  20,
+                  slPct,
+                  signal.leverage.safe.multiplier
+                );
               }
             }
             // 2. Pola Berlawanan Arah (Filter Anti-Rungkad): Peringatan & Penalti Skor
@@ -570,8 +675,8 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
     })
   );
 
-  // Filter sinyal yang skornya jatuh karena konflik arah candlestick
-  const validSignals = candidates.filter((s) => s.overallScore >= 80);
+  // Filter sinyal yang skornya jatuh karena konflik arah candlestick atau BTC dump
+  const validSignals = candidates.filter((s) => s.overallScore >= 78);
 
   // Urutkan sinyal akhir: SUPERNOVA pertama, lalu berdasarkan skor konfluensi x R:R tertinggi x volume
   validSignals.sort((a, b) => {
@@ -725,9 +830,12 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
     throw new Error(`Koin "${rawSymbol.toUpperCase()}" tidak ditemukan di pasar Binance Futures USDT-M.`);
   }
 
-  const [fundingInfo, rawKlines] = await Promise.all([
+  const [fundingInfo, rawKlines, rawOi, liveLsRatio, btcContext] = await Promise.all([
     getSingleFundingRate(symbol),
-    getKlines(symbol, '15m', 35),
+    getKlines(symbol, '15m', 100),
+    getFuturesOpenInterest(symbol),
+    getFuturesLongShortRatio(symbol),
+    getBtcMarketContext(),
   ]);
 
   const currentPrice = parseFloat(ticker.lastPrice);
@@ -738,36 +846,83 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
   const fundingRate = fundingInfo ? parseFloat(fundingInfo.lastFundingRate) : 0.0001;
   const fundingRatePct = fundingRate * 100;
 
-  // Analisa Pola Candlestick dari 35 klines
+  // Analisa Pola Candlestick dari 100 klines 15m
   const candles = parseKlinesToCandles(rawKlines);
   const detectedPattern = candles.length >= 5 ? detectCandlestickPatterns(candles) : null;
 
-  // Analisa close series untuk MA, BOLL, MACD, RSI
+  // Analisa deret harga penutupan (Close) untuk MA, BOLL, MACD, RSI murni
   const closePrices = candles.length > 0 ? candles.map((c) => c.close) : [currentPrice];
 
-  // Tentukan Arah: Kombinasikan arah tren teknikal + Pola Candlestick
-  const isUptrend = change24h > 0 || (closePrices.length >= 5 && closePrices[closePrices.length - 1] > closePrices[closePrices.length - 4]);
-  let direction: FuturesDirection = isUptrend ? 'LONG' : 'SHORT';
-  let strategy: FuturesStrategy = 'BREAKOUT_MOMENTUM';
-  let strategyLabel = isUptrend ? '🚀 Trendline Continuation' : '📉 Breakdown Momentum';
-  let score = 83;
+  // 1. Kalkulasi Indikator Teknikal Riil
+  const indicators = computeRealTechnicalIndicators(closePrices, currentPrice);
 
-  // Jika pola candlestick terdeteksi, jadikan pilar utama arah sinyal
+  // Evaluasi Konfluensi Riil Indikator
+  const isMaBullish = indicators.ma.alignment === 'BULLISH';
+  const isMaBearish = indicators.ma.alignment === 'BEARISH';
+  const isMacdBull = indicators.macd.dif > indicators.macd.dea;
+  const isRsiBull = indicators.rsi.rsi6 > 50;
+  
+  const isEmaBullish = indicators.ema?.alignment === 'BULLISH';
+  const isEmaBearish = indicators.ema?.alignment === 'BEARISH';
+  const isStochBullish = indicators.stochRsi?.status === 'BULLISH_CROSS' || indicators.stochRsi?.status === 'OVERSOLD';
+  const isStochBearish = indicators.stochRsi?.status === 'BEARISH_CROSS' || indicators.stochRsi?.status === 'OVERBOUGHT';
+
+  // Tentukan Arah: Prioritaskan Candlestick Elit + Konfluensi Indikator Riil
+  let direction: FuturesDirection = 'LONG';
+  let strategy: FuturesStrategy = 'BREAKOUT_MOMENTUM';
+  let strategyLabel = '🚀 Trendline Continuation';
+  let score = 84;
+
   if (detectedPattern && detectedPattern.direction !== 'NEUTRAL') {
     direction = detectedPattern.direction;
     strategy = detectedPattern.type === 'REVERSAL' ? 'RSI_EXTREME_REVERSAL' : 'BREAKOUT_MOMENTUM';
     strategyLabel = `🕯️ ${detectedPattern.name} ${detectedPattern.type === 'REVERSAL' ? 'Reversal' : 'Continuation'}`;
     score = Math.min(84 + Math.round((detectedPattern.reliability - 50) / 2.5), 98);
+  } else if ((isMaBullish || isEmaBullish) && isMacdBull && isRsiBull) {
+    direction = 'LONG';
+    strategy = 'BREAKOUT_MOMENTUM';
+    strategyLabel = '🚀 Golden Stack Real Breakout';
+    score = 88 + (isEmaBullish ? 2 : 0) + (isStochBullish ? 2 : 0);
+  } else if ((isMaBearish || isEmaBearish) && !isMacdBull && !isRsiBull) {
+    direction = 'SHORT';
+    strategy = 'BREAKOUT_MOMENTUM';
+    strategyLabel = '📉 Death Stack Real Breakdown';
+    score = 88 + (isEmaBearish ? 2 : 0) + (isStochBearish ? 2 : 0);
   } else if (fundingRatePct <= -0.02) {
     direction = 'LONG';
     strategy = 'FUNDING_SQUEEZE';
     strategyLabel = '⚡ Short Squeeze Surge';
-    score = 88;
+    score = 87;
   } else if (fundingRatePct >= 0.05) {
     direction = 'SHORT';
     strategy = 'FUNDING_SQUEEZE';
     strategyLabel = '💥 Long Squeeze Dump';
-    score = 87;
+    score = 86;
+  } else {
+    // Fallback logic when no strong confluence exists
+    let bullCount = (isMaBullish ? 1 : 0) + (isEmaBullish ? 1 : 0) + (isMacdBull ? 1 : 0) + (isRsiBull ? 1 : 0) + (isStochBullish ? 1 : 0);
+    let bearCount = (isMaBearish ? 1 : 0) + (isEmaBearish ? 1 : 0) + (!isMacdBull ? 1 : 0) + (!isRsiBull ? 1 : 0) + (isStochBearish ? 1 : 0);
+
+    if (bullCount > bearCount + 1) {
+      direction = 'LONG';
+      strategyLabel = '⚠️ Weak Bullish Confluence';
+      score = 65 + (bullCount * 2); // max 75
+    } else if (bearCount > bullCount + 1) {
+      direction = 'SHORT';
+      strategyLabel = '⚠️ Weak Bearish Confluence';
+      score = 65 + (bearCount * 2); // max 75
+    } else {
+      direction = change24h >= 0 ? 'LONG' : 'SHORT';
+      strategyLabel = direction === 'LONG' ? '⚠️ Weak Momentum LONG' : '⚠️ Weak Breakdown SHORT';
+      score = 55; // Very weak signal
+    }
+  }
+
+  // Perisai Induk Pasar (BTC Guard): Jika BTC sedang dump tajam dan sinyal LONG untuk altcoin
+  const isBtcDumping = symbol !== 'BTCUSDT' && !btcContext.isSafeForAltLong;
+  if (isBtcDumping && direction === 'LONG') {
+    score = Math.min(score, 74);
+    strategyLabel = '⚠️ Bull Trap Warning (BTC Dump)';
   }
 
   // Hitung target TP dan SL
@@ -827,7 +982,6 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
     durationSummary = 'Volatilitas aktif: TP1 diperkirakan tembus dalam 25–45 menit, TP2 dalam 2–4 jam, dan TP3 dalam 8–24 jam.';
   }
 
-  const indicators = calculateTechnicalIndicators(currentPrice, change24h, direction, high24h, low24h);
   const indicatorExplanation = generateIndicatorExplanation(
     indicators,
     currentPrice,
@@ -837,16 +991,36 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
     { tp1Eta, tp2Eta, tp3Eta, summaryText: durationSummary }
   );
 
+  // Jika BTC dump aktif dan arah LONG, mutlak timpa keputusan menjadi WAIT & SEE
+  if (isBtcDumping && direction === 'LONG') {
+    indicatorExplanation.directionVerdict = `⚠️ KEPUTUSAN TEGAS: WAIT & SEE / NETRAL. ${btcContext.warningMessage || 'Bitcoin sedang mengalami koreksi tajam. Risiko sangat tinggi membuka posisi LONG pada altcoin!'}`;
+  }
+
   if (detectedPattern) {
     indicatorExplanation.candlestickInsight = `Pola Lilin Terdeteksi: ${detectedPattern.name} (${detectedPattern.type} - Akurasi Historis ${detectedPattern.reliability}%). ${detectedPattern.description} Konfirmasi: ${detectedPattern.confirmationRule}`;
   }
 
-  let rationale = `Analisis on-demand instan untuk ${symbol}: Struktur harga 24h (${change24h > 0 ? '+' : ''}${change24h.toFixed(2)}%) dengan volume $${(quoteVolume / 1e6).toFixed(1)}M USD.`;
+  let rationale = `Analisis on-demand presisi riil untuk ${symbol}: Struktur harga 24h (${change24h > 0 ? '+' : ''}${change24h.toFixed(2)}%) dengan volume $${(quoteVolume / 1e6).toFixed(1)}M USD.`;
   if (detectedPattern) {
     rationale += ` Terkonfirmasi pola candlestick elit "${detectedPattern.name}" (Winrate ${detectedPattern.reliability}%) memperkuat proyeksi arah ${direction}.`;
   }
+  if (isBtcDumping && direction === 'LONG') {
+    rationale += ` [PERINGATAN BTC GUARD] Bitcoin dalam kondisi tertekan (${btcContext.change15mPct}% 15m), sinyal dibatasi untuk proteksi modal.`;
+  }
 
-  const tier: FuturesSignalTier = score >= 90 || (detectedPattern?.reliability || 0) >= 74 ? 'SUPERNOVA' : 'HIGH';
+  const tier: FuturesSignalTier =
+    score >= 90 && (!isBtcDumping || direction === 'SHORT')
+      ? 'SUPERNOVA'
+      : score >= 80
+      ? 'HIGH'
+      : 'MODERATE';
+
+  // Data Derivatif Riil dari Binance Futures
+  const openInterestUsd = rawOi ? rawOi * currentPrice : quoteVolume * 0.45;
+  const longShortRatio = liveLsRatio !== null ? liveLsRatio : (direction === 'LONG' ? 1.28 : 0.82);
+
+  // Kalkulasi Position Sizing Modal Aman (Referensi modal $20)
+  const positionSizing = calculatePositionSizing(20, slPct, 5);
 
   return {
     id: `custom-${symbol}-${Date.now().toString(36)}`,
@@ -882,9 +1056,9 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
       fundingRatePct,
       fundingCountdown: 'Tiap 8 Jam',
       nextFundingTime: fundingInfo ? fundingInfo.nextFundingTime : Date.now() + 14400000,
-      openInterestUsd: quoteVolume * 0.45,
+      openInterestUsd,
       openInterestChange24h: Number((change24h * 0.7).toFixed(2)),
-      longShortRatio: direction === 'LONG' ? 1.28 : 0.82,
+      longShortRatio,
       volume24hUsd: quoteVolume,
       priceChange24hPct: change24h,
       high24h,
@@ -892,9 +1066,9 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
     },
     agentConsensus: {
       trendAgent: {
-        pass: true,
-        score: score >= 88 ? 92 : 82,
-        reason: `${direction} momentum divalidasi oleh pergerakan harga 15m${detectedPattern ? ` & pola ${detectedPattern.name}` : ''}.`,
+        pass: isMaBullish || isMaBearish || Boolean(detectedPattern),
+        score: score >= 88 ? 92 : 80,
+        reason: `${direction} momentum divalidasi oleh deret klines 15m${detectedPattern ? ` & pola ${detectedPattern.name}` : ''}.`,
       },
       volatilityAgent: {
         pass: true,
@@ -904,7 +1078,7 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
       derivativesAgent: {
         pass: true,
         score: Math.abs(fundingRatePct) >= 0.02 ? 90 : 80,
-        reason: `Funding rate ${fundingRatePct.toFixed(4)}% mendukung aksi ${direction}.`,
+        reason: `Funding rate ${fundingRatePct.toFixed(4)}% & OI $${(openInterestUsd / 1e6).toFixed(1)}M mendukung aksi ${direction}.`,
       },
       orderbookAgent: {
         pass: true,
@@ -921,5 +1095,7 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
     indicators,
     indicatorExplanation,
     candlestickPattern: detectedPattern || undefined,
+    btcContext,
+    positionSizing,
   };
 }

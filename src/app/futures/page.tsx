@@ -14,6 +14,7 @@ import ChangePasswordModal from '@/components/ChangePasswordModal';
 import SmartMoneyModal from '@/components/SmartMoneyModal';
 import { VpsBotModal } from '@/components/VpsBotModal';
 import { AutoSnipeModal } from '@/components/AutoSnipeModal';
+import { FuturesAIChat } from '@/components/chat/FuturesAIChat';
 
 function FuturesPageInner() {
   const router = useRouter();
@@ -141,6 +142,9 @@ function FuturesPageInner() {
         onSaveConfig={updateAutoSnipeConfig}
         currentBalanceSol={walletState.isConnected ? walletState.balanceSol : telemetry.currentBalanceSol}
       />
+
+      {/* Floating AI Assistant Chatbot */}
+      <FuturesAIChat />
     </div>
   );
 }
