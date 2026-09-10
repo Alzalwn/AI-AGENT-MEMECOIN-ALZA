@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 import { generateFuturesSignals } from '@/engine/futuresSignalEngine';
+import dns from 'node:dns';
+
+// Pastikan Node.js memprioritaskan IPv4 untuk mencegah timeout IPv6 di VPS
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch (_) {}
 
 const apiKey = process.env.GEMINI_API_KEY;
 const ai = apiKey ? new GoogleGenAI({ apiKey }) : new GoogleGenAI({});
