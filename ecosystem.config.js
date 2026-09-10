@@ -52,6 +52,7 @@ module.exports = {
       env_production: {
         NODE_ENV: 'production',
         PORT: 3000,
+        NODE_OPTIONS: '--dns-result-order=ipv4first',
         // Supabase
         NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
         NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
