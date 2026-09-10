@@ -33,6 +33,7 @@ import SolConverterModal from '../components/SolConverterModal';
 import ChangePasswordModal from '../components/ChangePasswordModal';
 import SmartMoneyModal from '../components/SmartMoneyModal';
 import { VpsBotModal } from '../components/VpsBotModal';
+import { FuturesAIChat } from '../components/chat/FuturesAIChat';
 import { JitoBundleReceipt } from '../lib/jito';
 import { STRATEGY_PRESETS } from '../config/constants';
 import { ActivePosition, ClosedTrade } from '../types/terminal';
@@ -498,6 +499,9 @@ function TerminalAppInner() {
         </span>
         <span className="hidden sm:inline font-bold">Hotkeys</span>
       </button>
+
+      {/* Floating AI Assistant Chatbot (Tersedia di semua dashboard) */}
+      <FuturesAIChat />
     </div>
   );
 }
