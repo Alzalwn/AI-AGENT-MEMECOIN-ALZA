@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
-import { getFuturesSignals } from '@/engine/futuresSignalEngine';
+import { generateFuturesSignals } from '@/engine/futuresSignalEngine';
 
 const apiKey = process.env.GEMINI_API_KEY;
 const ai = apiKey ? new GoogleGenAI({ apiKey }) : new GoogleGenAI({});
@@ -18,7 +18,7 @@ export async function POST(req: Request) {
     }
 
     // Dapatkan sinyal terbaru sebagai konteks AI
-    const signals = await getFuturesSignals();
+    const signals = await generateFuturesSignals();
     
     // Buat string konteks dari data sinyal
     const signalsContext = signals.map(s => `
