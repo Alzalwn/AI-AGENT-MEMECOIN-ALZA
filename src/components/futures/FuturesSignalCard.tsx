@@ -24,6 +24,7 @@ import {
   Download,
   Image as ImageIcon,
   Share2,
+  Send,
 } from 'lucide-react';
 import { BinanceFuturesSignal } from '../../types/futures';
 import { formatFuturesPrice } from '../../engine/futuresSignalEngine';
@@ -126,12 +127,8 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
         strategyLabel: signal.strategyLabel,
       });
 
-      // Salin Teks dan Gambar ke Clipboard
+      // Salin Teks dan Gambar ke Clipboard (TIDAK langsung men-download file gambar ke disk)
       await copySignalWithImageToClipboard(text, imageBlob);
-
-      // Auto-download file PNG agar pengguna memiliki file gambar yang siap di-drag ke Telegram
-      const filename = `${signal.symbol.replace('/', '-')}-${signal.direction}-analisis.png`;
-      downloadImageBlob(imageBlob, filename);
 
       // Buka modal preview agar pengguna dapat melihat gambar dan memilih opsi salin tambahan
       const imgUrl = URL.createObjectURL(imageBlob);
@@ -621,6 +618,57 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
           </span>
         </button>
 
+        {/* Buka Langsung di Aplikasi Telegram (Desktop / Mobile App) */}
+        <a
+          href={`tg://msg_url?url=${encodeURIComponent(signal.binanceUrl)}&text=${encodeURIComponent(
+            generateCommunitySignalPost({
+              pair: `${signal.baseAsset}/USDT`,
+              position: signal.direction,
+              entry: formatFuturesPrice(signal.entryZone.current),
+              targets: {
+                tp1: {
+                  price: formatFuturesPrice(signal.targets.tp1.price),
+                  gainPct: signal.targets.tp1.gainPct,
+                  eta: signal.targets.tp1.eta,
+                },
+                tp2: {
+                  price: formatFuturesPrice(signal.targets.tp2.price),
+                  gainPct: signal.targets.tp2.gainPct,
+                  eta: signal.targets.tp2.eta,
+                },
+                tp3: {
+                  price: formatFuturesPrice(signal.targets.tp3.price),
+                  gainPct: signal.targets.tp3.gainPct,
+                  eta: signal.targets.tp3.eta,
+                },
+              },
+              stopLoss: formatFuturesPrice(signal.stopLoss.price),
+              riskRewardRatio: signal.riskRewardRatio,
+              durationSummary: signal.indicatorExplanation?.estimatedDuration.summaryText,
+              leverage: {
+                safe: signal.leverage.safe.range,
+                scalp: signal.leverage.scalp.range,
+              },
+              fundingRatePct: signal.derivativesData.fundingRatePct,
+              binanceUrl: signal.binanceUrl,
+              overallScore: signal.overallScore,
+              strategyLabel: signal.strategyLabel,
+              candlestickPattern: signal.candlestickPattern
+                ? {
+                    name: signal.candlestickPattern.name,
+                    type: signal.candlestickPattern.type,
+                    reliability: signal.candlestickPattern.reliability,
+                  }
+                : undefined,
+            })
+          )}`}
+          className="p-2.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 hover:border-sky-500/50 text-sky-400 hover:text-sky-300 transition-all cursor-pointer flex items-center gap-1.5"
+          title="Buka langsung di Aplikasi Telegram (Ada Link Trading)"
+        >
+          <Send className="w-4 h-4 text-sky-400" />
+          <span className="text-[11px] font-mono font-bold hidden md:inline">Telegram App</span>
+        </a>
+
         <button
           onClick={handleDownloadImage}
           disabled={isDownloading}
@@ -648,6 +696,7 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
         entryPrice={signal.entryZone.current}
         tpPrice={signal.targets.tp1.price}
         slPrice={signal.stopLoss.price}
+        binanceUrl={signal.binanceUrl}
       />
     </div>
   );

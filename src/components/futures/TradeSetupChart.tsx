@@ -222,8 +222,7 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
       canvas.toBlob(async (blob) => {
         if (blob) {
           await copySignalWithImageToClipboard(text, blob);
-          // Auto-download file PNG chart
-          downloadImageBlob(blob, `${symbol.replace('/', '-')}-${direction}-chart.png`);
+          // HAPUS download otomatis sesuai preferensi pengguna
           const imgUrl = URL.createObjectURL(blob);
           setShareImageBlob(blob);
           setShareImageUrl(imgUrl);
@@ -1322,6 +1321,7 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
         entryPrice={entryPrice}
         tpPrice={selectedTargetPrice}
         slPrice={stopLossPrice}
+        binanceUrl={signal?.binanceUrl || `https://www.binance.com/en/futures/${symbol}`}
       />
     </div>
   );

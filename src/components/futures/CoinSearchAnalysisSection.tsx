@@ -511,7 +511,7 @@ export const CoinSearchAnalysisSection: React.FC<CoinSearchAnalysisSectionProps>
 
           {/* ACTION BUTTONS (Send to Telegram, Open Chart, Copy Text, Binance) */}
           <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-800/80 font-mono text-xs">
-            {/* Primary Action: Send to Telegram */}
+            {/* Primary Action 1: Send via Telegram Bot API */}
             <button
               onClick={handleSendToTelegram}
               disabled={isSendingTg}
@@ -522,8 +522,59 @@ export const CoinSearchAnalysisSection: React.FC<CoinSearchAnalysisSectionProps>
               }`}
             >
               <Send className={`w-4 h-4 ${isSendingTg ? 'animate-spin' : ''}`} />
-              <span>{isSendingTg ? 'Mengirim ke Telegram...' : '🚀 KIRIM KE TELEGRAM'}</span>
+              <span>{isSendingTg ? 'Mengirim ke Telegram...' : '🚀 KIRIM KE TELEGRAM (BOT)'}</span>
             </button>
+
+            {/* Primary Action 2: Open directly in Telegram Desktop / Mobile App with Link */}
+            <a
+              href={`tg://msg_url?url=${encodeURIComponent(analyzedSignal.binanceUrl)}&text=${encodeURIComponent(
+                generateCommunitySignalPost({
+                  pair: `${analyzedSignal.baseAsset}/USDT`,
+                  position: analyzedSignal.direction,
+                  entry: formatFuturesPrice(analyzedSignal.entryZone.current),
+                  targets: {
+                    tp1: {
+                      price: formatFuturesPrice(analyzedSignal.targets.tp1.price),
+                      gainPct: analyzedSignal.targets.tp1.gainPct,
+                      eta: analyzedSignal.targets.tp1.eta,
+                    },
+                    tp2: {
+                      price: formatFuturesPrice(analyzedSignal.targets.tp2.price),
+                      gainPct: analyzedSignal.targets.tp2.gainPct,
+                      eta: analyzedSignal.targets.tp2.eta,
+                    },
+                    tp3: {
+                      price: formatFuturesPrice(analyzedSignal.targets.tp3.price),
+                      gainPct: analyzedSignal.targets.tp3.gainPct,
+                      eta: analyzedSignal.targets.tp3.eta,
+                    },
+                  },
+                  stopLoss: formatFuturesPrice(analyzedSignal.stopLoss.price),
+                  riskRewardRatio: analyzedSignal.riskRewardRatio,
+                  durationSummary: analyzedSignal.indicatorExplanation?.estimatedDuration.summaryText,
+                  leverage: {
+                    safe: analyzedSignal.leverage.safe.range,
+                    scalp: analyzedSignal.leverage.scalp.range,
+                  },
+                  fundingRatePct: analyzedSignal.derivativesData.fundingRatePct,
+                  binanceUrl: analyzedSignal.binanceUrl,
+                  overallScore: analyzedSignal.overallScore,
+                  strategyLabel: analyzedSignal.strategyLabel,
+                  candlestickPattern: analyzedSignal.candlestickPattern
+                    ? {
+                        name: analyzedSignal.candlestickPattern.name,
+                        type: analyzedSignal.candlestickPattern.type,
+                        reliability: analyzedSignal.candlestickPattern.reliability,
+                      }
+                    : undefined,
+                })
+              )}`}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 hover:border-sky-500/50 text-sky-300 font-bold transition-all cursor-pointer"
+              title="Buka Aplikasi Telegram Desktop atau HP langsung dengan tautan dan sinyal"
+            >
+              <Send className="w-4 h-4 text-sky-400" />
+              <span>Buka Telegram App</span>
+            </a>
 
             {/* Open Interactive Chart */}
             <button

@@ -13,7 +13,8 @@ import {
   Sparkles,
   Layers,
   ArrowUpRight,
-  ArrowDownRight
+  ArrowDownRight,
+  Send,
 } from 'lucide-react';
 import {
   copyImageToClipboard,
@@ -34,6 +35,7 @@ export interface SignalShareModalProps {
   entryPrice: number;
   tpPrice: number;
   slPrice: number;
+  binanceUrl?: string;
 }
 
 export const SignalShareModal: React.FC<SignalShareModalProps> = ({
@@ -48,6 +50,7 @@ export const SignalShareModal: React.FC<SignalShareModalProps> = ({
   entryPrice,
   tpPrice,
   slPrice,
+  binanceUrl,
 }) => {
   const [copiedType, setCopiedType] = useState<'both' | 'image' | 'text' | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -56,13 +59,13 @@ export const SignalShareModal: React.FC<SignalShareModalProps> = ({
 
   const isLong = direction === 'LONG';
   const filename = `${symbol.replace('/', '-')}-${direction}-analisis.png`;
+  const targetShareUrl = binanceUrl || `https://www.binance.com/en/futures/${symbol.replace('/', '')}`;
 
   const handleCopyBoth = async () => {
     if (!imageBlob) return;
     setCopiedType('both');
+    // Salin ke clipboard tanpa otomatis men-download file gambar ke disk
     await copySignalWithImageToClipboard(formattedText, imageBlob);
-    // Juga trigger download gambar sebagai jaminan file tersimpan
-    downloadImageBlob(imageBlob, filename);
     setTimeout(() => setCopiedType(null), 3000);
   };
 
@@ -86,9 +89,11 @@ export const SignalShareModal: React.FC<SignalShareModalProps> = ({
     setTimeout(() => setIsDownloading(false), 1500);
   };
 
-  const handleShareTelegram = () => {
+  const handleShareTelegramApp = () => {
     const encodedText = encodeURIComponent(formattedText);
-    window.open(`https://t.me/share/url?url=&text=${encodedText}`, '_blank');
+    const encodedUrl = encodeURIComponent(targetShareUrl);
+    // Buka aplikasi Telegram resmi (Desktop/Mobile) via protocol tg://
+    window.location.href = `tg://msg_url?url=${encodedUrl}&text=${encodedText}`;
   };
 
   return (
@@ -157,7 +162,7 @@ export const SignalShareModal: React.FC<SignalShareModalProps> = ({
               <span>{copiedType === 'text' ? 'Teks Disalin!' : '2. Salin Caption Teks'}</span>
             </button>
 
-            {/* 3. Salin Keduanya + Unduh PNG */}
+            {/* 3. Salin Keduanya (Tanpa Unduh Otomatis) */}
             <button
               onClick={handleCopyBoth}
               className={`p-2.5 rounded-xl border font-mono text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
@@ -167,7 +172,7 @@ export const SignalShareModal: React.FC<SignalShareModalProps> = ({
               }`}
             >
               {copiedType === 'both' ? <Check className="w-4 h-4 text-zinc-950 font-black" /> : <Sparkles className="w-4 h-4 text-zinc-950 font-black" />}
-              <span>{copiedType === 'both' ? 'Tersalin + Unduh PNG!' : '⚡ Salin & Download PNG'}</span>
+              <span>{copiedType === 'both' ? 'Sinyal & Foto Tersalin!' : '⚡ Salin Sinyal + Foto'}</span>
             </button>
           </div>
 
@@ -241,11 +246,11 @@ export const SignalShareModal: React.FC<SignalShareModalProps> = ({
           <div className="bg-sky-500/[0.06] border border-sky-500/25 rounded-xl p-3.5 flex items-start gap-3 text-xs text-zinc-300">
             <span className="text-lg">💡</span>
             <div className="space-y-1">
-              <p className="font-bold text-sky-300">Cara Kirim Gambar + Caption ke Telegram:</p>
+              <p className="font-bold text-sky-300">Cara Kirim Sinyal ke Aplikasi Telegram:</p>
               <ol className="list-decimal list-inside text-zinc-400 space-y-0.5 text-[11.5px]">
-                <li>Klik tombol <strong>&ldquo;1. Salin Gambar&rdquo;</strong> lalu tekan <code>Ctrl + V</code> di chat Telegram untuk memunculkan foto.</li>
-                <li>Klik tombol <strong>&ldquo;2. Salin Caption Teks&rdquo;</strong> dan paste di kolom <em>&ldquo;Add a caption...&rdquo;</em> Telegram.</li>
-                <li>Atau klik <strong>&ldquo;⚡ Salin &amp; Download PNG&rdquo;</strong> lalu drag file gambar yang terunduh langsung ke chat Telegram Anda!</li>
+                <li>Klik tombol <strong>&ldquo;Buka di Aplikasi Telegram&rdquo;</strong> di bawah untuk membuka Telegram Desktop/HP langsung dengan teks dan tautan trading aktif!</li>
+                <li>Atau klik <strong>&ldquo;1. Salin Gambar&rdquo;</strong> lalu tekan <code>Ctrl + V</code> di chat Telegram jika ingin melampirkan gambar grafik.</li>
+                <li>Jika membutuhkan file gambar disimpan di komputer, klik tombol <strong>&ldquo;Download (.PNG)&rdquo;</strong>.</li>
               </ol>
             </div>
           </div>
@@ -253,13 +258,29 @@ export const SignalShareModal: React.FC<SignalShareModalProps> = ({
 
         {/* Modal Footer */}
         <div className="p-4 bg-zinc-900/80 border-t border-zinc-800 flex items-center justify-between flex-wrap gap-2">
-          <button
-            onClick={handleShareTelegram}
-            className="px-4 py-2 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 hover:text-white text-xs font-mono font-bold flex items-center gap-2 transition-all cursor-pointer"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-            <span>Kirim Langsung ke Telegram Web</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Direct Deep Link to Telegram Desktop / Mobile App */}
+            <button
+              onClick={handleShareTelegramApp}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white text-xs font-mono font-bold flex items-center gap-2 transition-all shadow-md shadow-sky-500/25 active:scale-95 cursor-pointer"
+              title="Buka Aplikasi Telegram Desktop atau HP langsung dengan teks dan tautan"
+            >
+              <Send className="w-3.5 h-3.5 text-white" />
+              <span>Buka di Aplikasi Telegram (Ada Link)</span>
+            </button>
+
+            <button
+              onClick={() => {
+                const encodedText = encodeURIComponent(formattedText);
+                const encodedUrl = encodeURIComponent(targetShareUrl);
+                window.open(`https://t.me/share/url?url=${encodedUrl}&text=${encodedText}`, '_blank');
+              }}
+              className="text-[11px] text-zinc-500 hover:text-zinc-300 font-mono underline cursor-pointer px-1"
+              title="Buka Telegram Web jika aplikasi belum terpasang"
+            >
+              (Versi Web)
+            </button>
+          </div>
 
           <div className="flex items-center gap-2">
             <button
