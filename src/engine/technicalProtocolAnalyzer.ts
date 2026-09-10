@@ -4,6 +4,9 @@
  * Menjamin zero-hallucination dan ketiadaan sinyal palsu.
  */
 
+import { CandlestickPatternResult } from '../types/futures';
+import { Candle, detectCandlestickPatterns } from './candlestickPatternEngine';
+
 export interface IndicatorNumericalValues {
   lastClose: number;
   timeframe: string;
@@ -50,10 +53,12 @@ export interface ProtocolVerificationResult {
     conflicts: string[];
     isConfluencePerfect: boolean;
   };
+  candlestickPattern?: CandlestickPatternResult | null;
   protocolChecklist: {
     macdVerified: boolean;
     bbVerified: boolean;
     maVerified: boolean;
+    candlestickVerified?: boolean;
     notes: string[];
   };
 }
@@ -172,7 +177,8 @@ export function formatExactPrice(price: number | null): string {
  */
 export function analyzeTechnicalProtocol(
   closePrices: number[],
-  timeframe: string = '15m'
+  timeframe: string = '15m',
+  fullCandles?: Candle[]
 ): ProtocolVerificationResult {
   if (!closePrices || closePrices.length === 0) {
     throw new Error('Data close candle tidak boleh kosong untuk analisis protokol.');
@@ -207,6 +213,11 @@ export function analyzeTechnicalProtocol(
   const rsi6 = rsi6Series[lastIdx] ?? 50;
   const rsi12 = rsi12Series[lastIdx] ?? 50;
   const rsi24 = rsi24Series[lastIdx] ?? 50;
+
+  // Deteksi Pola Candlestick Elit (jika data candle penuh disediakan)
+  const detectedPattern = fullCandles && fullCandles.length >= 5
+    ? detectCandlestickPatterns(fullCandles)
+    : null;
 
   // -------------------------------------------------------------
   // ATURAN 1: Verifikasi MACD (Mutlak)
@@ -319,7 +330,7 @@ export function analyzeTechnicalProtocol(
 
   // -------------------------------------------------------------
   // ATURAN 4: Output Kesimpulan (Keputusan Tegas)
-  // Sinkronkan semua indikator.
+  // Sinkronkan semua indikator + Pola Candlestick.
   // Jika ada indikator yang bertentangan: WAJIB turunkan ke "NEUTRAL" / "WAIT & SEE"
   // Dilarang memaksakan "REKOMENDASI KUAT" tanpa konfluensi 100%.
   // -------------------------------------------------------------
@@ -354,7 +365,22 @@ export function analyzeTechnicalProtocol(
   if (rsiStatus === 'BULLISH_ZONE' || rsiStatus === 'OVERSOLD') isBullishScore += 1;
   else if (rsiStatus === 'BEARISH_ZONE' || rsiStatus === 'OVERBOUGHT') isBearishScore += 1;
 
-  // Analisis Konflik Silang
+  // Evaluasi Konfluensi Pola Candlestick (Bible Candlestick Rules)
+  if (detectedPattern) {
+    if (detectedPattern.bias === 'BULLISH') {
+      isBullishScore += 1;
+      if (isBearishScore >= 2) {
+        conflicts.push(`KONFLIK CANDLESTICK: Terdeteksi pola bullish (${detectedPattern.name}) sementara indikator dominan bearish.`);
+      }
+    } else if (detectedPattern.bias === 'BEARISH') {
+      isBearishScore += 1;
+      if (isBullishScore >= 2) {
+        conflicts.push(`KONFLIK CANDLESTICK: Terdeteksi pola bearish (${detectedPattern.name}) sementara indikator dominan bullish.`);
+      }
+    }
+  }
+
+  // Analisis Konflik Silang Indikator
   if (maAlignment === 'BULLISH_UPTREND' && macdStatus === 'BEARISH_CROSS') {
     conflicts.push(`KONTRADIKSI: Formasi MA menunjukkan Bullish, tetapi MACD DIF (${dif.toFixed(4)}) berada di bawah DEA (${dea.toFixed(4)})`);
   }
@@ -375,21 +401,36 @@ export function analyzeTechnicalProtocol(
   let confluenceRate = 0;
   const isConfluencePerfect = conflicts.length === 0 && (isBullishScore >= 3.5 || isBearishScore >= 3.5);
 
+  const patternExtra = detectedPattern
+    ? ` Disertai konfirmasi pola ${detectedPattern.name} (Akurasi ${detectedPattern.reliability}%).`
+    : '';
+
   if (isConfluencePerfect && isBullishScore >= 3.5 && dif > dea) {
     verdictStatus = 'STRONG_BUY';
     badgeLabel = '🟢 REKOMENDASI KUAT: LONG (BUY)';
     confluenceRate = 100;
-    summaryText = `Konfluensi 100% Terpenuhi: Formasi MA7 > MA25 > MA99 valid uptrend, DIF (${dif.toFixed(5)}) > DEA (${dea.toFixed(5)}) mutlak terkonfirmasi, dan posisi harga/RSI selaras tanpa divergensi bertentangan.`;
+    summaryText = `Konfluensi 100% Terpenuhi: Formasi MA7 > MA25 > MA99 valid uptrend, DIF (${dif.toFixed(5)}) > DEA (${dea.toFixed(5)}) mutlak terkonfirmasi, dan posisi harga/RSI selaras tanpa divergensi bertentangan.${patternExtra}`;
   } else if (isConfluencePerfect && isBearishScore >= 3.5 && dif < dea) {
     verdictStatus = 'STRONG_SELL';
     badgeLabel = '🔴 REKOMENDASI KUAT: SHORT (SELL)';
     confluenceRate = 100;
-    summaryText = `Konfluensi 100% Terpenuhi: Formasi MA7 < MA25 < MA99 valid downtrend, DIF (${dif.toFixed(5)}) < DEA (${dea.toFixed(5)}) mutlak terkonfirmasi, dan tekanan jual mengonfirmasi kelanjutan penurunan.`;
+    summaryText = `Konfluensi 100% Terpenuhi: Formasi MA7 < MA25 < MA99 valid downtrend, DIF (${dif.toFixed(5)}) < DEA (${dea.toFixed(5)}) mutlak terkonfirmasi, dan tekanan jual mengonfirmasi kelanjutan penurunan.${patternExtra}`;
   } else {
     verdictStatus = 'WAIT_AND_SEE_NEUTRAL';
     badgeLabel = '🟡 WAIT & SEE / NEUTRAL: Konfluensi Belum Sempurna';
     confluenceRate = Math.round((Math.max(isBullishScore, isBearishScore) / 4) * 100);
-    summaryText = `Peringatan Protokol: Konfluensi indikator belum selaras 100% (${confluenceRate}% konfluensi). Terdapat sinyal bertentangan sehingga rekomendasi wajib diturunkan menjadi WAIT & SEE untuk menghindari sinyal palsu.`;
+    summaryText = `Peringatan Protokol: Konfluensi indikator belum selaras 100% (${confluenceRate}% konfluensi). Terdapat sinyal bertentangan sehingga rekomendasi wajib diturunkan menjadi WAIT & SEE untuk menghindari sinyal palsu.${patternExtra}`;
+  }
+
+  const checklistNotes: string[] = [
+    `Close Candle Terakhir: $${formatExactPrice(lastClose)} [TF: ${timeframe}]`,
+    `Verifikasi MACD: DIF (${dif.toFixed(5)}) vs DEA (${dea.toFixed(5)}) -> ${isDIFAboveDEA ? 'DIF > DEA' : 'DIF <= DEA'}`,
+    `Verifikasi Bollinger: ${bbStatus}`,
+    `Verifikasi MA: ${maAlignment}`,
+  ];
+
+  if (detectedPattern) {
+    checklistNotes.push(`Pola Candlestick: ${detectedPattern.name} (${detectedPattern.bias} [Winrate ${detectedPattern.reliability}%])`);
   }
 
   return {
@@ -409,16 +450,13 @@ export function analyzeTechnicalProtocol(
       conflicts,
       isConfluencePerfect,
     },
+    candlestickPattern: detectedPattern,
     protocolChecklist: {
       macdVerified: (verdictStatus === 'STRONG_BUY' && dif > dea) || (verdictStatus === 'STRONG_SELL' && dif < dea) || verdictStatus === 'WAIT_AND_SEE_NEUTRAL',
       bbVerified: true,
       maVerified: true,
-      notes: [
-        `Close Candle Terakhir: $${formatExactPrice(lastClose)} [TF: ${timeframe}]`,
-        `Verifikasi MACD: DIF (${dif.toFixed(5)}) vs DEA (${dea.toFixed(5)}) -> ${isDIFAboveDEA ? 'DIF > DEA' : 'DIF <= DEA'}`,
-        `Verifikasi Bollinger: ${bbStatus}`,
-        `Verifikasi MA: ${maAlignment}`,
-      ],
+      candlestickVerified: detectedPattern ? detectedPattern.bias !== 'NEUTRAL' : undefined,
+      notes: checklistNotes,
     },
   };
 }

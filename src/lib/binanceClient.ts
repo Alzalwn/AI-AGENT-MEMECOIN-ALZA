@@ -40,7 +40,7 @@ function setCached<T>(key: string, data: T, ttlMs: number): void {
 /**
  * Fetch generic dengan failover bertingkat
  */
-async function fetchWithFailover(endpoint: string, options?: RequestInit): Promise<Response> {
+export async function fetchWithFailover(endpoint: string, options?: RequestInit): Promise<Response> {
   const urls = [PRIMARY_FUTURES_URL, ...FALLBACK_FUTURES_URLS];
   let lastError: Error | null = null;
 
@@ -188,4 +188,48 @@ export async function getKlines(
     console.warn(`[BinanceClient] Gagal mengambil klines untuk ${symbol}:`, err);
   }
   return [];
+}
+
+/**
+ * Mengambil ticker 24h untuk satu koin spesifik (misal BTCUSDT)
+ */
+export async function getFuturesSingleTicker(symbol: string): Promise<Raw24hTicker | null> {
+  const cleanSymbol = symbol.trim().toUpperCase();
+  const cacheKey = `single_ticker_${cleanSymbol}`;
+  const cached = getCached<Raw24hTicker>(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const res = await fetchWithFailover(`/fapi/v1/ticker/24hr?symbol=${cleanSymbol}`);
+    const data = await res.json();
+    if (data && data.symbol) {
+      setCached(cacheKey, data as Raw24hTicker, 15_000);
+      return data as Raw24hTicker;
+    }
+  } catch (err) {
+    console.warn(`[BinanceClient] Gagal mengambil ticker untuk ${cleanSymbol}:`, err);
+  }
+  return null;
+}
+
+/**
+ * Mengambil data Funding Rate & Premium Index untuk satu koin spesifik
+ */
+export async function getSingleFundingRate(symbol: string): Promise<RawFundingRate | null> {
+  const cleanSymbol = symbol.trim().toUpperCase();
+  const cacheKey = `single_funding_${cleanSymbol}`;
+  const cached = getCached<RawFundingRate>(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const res = await fetchWithFailover(`/fapi/v1/premiumIndex?symbol=${cleanSymbol}`);
+    const data = await res.json();
+    if (data && data.symbol) {
+      setCached(cacheKey, data as RawFundingRate, 30_000);
+      return data as RawFundingRate;
+    }
+  } catch (err) {
+    console.warn(`[BinanceClient] Gagal mengambil funding rate untuk ${cleanSymbol}:`, err);
+  }
+  return null;
 }

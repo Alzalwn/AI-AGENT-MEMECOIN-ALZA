@@ -21,6 +21,7 @@ import { FuturesHeroStats } from './FuturesHeroStats';
 import { FuturesSignalCard } from './FuturesSignalCard';
 import { FundingRateHeatmap } from './FundingRateHeatmap';
 import { TradingViewModal } from './TradingViewModal';
+import { CoinSearchAnalysisSection } from './CoinSearchAnalysisSection';
 
 export const FuturesDashboard: React.FC = () => {
   const [signals, setSignals] = useState<BinanceFuturesSignal[]>([]);
@@ -185,6 +186,9 @@ export const FuturesDashboard: React.FC = () => {
         onSelectCoin={(sym) => setSearchQuery(sym.replace('USDT', ''))}
         onOpenChart={(sym) => handleOpenChart(sym)}
       />
+
+      {/* 2.5. Dedicated Coin Search & Direct Telegram Broadcast Engine */}
+      <CoinSearchAnalysisSection onOpenChart={handleOpenChart} />
 
       {/* 3. Main Action Bar: Tombol Cari Otomatis & Search Bar */}
       <div className="bg-[#0e0e0e] border border-white/10 rounded-2xl p-3 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 shadow-xl">

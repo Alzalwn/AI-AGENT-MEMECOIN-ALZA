@@ -105,6 +105,13 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
         binanceUrl: signal.binanceUrl,
         overallScore: signal.overallScore,
         strategyLabel: signal.strategyLabel,
+        candlestickPattern: signal.candlestickPattern
+          ? {
+              name: signal.candlestickPattern.name,
+              type: signal.candlestickPattern.type,
+              reliability: signal.candlestickPattern.reliability,
+            }
+          : undefined,
       });
 
       // Bangkitkan gambar grafik analisis berkualitas tinggi
@@ -210,6 +217,25 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 flex items-center gap-1 shadow-sm">
                   <Flame className="w-3 h-3 text-yellow-400" />
                   SUPERNOVA
+                </span>
+              )}
+
+              {signal.candlestickPattern && (
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1 shadow-sm ${
+                    signal.candlestickPattern.bias === 'BULLISH'
+                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
+                      : signal.candlestickPattern.bias === 'BEARISH'
+                      ? 'bg-rose-500/15 text-rose-300 border-rose-500/40'
+                      : 'bg-zinc-800 text-zinc-300 border-zinc-700'
+                  }`}
+                  title={`${signal.candlestickPattern.name} (${signal.candlestickPattern.type}) - Akurasi: ${signal.candlestickPattern.reliability}%`}
+                >
+                  <span className="text-[11px]">🕯️</span>
+                  <span>{signal.candlestickPattern.name}</span>
+                  <span className="font-mono text-[9px] px-1 py-0.2 rounded bg-black/40 text-amber-300 border border-amber-500/30">
+                    {signal.candlestickPattern.reliability}%
+                  </span>
                 </span>
               )}
             </div>
@@ -436,6 +462,28 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
                         <span className="font-bold text-pink-400 block mb-0.5">🌸 Triple RSI(6, 12, 24) Kekuatan:</span>
                         <p className="text-zinc-300 leading-normal">{signal.indicatorExplanation.rsiInsight}</p>
                       </div>
+
+                      {/* Candlestick Pattern Card Insight */}
+                      {signal.candlestickPattern && (
+                        <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-amber-300 flex items-center gap-1.5">
+                              <span>🕯️</span>
+                              Pola Candlestick: {signal.candlestickPattern.name}
+                            </span>
+                            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-200 border border-amber-500/30 font-bold">
+                              Winrate {signal.candlestickPattern.reliability}% ({signal.candlestickPattern.type})
+                            </span>
+                          </div>
+                          <p className="text-zinc-300 leading-relaxed text-[10px]">
+                            {signal.candlestickPattern.description}
+                          </p>
+                          <div className="text-[9.5px] text-amber-400/90 pt-1 border-t border-amber-500/20 flex items-center gap-1">
+                            <span className="font-bold">Konfirmasi Valid:</span>
+                            <span>{signal.candlestickPattern.confirmationRule}</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

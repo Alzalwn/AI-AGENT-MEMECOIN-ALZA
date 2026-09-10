@@ -210,6 +210,13 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
         },
         fundingRatePct: signal?.derivativesData?.fundingRatePct,
         binanceUrl: `https://www.binance.com/en/futures/${symbol}`,
+        candlestickPattern: (liveProtocol?.candlestickPattern || signal?.candlestickPattern)
+          ? {
+              name: (liveProtocol?.candlestickPattern || signal?.candlestickPattern)!.name,
+              type: (liveProtocol?.candlestickPattern || signal?.candlestickPattern)!.type,
+              reliability: (liveProtocol?.candlestickPattern || signal?.candlestickPattern)!.reliability,
+            }
+          : undefined,
       });
 
       canvas.toBlob(async (blob) => {
@@ -333,11 +340,11 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
   // Calculate Technical Indicator Series
   const closePrices = useMemo(() => klines.map((k) => k.close), [klines]);
 
-  // Universal Technical Protocol Result (Kalkulasi 100% Real-Time dari Close Candle Terakhir)
+  // Universal Technical Protocol Result (Kalkulasi 100% Real-Time dari Close Candle Terakhir + Candlestick Pattern)
   const liveProtocol = useMemo(() => {
     if (closePrices.length === 0) return null;
-    return analyzeTechnicalProtocol(closePrices, timeframe);
-  }, [closePrices, timeframe]);
+    return analyzeTechnicalProtocol(closePrices, timeframe, klines);
+  }, [closePrices, timeframe, klines]);
 
   const ma7Series = useMemo(() => calculateSMA(closePrices, 7), [closePrices]);
   const ma25Series = useMemo(() => calculateSMA(closePrices, 25), [closePrices]);
@@ -1075,6 +1082,24 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
                       {liveProtocol.verdict.badgeLabel}
                     </span>
 
+                    {/* Candlestick Pattern Micro Badge */}
+                    {liveProtocol.candlestickPattern && (
+                      <span
+                        className={`px-2 py-0.5 rounded border text-[10px] font-bold flex items-center gap-1 shadow-sm ${
+                          liveProtocol.candlestickPattern.bias === 'BULLISH'
+                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50'
+                            : liveProtocol.candlestickPattern.bias === 'BEARISH'
+                            ? 'bg-rose-950/80 text-rose-300 border-rose-500/50'
+                            : 'bg-zinc-900 text-zinc-300 border-zinc-700'
+                        }`}
+                        title={liveProtocol.candlestickPattern.description}
+                      >
+                        <span>🕯️</span>
+                        <span>{liveProtocol.candlestickPattern.name}</span>
+                        <span className="text-amber-400 font-mono text-[9px]">[{liveProtocol.candlestickPattern.reliability}%]</span>
+                      </span>
+                    )}
+
                     {/* Live Micro Badges */}
                     <div className="hidden sm:flex items-center gap-1.5 text-[10px]">
                       {/* MACD DIF vs DEA */}
@@ -1212,6 +1237,28 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
                         </div>
                         <p className="text-zinc-300 leading-relaxed">{liveProtocol.indicators.rsi.displayText}</p>
                       </div>
+
+                      {/* Pillar 5: Pola Candlestick Elit (WR Trading Bible) */}
+                      {liveProtocol.candlestickPattern && (
+                        <div className="md:col-span-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-amber-300 flex items-center gap-1.5">
+                              <span>🕯️</span>
+                              <span>5. Pola Candlestick: {liveProtocol.candlestickPattern.name}</span>
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded font-bold bg-amber-500/20 text-amber-200 border border-amber-500/40 font-mono text-[9px]">
+                              Winrate {liveProtocol.candlestickPattern.reliability}% ({liveProtocol.candlestickPattern.type})
+                            </span>
+                          </div>
+                          <p className="text-zinc-300 leading-relaxed">{liveProtocol.candlestickPattern.description}</p>
+                          <div className="text-[9.5px] text-amber-400/90 pt-1 border-t border-amber-500/20 flex items-center justify-between">
+                            <span><strong className="text-white">Konfirmasi:</strong> {liveProtocol.candlestickPattern.confirmationRule}</span>
+                            {liveProtocol.candlestickPattern.stopLossPrice && (
+                              <span><strong className="text-white">Level SL Pola:</strong> ${fmtP(liveProtocol.candlestickPattern.stopLossPrice)}</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

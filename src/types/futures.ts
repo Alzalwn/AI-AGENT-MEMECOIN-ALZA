@@ -120,6 +120,22 @@ export interface BinanceFuturesSignal {
   isArchived?: boolean;
   indicators?: FuturesTechnicalIndicators;
   indicatorExplanation?: IndicatorExplanation;
+  candlestickPattern?: CandlestickPatternResult;
+}
+
+export interface CandlestickPatternResult {
+  id: string;
+  name: string;
+  japaneseName?: string;
+  direction: 'LONG' | 'SHORT' | 'NEUTRAL';
+  bias: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  type: 'REVERSAL' | 'CONTINUATION' | 'INDECISION';
+  reliability: number; // e.g. 75 (%)
+  strength: 'ULTRA' | 'HIGH' | 'MODERATE';
+  description: string;
+  confirmationRule: string;
+  stopLossPrice?: number;
+  candlesInvolved: number;
 }
 
 export interface IndicatorExplanation {
@@ -128,6 +144,7 @@ export interface IndicatorExplanation {
   macdInsight: string;        // Penjelasan momentum garis DIF, DEA & Histogram
   rsiInsight: string;         // Penjelasan momentum dorongan Triple RSI
   directionVerdict: string;   // Keputusan final: Mengapa LONG atau SHORT
+  candlestickInsight?: string;// Analisis pola candlestick elit terdeteksi
   timeframeRecommendation: string; // Rekomendasi timeframe
   estimatedDuration: {
     tp1Eta: string;           // Estimasi waktu tempuh TP1 (Menit)

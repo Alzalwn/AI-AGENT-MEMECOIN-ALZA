@@ -32,6 +32,11 @@ export interface SignalPostParams {
   binanceUrl?: string;
   overallScore?: number;
   strategyLabel?: string;
+  candlestickPattern?: {
+    name: string;
+    type?: string;
+    reliability?: number;
+  };
 }
 
 /**
@@ -95,6 +100,9 @@ export function generateCommunitySignalPost(params: SignalPostParams): string {
   if (params.leverage?.safe && params.leverage?.scalp) {
     extraLines.push(`🛡️ Leverage Aman (Swing): ${params.leverage.safe}`);
     extraLines.push(`⚡ Leverage Scalp (Kilat): ${params.leverage.scalp}`);
+  }
+  if (params.candlestickPattern) {
+    extraLines.push(`🕯️ Pola Candlestick: ${params.candlestickPattern.name} (${params.candlestickPattern.reliability ? `Akurasi ${params.candlestickPattern.reliability}%` : 'Valid'})`);
   }
   if (params.fundingRatePct !== undefined) {
     extraLines.push(`📊 Funding Rate: ${params.fundingRatePct > 0 ? '+' : ''}${params.fundingRatePct.toFixed(4)}%`);
