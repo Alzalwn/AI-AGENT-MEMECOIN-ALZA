@@ -49,26 +49,26 @@ export async function GET() {
       
       // Algo 1: Extreme Squeeze / Breakout (High Volatility + Strong Direction)
       if (volatility > 15) {
-        if (priceChangePct > 10) {
+        if (priceChangePct > 8) {
           anomalyType = 'BULLISH_VOLATILITY_BREAKOUT';
-          score = 85;
-          action = 'LONG';
-        } else if (priceChangePct < -10) {
-          anomalyType = 'BEARISH_VOLATILITY_BREAKOUT';
           score = 88;
-          action = 'SHORT';
+          action = 'LONG (MOMENTUM RIDER)';
+        } else if (priceChangePct < -8) {
+          anomalyType = 'BEARISH_VOLATILITY_BREAKDOWN';
+          score = 88;
+          action = 'SHORT (BREAKDOWN RIDER)';
         }
       }
       
-      // Algo 2: Abnormal Pump & Dump
-      if (priceChangePct > 25) {
-         anomalyType = 'EXTREME_PUMP_WARNING';
+      // Algo 2: Abnormal Momentum Expansion (Parabolic Bull vs Heavy Capitulation)
+      if (priceChangePct > 20) {
+         anomalyType = 'PARABOLIC_BULL_EXPANSION';
+         score = 94;
+         action = 'LONG (BUY PULLBACK) / JANGAN SHORT';
+      } else if (priceChangePct < -20) {
+         anomalyType = 'HEAVY_CAPITULATION_DUMP';
          score = 92;
-         action = 'SHORT (MEAN REVERSION)';
-      } else if (priceChangePct < -25) {
-         anomalyType = 'EXTREME_DUMP_WARNING';
-         score = 95;
-         action = 'LONG (MEAN REVERSION)';
+         action = 'WAIT FOR BASE (JANGAN TANGKAP PISAU JATUH)';
       }
 
       // Algo 3: Tight Consolidation (Low Volatility, waiting for explosion)
@@ -83,14 +83,14 @@ export async function GET() {
       const fundingRatePct = fundingRate * 100;
       
       // Algo 4: Funding Rate Anomaly (Extreme Funding)
-      if (fundingRatePct < -0.15) {
+      if (fundingRatePct < -0.10) {
         anomalyType = 'EXTREME_NEGATIVE_FUNDING (SHORT SQUEEZE RISK)';
-        score = Math.max(score, 89);
-        action = 'LONG (SQUEEZE PLAY)';
+        score = Math.max(score, 90);
+        action = 'LONG (SHORT SQUEEZE SURGE)';
       } else if (fundingRatePct > 0.15) {
-        anomalyType = 'EXTREME_POSITIVE_FUNDING (LONG SQUEEZE RISK)';
-        score = Math.max(score, 86);
-        action = 'SHORT (SQUEEZE PLAY)';
+        anomalyType = 'OVERHEATED_BULLISH_SENTIMENT';
+        score = Math.max(score, 82);
+        action = 'WAIT & SEE / WASPADA PROFIT TAKING (JANGAN SHORT)';
       }
       
       if (anomalyType) {
@@ -160,21 +160,31 @@ export async function GET() {
               anomaly.anomalyType += ' + EXTREME OVERSOLD';
             }
             
-            // Calculate Consensus
-            const macroActionBase = anomaly.action.includes('LONG') ? 'LONG' : anomaly.action.includes('SHORT') ? 'SHORT' : 'NEUTRAL';
-            const microActionBase = signal.direction;
+            // Calculate Consensus dengan Proteksi Trend-Following
+            const isMacroBull = anomaly.change24h >= 2.0;
+            const isMacroBear = anomaly.change24h <= -2.0;
             
-            if (macroActionBase === 'LONG' && microActionBase === 'LONG') {
-              (anomaly as any).consensusAction = 'STRONG BUY (TERKONFIRMASI)';
-            } else if (macroActionBase === 'SHORT' && microActionBase === 'SHORT') {
-              (anomaly as any).consensusAction = 'STRONG SELL (TERKONFIRMASI)';
+            if (isMacroBull) {
+              // Jika tren 24 jam koin naik/pump, dilarang keras merekomendasikan SHORT!
+              if (signal.direction === 'LONG') {
+                (anomaly as any).consensusAction = 'STRONG BUY (TREN NAIK TERKONFIRMASI)';
+              } else {
+                (anomaly as any).consensusAction = 'TUNGGU PULLBACK (DIP BUYING)';
+              }
+            } else if (isMacroBear) {
+              // Jika tren 24 jam koin dump tajam, dilarang merekomendasikan LONG sembarangan!
+              if (signal.direction === 'SHORT') {
+                (anomaly as any).consensusAction = 'STRONG SELL (BREAKDOWN TERKONFIRMASI)';
+              } else {
+                (anomaly as any).consensusAction = 'WAIT & SEE (RAWAN DUMP LANJUTAN)';
+              }
             } else {
-              (anomaly as any).consensusAction = 'WAIT & SEE (RAWAN FAKEOUT)';
+              (anomaly as any).consensusAction = 'WAIT & SEE (NETRAL / KONSOLIDASI)';
             }
             
             // Inject Alpha Zoo explanation into the card's signal
             signal.strategyLabel = anomaly.anomalyType.replace(/_/g, ' ');
-            signal.rationale = `[Alpha Zoo: ${anomaly.anomalyType.replace(/_/g, ' ')}] Skor Anomali: ${anomaly.score}/100. ${anomaly.action}. Volatilitas: ${anomaly.volatility24h.toFixed(2)}%. \n${obInsight ? obInsight + '\n' : ''}Analisis Mikro: ${signal.rationale}`;
+            signal.rationale = `[Alpha Zoo: ${anomaly.anomalyType.replace(/_/g, ' ')}] Skor Anomali: ${anomaly.score}/100. Rekomendasi Makro: ${anomaly.action}. Volatilitas: ${anomaly.volatility24h.toFixed(2)}%. \n${obInsight ? obInsight + '\n' : ''}🛡️ Filter Trend: ${isMacroBull ? 'Momentum 24h Bullish Dominan (+'+anomaly.change24h.toFixed(1)+'%). Sinyal Short dinonaktifkan demi proteksi modal.' : isMacroBear ? 'Momentum 24h Bearish Dominan ('+anomaly.change24h.toFixed(1)+'%). Sinyal Long dinonaktifkan.' : 'Kondisi Konsolidasi.'} \nAnalisis Mikro: ${signal.rationale}`;
           }
         } catch (e) {
           // If micro analysis fails, just leave it without consensus

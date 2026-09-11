@@ -138,14 +138,14 @@ function evaluatePairSignal(
     tier = fundingRatePct <= -0.06 ? 'SUPERNOVA' : 'HIGH';
     score = 92;
     rationale = `Funding rate sangat negatif (${fundingRatePct.toFixed(4)}%), dominasi posisi short terjepit yang rentan terlikuidasi paksa ke atas saat volume pembeli masuk.`;
-  } else if (fundingRatePct >= 0.06 && relativePosition < 0.50) {
-    // Positive funding ekstrem + harga melemah = potensi LONG SQUEEZE (Jual / SHORT)
+  } else if (fundingRatePct >= 0.08 && relativePosition < 0.35 && change24h <= -3.0) {
+    // Positive funding ekstrem HANYA boleh di-short jika harga memang tertekan breakdown support
     direction = 'SHORT';
     strategy = 'FUNDING_SQUEEZE';
     strategyLabel = '💥 Long Squeeze Dump';
-    tier = fundingRatePct >= 0.10 ? 'SUPERNOVA' : 'HIGH';
+    tier = fundingRatePct >= 0.12 ? 'SUPERNOVA' : 'HIGH';
     score = 90;
-    rationale = `Funding rate terlalu tinggi (+${fundingRatePct.toFixed(4)}%), pasar over-leveraged posisi long. Potensi likuidasi massal ke bawah jika support tertekan.`;
+    rationale = `Funding rate terlalu tinggi (+${fundingRatePct.toFixed(4)}%) dan harga tertekan menembus support (${change24h.toFixed(2)}%). Potensi likuidasi long terkonfirmasi.`;
   }
   // 2. BREAKOUT MOMENTUM PRESISI TINGGI (Ketat: Posisi ≥ 92% rentang 24h & Kenaikan ≥ 4.5%)
   else if (relativePosition >= 0.92 && change24h >= 4.5 && quoteVolume >= 20_000_000) {
@@ -172,12 +172,13 @@ function evaluatePairSignal(
     score = 85;
     rationale = `Koreksi ekstrem mendekati dasar 24 jam dengan diskon dalam (${change24h.toFixed(2)}%). Peluang technical rebound tajam dengan R:R tinggi.`;
   } else if (relativePosition >= 0.90 && change24h >= 15.0 && quoteVolume >= 25_000_000) {
-    direction = 'SHORT';
-    strategy = 'RSI_EXTREME_REVERSAL';
-    strategyLabel = '🎯 Overextended Exhaustion';
-    tier = 'HIGH';
-    score = 84;
-    rationale = `Kenaikan parabola jenuh beli (+${change24h.toFixed(2)}%) mendekati batas atas, potensi aksi profit taking dan pullback sehat.`;
+    // Parabolic expansion: Jangan pernah counter-trade short koin yang sedang pump liar! Ikuti tren utama (Trend Following).
+    direction = 'LONG';
+    strategy = 'VOLATILITY_EXPANSION';
+    strategyLabel = '🚀 Parabolic Momentum Continuation';
+    tier = 'SUPERNOVA';
+    score = 93;
+    rationale = `Kenaikan parabola super masif (+${change24h.toFixed(2)}%) dengan volume $${(quoteVolume / 1e6).toFixed(1)}M USD. Mengikuti momentum bullish utama (Trend Following) dengan trailing stop terukur. Dilarang counter-trade SHORT demi proteksi modal!`;
   }
 
   // Jika tidak memenuhi kriteria ketat, tolak (anti-spam)
@@ -867,54 +868,87 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
   const isStochBullish = indicators.stochRsi?.status === 'BULLISH_CROSS' || indicators.stochRsi?.status === 'OVERSOLD';
   const isStochBearish = indicators.stochRsi?.status === 'BEARISH_CROSS' || indicators.stochRsi?.status === 'OVERBOUGHT';
 
-  // Tentukan Arah: Prioritaskan Candlestick Elit + Konfluensi Indikator Riil
+  // 2. Evaluasi Bias Makro (Trend 24h & Moving Average Baseline)
+  const isMacroBullish = change24h >= 2.0 || (isMaBullish && isEmaBullish);
+  const isMacroBearish = change24h <= -2.0 || (isMaBearish && isEmaBearish);
+
+  // Tentukan Arah: Mengutamakan Trend Following (Anti-Countertrend Squeeze)
   let direction: FuturesDirection = 'LONG';
   let strategy: FuturesStrategy = 'BREAKOUT_MOMENTUM';
   let strategyLabel = '🚀 Trendline Continuation';
   let score = 84;
 
-  if (detectedPattern && detectedPattern.direction !== 'NEUTRAL') {
-    direction = detectedPattern.direction;
-    strategy = detectedPattern.type === 'REVERSAL' ? 'RSI_EXTREME_REVERSAL' : 'BREAKOUT_MOMENTUM';
-    strategyLabel = `🕯️ ${detectedPattern.name} ${detectedPattern.type === 'REVERSAL' ? 'Reversal' : 'Continuation'}`;
-    score = Math.min(84 + Math.round((detectedPattern.reliability - 50) / 2.5), 98);
-  } else if ((isMaBullish || isEmaBullish) && isMacdBull && isRsiBull) {
+  if (isMacroBullish) {
+    // DALAM TREN NAIK / PUMP KUAT:
+    // Dilarang keras membuka posisi SHORT melawan arus tren utama!
     direction = 'LONG';
-    strategy = 'BREAKOUT_MOMENTUM';
-    strategyLabel = '🚀 Golden Stack Real Breakout';
-    score = 88 + (isEmaBullish ? 2 : 0) + (isStochBullish ? 2 : 0);
-  } else if ((isMaBearish || isEmaBearish) && !isMacdBull && !isRsiBull) {
+    
+    if (detectedPattern && detectedPattern.direction === 'LONG') {
+      strategy = detectedPattern.type === 'REVERSAL' ? 'RSI_EXTREME_REVERSAL' : 'BREAKOUT_MOMENTUM';
+      strategyLabel = `🕯️ ${detectedPattern.name} (Bullish Continuation)`;
+      score = Math.min(86 + Math.round((detectedPattern.reliability - 50) / 2.5), 98);
+    } else if (detectedPattern && detectedPattern.direction === 'SHORT') {
+      // Pola lilin bearish di TF 15m saat tren makro bullish = Pullback Retest / Dip Beli
+      strategy = 'BREAKOUT_MOMENTUM';
+      strategyLabel = `🛡️ Dip Retest (${detectedPattern.name} Pullback)`;
+      score = 83;
+    } else if (isMaBullish && isMacdBull) {
+      strategy = 'BREAKOUT_MOMENTUM';
+      strategyLabel = '🚀 Golden Stack Bullish Breakout';
+      score = 88 + (isEmaBullish ? 2 : 0) + (isStochBullish ? 2 : 0);
+    } else {
+      strategy = 'BREAKOUT_MOMENTUM';
+      strategyLabel = '📈 Macro Trend Following LONG';
+      score = 82;
+    }
+  } else if (isMacroBearish) {
+    // DALAM TREN TURUN / DUMP:
+    // Dilarang keras membuka posisi LONG melawan arus (menangkap pisau jatuh)!
     direction = 'SHORT';
-    strategy = 'BREAKOUT_MOMENTUM';
-    strategyLabel = '📉 Death Stack Real Breakdown';
-    score = 88 + (isEmaBearish ? 2 : 0) + (isStochBearish ? 2 : 0);
-  } else if (fundingRatePct <= -0.02) {
-    direction = 'LONG';
-    strategy = 'FUNDING_SQUEEZE';
-    strategyLabel = '⚡ Short Squeeze Surge';
-    score = 87;
-  } else if (fundingRatePct >= 0.05) {
-    direction = 'SHORT';
-    strategy = 'FUNDING_SQUEEZE';
-    strategyLabel = '💥 Long Squeeze Dump';
-    score = 86;
-  } else {
-    // Fallback logic when no strong confluence exists
-    let bullCount = (isMaBullish ? 1 : 0) + (isEmaBullish ? 1 : 0) + (isMacdBull ? 1 : 0) + (isRsiBull ? 1 : 0) + (isStochBullish ? 1 : 0);
-    let bearCount = (isMaBearish ? 1 : 0) + (isEmaBearish ? 1 : 0) + (!isMacdBull ? 1 : 0) + (!isRsiBull ? 1 : 0) + (isStochBearish ? 1 : 0);
 
-    if (bullCount > bearCount + 1) {
+    if (detectedPattern && detectedPattern.direction === 'SHORT') {
+      strategy = detectedPattern.type === 'REVERSAL' ? 'RSI_EXTREME_REVERSAL' : 'BREAKOUT_MOMENTUM';
+      strategyLabel = `🕯️ ${detectedPattern.name} (Bearish Continuation)`;
+      score = Math.min(86 + Math.round((detectedPattern.reliability - 50) / 2.5), 98);
+    } else if (detectedPattern && detectedPattern.direction === 'LONG') {
+      strategy = 'BREAKOUT_MOMENTUM';
+      strategyLabel = `🛡️ Rebound Watch (${detectedPattern.name} Diabaikan)`;
+      score = 82;
+    } else if (isMaBearish && !isMacdBull) {
+      strategy = 'BREAKOUT_MOMENTUM';
+      strategyLabel = '📉 Death Stack Bearish Breakdown';
+      score = 88 + (isEmaBearish ? 2 : 0) + (isStochBearish ? 2 : 0);
+    } else {
+      strategy = 'BREAKOUT_MOMENTUM';
+      strategyLabel = '📉 Macro Downtrend Following SHORT';
+      score = 80;
+    }
+  } else {
+    // KONDISI SIDEWAYS / NETRAL TRANSISI:
+    if (detectedPattern && detectedPattern.direction !== 'NEUTRAL') {
+      direction = detectedPattern.direction;
+      strategy = detectedPattern.type === 'REVERSAL' ? 'RSI_EXTREME_REVERSAL' : 'BREAKOUT_MOMENTUM';
+      strategyLabel = `🕯️ ${detectedPattern.name} ${detectedPattern.type === 'REVERSAL' ? 'Reversal' : 'Continuation'}`;
+      score = Math.min(84 + Math.round((detectedPattern.reliability - 50) / 2.5), 95);
+    } else if ((isMaBullish || isEmaBullish) && isMacdBull && isRsiBull) {
       direction = 'LONG';
-      strategyLabel = '⚠️ Weak Bullish Confluence';
-      score = 65 + (bullCount * 2); // max 75
-    } else if (bearCount > bullCount + 1) {
+      strategy = 'BREAKOUT_MOMENTUM';
+      strategyLabel = '🚀 Golden Stack Real Breakout';
+      score = 85;
+    } else if ((isMaBearish || isEmaBearish) && !isMacdBull && !isRsiBull) {
       direction = 'SHORT';
-      strategyLabel = '⚠️ Weak Bearish Confluence';
-      score = 65 + (bearCount * 2); // max 75
+      strategy = 'BREAKOUT_MOMENTUM';
+      strategyLabel = '📉 Death Stack Real Breakdown';
+      score = 85;
+    } else if (fundingRatePct <= -0.03) {
+      direction = 'LONG';
+      strategy = 'FUNDING_SQUEEZE';
+      strategyLabel = '⚡ Short Squeeze Surge';
+      score = 86;
     } else {
       direction = change24h >= 0 ? 'LONG' : 'SHORT';
-      strategyLabel = direction === 'LONG' ? '⚠️ Weak Momentum LONG' : '⚠️ Weak Breakdown SHORT';
-      score = 55; // Very weak signal
+      strategyLabel = direction === 'LONG' ? '⚡ Sideways Bullish Bias' : '⚡ Sideways Bearish Bias';
+      score = 75;
     }
   }
 
