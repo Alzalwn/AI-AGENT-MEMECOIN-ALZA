@@ -22,6 +22,7 @@ import { FuturesSignalCard } from './FuturesSignalCard';
 import { FundingRateHeatmap } from './FundingRateHeatmap';
 import { TradingViewModal } from './TradingViewModal';
 import { CoinSearchAnalysisSection } from './CoinSearchAnalysisSection';
+import { FuturesEcosystemNav } from './FuturesEcosystemNav';
 
 export const FuturesDashboard: React.FC = () => {
   const [signals, setSignals] = useState<BinanceFuturesSignal[]>([]);
@@ -170,6 +171,9 @@ export const FuturesDashboard: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-3.5 font-sans">
+      {/* 0. Ecosystem Navigation */}
+      <FuturesEcosystemNav />
+
       {/* 1. Market Telemetry Hero */}
       <FuturesHeroStats
         stats={marketStats}
