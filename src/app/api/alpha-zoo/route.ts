@@ -154,9 +154,9 @@ export async function GET() {
             if (rsiInsight.toLowerCase().includes('divergence')) {
               anomaly.anomalyType += ' + RSI DIVERGENCE';
               anomaly.score = Math.min(100, anomaly.score + 5);
-            } else if (signal.indicators?.rsi?.rsi12 > 80) {
+            } else if (signal.indicators?.rsi?.rsi12 !== undefined && signal.indicators.rsi.rsi12 > 80) {
               anomaly.anomalyType += ' + EXTREME OVERBOUGHT';
-            } else if (signal.indicators?.rsi?.rsi12 < 20) {
+            } else if (signal.indicators?.rsi?.rsi12 !== undefined && signal.indicators.rsi.rsi12 < 20) {
               anomaly.anomalyType += ' + EXTREME OVERSOLD';
             }
             
