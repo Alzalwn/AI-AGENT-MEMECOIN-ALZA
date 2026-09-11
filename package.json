@@ -17,6 +17,7 @@
     "@supabase/ssr": "^0.12.6",
     "@supabase/supabase-js": "^2.116.0",
     "bip39": "^3.1.0",
+    "ccxt": "^4.5.78",
     "clsx": "^2.1.1",
     "ed25519-hd-key": "^2.0.0",
     "lucide-react": "^1.16.0",
@@ -26,6 +27,7 @@
     "recharts": "^3.10.1",
     "ssh2": "^1.17.0",
     "tailwind-merge": "^2.6.0",
+    "technicalindicators": "^3.1.0",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
