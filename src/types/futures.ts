@@ -86,6 +86,26 @@ export interface FuturesAgentConsensus {
   orderbookAgent: FuturesAgentVerdict;
 }
 
+export interface OrderbookDepthAnalysis {
+  totalBidUsd: number;
+  totalAskUsd: number;
+  imbalanceRatio: number;
+  status: 'BUY_WALL' | 'SELL_WALL' | 'BALANCED';
+  insight: string;
+  topBidWallPrice?: number;
+  topAskWallPrice?: number;
+}
+
+export interface QuantAnomalyInsight {
+  anomalyType: string;
+  score: number;
+  actionGuidance: string;
+  volatility24h: number;
+  fundingInsight: string;
+  orderbookInsight: string;
+  antiTrapRule: string;
+}
+
 export interface BinanceFuturesSignal {
   id: string;
   symbol: string;             // e.g. "BTCUSDT", "SOLUSDT"
@@ -123,6 +143,8 @@ export interface BinanceFuturesSignal {
   candlestickPattern?: CandlestickPatternResult;
   btcContext?: BtcMarketContext;
   positionSizing?: PositionSizingRecommendation;
+  orderbookDepth?: OrderbookDepthAnalysis;
+  quantAnomaly?: QuantAnomalyInsight;
 }
 
 export interface BtcMarketContext {

@@ -17,6 +17,8 @@ import {
   CandlestickPatternResult,
   BtcMarketContext,
   PositionSizingRecommendation,
+  OrderbookDepthAnalysis,
+  QuantAnomalyInsight,
 } from '../types/futures';
 import {
   getFutures24hTickers,
@@ -27,8 +29,10 @@ import {
   getFuturesOpenInterest,
   getFuturesLongShortRatio,
   getBtcMarketContext,
+  getFuturesOrderbookDepth,
   Raw24hTicker,
   RawFundingRate,
+  RawOrderbookDepth,
 } from '../lib/binanceClient';
 import { parseKlinesToCandles, detectCandlestickPatterns } from './candlestickPatternEngine';
 import { computeRealTechnicalIndicators } from './technicalIndicatorsEngine';
@@ -831,12 +835,13 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
     throw new Error(`Koin "${rawSymbol.toUpperCase()}" tidak ditemukan di pasar Binance Futures USDT-M.`);
   }
 
-  const [fundingInfo, rawKlines, rawOi, liveLsRatio, btcContext] = await Promise.all([
+  const [fundingInfo, rawKlines, rawOi, liveLsRatio, btcContext, rawDepth] = await Promise.all([
     getSingleFundingRate(symbol),
     getKlines(symbol, '15m', 100),
     getFuturesOpenInterest(symbol),
     getFuturesLongShortRatio(symbol),
     getBtcMarketContext(),
+    getFuturesOrderbookDepth(symbol, 20),
   ]);
 
   const currentPrice = parseFloat(ticker.lastPrice);
@@ -1053,6 +1058,85 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
   const openInterestUsd = rawOi ? rawOi * currentPrice : quoteVolume * 0.45;
   const longShortRatio = liveLsRatio !== null ? liveLsRatio : (direction === 'LONG' ? 1.28 : 0.82);
 
+  // 1. Data Kedalaman Orderbook (Whale Wall Depth)
+  const orderbookDepth: OrderbookDepthAnalysis | undefined = rawDepth
+    ? {
+        totalBidUsd: rawDepth.totalBidUsd,
+        totalAskUsd: rawDepth.totalAskUsd,
+        imbalanceRatio: rawDepth.imbalanceRatio,
+        status: rawDepth.status,
+        insight: rawDepth.insight,
+        topBidWallPrice: rawDepth.topBidWallPrice,
+        topAskWallPrice: rawDepth.topAskWallPrice,
+      }
+    : undefined;
+
+  // 2. Evaluasi Anomali Kuantitatif (Alpha Zoo Core Intelligence)
+  const volatility24h = ((high24h - low24h) / Math.max(low24h, 0.00000001)) * 100;
+  let quantAnomalyType = 'NORMAL_FLOW';
+  let quantScore = 80;
+  let actionGuidance = direction === 'LONG' ? 'LONG (MOMENTUM FOLLOW)' : 'SHORT (BREAKDOWN FOLLOW)';
+  let fundingInsightText = `Funding Rate normal (${fundingRatePct > 0 ? '+' : ''}${fundingRatePct.toFixed(4)}%).`;
+  let antiTrapRule = 'Struktur harga selaras dengan tren pasar.';
+
+  if (fundingRatePct <= -0.05) {
+    quantAnomalyType = 'SHORT_SQUEEZE_SURGE';
+    quantScore = 92;
+    fundingInsightText = `⚡ EXTREME NEGATIVE FUNDING (${fundingRatePct.toFixed(4)}%): Penjual short terjebak, potensi short squeeze roket ke atas!`;
+    actionGuidance = 'LONG (KATALIS SHORT SQUEEZE)';
+  } else if (fundingRatePct >= 0.08) {
+    quantAnomalyType = 'OVERHEATED_BULLISH_SENTIMENT';
+    quantScore = 82;
+    fundingInsightText = `⚠️ OVERHEATED POSITIVE FUNDING (+${fundingRatePct.toFixed(4)}%): Pasar sangat padat posisi long. Waspada aksi profit taking.`;
+    actionGuidance = 'TUNGGU PULLBACK (JANGAN FOMO PUCUK)';
+  }
+
+  if (change24h >= 20) {
+    quantAnomalyType = 'PARABOLIC_BULL_EXPANSION';
+    quantScore = 95;
+    actionGuidance = 'LONG (BUY PULLBACK) / DILARANG COUNTER SHORT';
+    antiTrapRule = `🛡️ Filter Anti-Rungkad: Koin sedang terbang parabola (+${change24h.toFixed(1)}%). Sinyal SHORT dilarang keras demi proteksi modal!`;
+  } else if (change24h <= -20) {
+    quantAnomalyType = 'HEAVY_CAPITULATION_DUMP';
+    quantScore = 92;
+    actionGuidance = 'WAIT FOR BASE (JANGAN TANGKAP PISAU JATUH)';
+    antiTrapRule = `🛡️ Filter Anti-Rungkad: Koin sedang dump tajam (${change24h.toFixed(1)}%). Sinyal LONG dilarang sampai terbentuk base/bottom.`;
+  } else if (volatility24h < 2.5 && quoteVolume >= 30_000_000) {
+    quantAnomalyType = 'WHALE_ACCUMULATION_SQUEEZE';
+    quantScore = 88;
+    actionGuidance = 'SIAGA BREAKOUT (KOMPRESI VOLATILITAS TINGGI)';
+    antiTrapRule = 'Akumulasi senyap terdeteksi pada volume besar, bersiap untuk ledakan pergerakan harga.';
+  } else if (volatility24h > 15) {
+    quantAnomalyType = change24h > 0 ? 'BULLISH_VOLATILITY_BREAKOUT' : 'BEARISH_VOLATILITY_BREAKDOWN';
+    quantScore = 88;
+    actionGuidance = change24h > 0 ? 'LONG (MOMENTUM RIDER)' : 'SHORT (BREAKDOWN RIDER)';
+  }
+
+  // Jika orderbook imbalance ekstrem terkonfirmasi searah, perkuat skor
+  if (orderbookDepth && orderbookDepth.imbalanceRatio >= 2.0 && direction === 'LONG') {
+    quantScore = Math.min(100, quantScore + 4);
+  } else if (orderbookDepth && orderbookDepth.imbalanceRatio <= 0.5 && direction === 'SHORT') {
+    quantScore = Math.min(100, quantScore + 4);
+  }
+
+  const quantAnomaly: QuantAnomalyInsight = {
+    anomalyType: quantAnomalyType,
+    score: quantScore,
+    actionGuidance,
+    volatility24h: Number(volatility24h.toFixed(2)),
+    fundingInsight: fundingInsightText,
+    orderbookInsight: orderbookDepth?.insight || 'Kedalaman antrean orderbook normal.',
+    antiTrapRule,
+  };
+
+  // Sintesis Rationale Lengkap (Menggabungkan Teknikal, Orderbook, dan Quant Anomaly)
+  if (orderbookDepth && orderbookDepth.status !== 'BALANCED') {
+    rationale += ` ${orderbookDepth.insight}`;
+  }
+  if (quantAnomaly.anomalyType !== 'NORMAL_FLOW') {
+    rationale += ` [Quant Alert: ${quantAnomaly.anomalyType.replace(/_/g, ' ')}] ${quantAnomaly.actionGuidance}.`;
+  }
+
   // Kalkulasi Position Sizing Modal Aman (Referensi modal $20)
   const positionSizing = calculatePositionSizing(20, slPct, 5);
 
@@ -1111,16 +1195,20 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
       },
       derivativesAgent: {
         pass: true,
-        score: Math.abs(fundingRatePct) >= 0.02 ? 90 : 80,
-        reason: `Funding rate ${fundingRatePct.toFixed(4)}% & OI $${(openInterestUsd / 1e6).toFixed(1)}M mendukung aksi ${direction}.`,
+        score: Math.abs(fundingRatePct) >= 0.04 ? 94 : 85,
+        reason: `${fundingInsightText} OI: $${(openInterestUsd / 1e6).toFixed(1)}M. Rasio L/S: ${longShortRatio.toFixed(2)}.`,
       },
       orderbookAgent: {
-        pass: true,
-        score: quoteVolume >= 30_000_000 ? 90 : 78,
-        reason: `Volume pasar $${(quoteVolume / 1e6).toFixed(1)}M USD memenuhi likuiditas entri cepat.`,
+        pass: orderbookDepth ? (direction === 'LONG' ? orderbookDepth.imbalanceRatio >= 0.9 : orderbookDepth.imbalanceRatio <= 1.1) : true,
+        score: orderbookDepth
+          ? (direction === 'LONG' && orderbookDepth.imbalanceRatio >= 2.0 ? 96 : direction === 'SHORT' && orderbookDepth.imbalanceRatio <= 0.5 ? 96 : 84)
+          : 80,
+        reason: orderbookDepth
+          ? `${orderbookDepth.insight} (Bid $${(orderbookDepth.totalBidUsd / 1e6).toFixed(2)}M vs Ask $${(orderbookDepth.totalAskUsd / 1e6).toFixed(2)}M).`
+          : `Volume 24 jam $${(quoteVolume / 1e6).toFixed(1)}M USD memenuhi likuiditas transaksi.`,
       },
     },
-    overallScore: score,
+    overallScore: Math.max(score, quantScore),
     rationale,
     status: 'ACTIVE',
     binanceUrl: `https://www.binance.com/en/futures/${symbol}`,
@@ -1131,5 +1219,7 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
     candlestickPattern: detectedPattern || undefined,
     btcContext,
     positionSizing,
+    orderbookDepth,
+    quantAnomaly,
   };
 }

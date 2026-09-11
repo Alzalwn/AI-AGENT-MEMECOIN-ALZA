@@ -366,3 +366,90 @@ export async function getBtcMarketContext(): Promise<BtcMarketContext> {
   }
 }
 
+export interface RawOrderbookDepth {
+  totalBidUsd: number;
+  totalAskUsd: number;
+  imbalanceRatio: number;
+  status: 'BUY_WALL' | 'SELL_WALL' | 'BALANCED';
+  insight: string;
+  topBidWallPrice?: number;
+  topAskWallPrice?: number;
+}
+
+/**
+ * Mengambil kedalaman Orderbook (Top Bids/Asks) untuk deteksi Tembok Likuiditas Whale
+ */
+export async function getFuturesOrderbookDepth(
+  symbol: string,
+  limit: number = 20
+): Promise<RawOrderbookDepth | null> {
+  const cleanSymbol = symbol.trim().toUpperCase();
+  const cacheKey = `depth_${cleanSymbol}_${limit}`;
+  const cached = getCached<RawOrderbookDepth>(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const res = await fetchWithFailover(`/fapi/v1/depth?symbol=${cleanSymbol}&limit=${limit}`);
+    const data = await res.json();
+    if (data && Array.isArray(data.bids) && Array.isArray(data.asks)) {
+      let totalBidUsd = 0;
+      let totalAskUsd = 0;
+      let maxBidVol = 0;
+      let topBidWallPrice = 0;
+      let maxAskVol = 0;
+      let topAskWallPrice = 0;
+
+      for (const [pStr, qStr] of data.bids) {
+        const price = parseFloat(pStr);
+        const qty = parseFloat(qStr);
+        const usd = price * qty;
+        totalBidUsd += usd;
+        if (usd > maxBidVol) {
+          maxBidVol = usd;
+          topBidWallPrice = price;
+        }
+      }
+
+      for (const [pStr, qStr] of data.asks) {
+        const price = parseFloat(pStr);
+        const qty = parseFloat(qStr);
+        const usd = price * qty;
+        totalAskUsd += usd;
+        if (usd > maxAskVol) {
+          maxAskVol = usd;
+          topAskWallPrice = price;
+        }
+      }
+
+      const imbalanceRatio = Number((totalBidUsd / (totalAskUsd || 1)).toFixed(2));
+      let status: 'BUY_WALL' | 'SELL_WALL' | 'BALANCED' = 'BALANCED';
+      let insight = 'Orderbook seimbang antara antrean beli dan antrean jual.';
+
+      if (imbalanceRatio >= 2.0) {
+        status = 'BUY_WALL';
+        insight = `🛡️ Tembok Beli Masif: Antrean Beli $${(totalBidUsd / 1e6).toFixed(2)}M (${imbalanceRatio}x lebih tebal dari Jual $${(totalAskUsd / 1e6).toFixed(2)}M). Support kuat dari Whale.`;
+      } else if (imbalanceRatio <= 0.5) {
+        status = 'SELL_WALL';
+        const sellRatio = (1 / (imbalanceRatio || 0.01)).toFixed(1);
+        insight = `🧱 Tembok Jual Masif: Antrean Jual $${(totalAskUsd / 1e6).toFixed(2)}M (${sellRatio}x lebih tebal dari Beli $${(totalBidUsd / 1e6).toFixed(2)}M). Tekanan resistensi kuat.`;
+      }
+
+      const result: RawOrderbookDepth = {
+        totalBidUsd,
+        totalAskUsd,
+        imbalanceRatio,
+        status,
+        insight,
+        topBidWallPrice,
+        topAskWallPrice,
+      };
+
+      setCached(cacheKey, result, 15_000); // 15 detik cache
+      return result;
+    }
+  } catch (err) {
+    console.warn(`[BinanceClient] Gagal mengambil orderbook depth untuk ${cleanSymbol}:`, err);
+  }
+  return null;
+}
+

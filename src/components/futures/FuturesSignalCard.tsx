@@ -601,6 +601,70 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
           </div>
         </div>
 
+        {/* Orderbook Depth Imbalance Bar (Alpha Zoo Quant Core) */}
+        {signal.orderbookDepth && (
+          <div className="bg-zinc-950/90 p-2.5 rounded-xl border border-zinc-800 space-y-1.5 font-mono text-[11px]">
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-400 font-bold flex items-center gap-1 text-[10px]">
+                <Shield className="w-3 h-3 text-cyan-400" />
+                Tembok Orderbook Riil:
+              </span>
+              <span className={`px-2 py-0.5 rounded font-black text-[9px] border ${
+                signal.orderbookDepth.status === 'BUY_WALL'
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                  : signal.orderbookDepth.status === 'SELL_WALL'
+                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                  : 'bg-zinc-800 text-zinc-300 border-zinc-700'
+              }`}>
+                {signal.orderbookDepth.status === 'BUY_WALL' ? '🛡️ BUY WALL' : signal.orderbookDepth.status === 'SELL_WALL' ? '🧱 SELL WALL' : '⚖️ BALANCED'} ({signal.orderbookDepth.imbalanceRatio}x)
+              </span>
+            </div>
+
+            {(() => {
+              const total = (signal.orderbookDepth.totalBidUsd + signal.orderbookDepth.totalAskUsd) || 1;
+              const bidPct = Math.round((signal.orderbookDepth.totalBidUsd / total) * 100);
+              const askPct = 100 - bidPct;
+              return (
+                <div className="space-y-1">
+                  <div className="h-2 w-full bg-zinc-900 rounded-full overflow-hidden flex border border-zinc-800">
+                    <div style={{ width: `${bidPct}%` }} className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-500" />
+                    <div style={{ width: `${askPct}%` }} className="h-full bg-gradient-to-r from-rose-400 to-rose-600 transition-all duration-500" />
+                  </div>
+                  <div className="flex justify-between text-[9px] text-zinc-400">
+                    <span className="text-emerald-400 font-bold">
+                      Bid: ${(signal.orderbookDepth.totalBidUsd / 1e6).toFixed(1)}M ({bidPct}%)
+                    </span>
+                    <span className="text-rose-400 font-bold">
+                      Ask: ${(signal.orderbookDepth.totalAskUsd / 1e6).toFixed(1)}M ({askPct}%)
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* Quant Anomaly Badge & Guidance (Alpha Zoo Quant Core) */}
+        {signal.quantAnomaly && signal.quantAnomaly.anomalyType !== 'NORMAL_FLOW' && (
+          <div className="p-2.5 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-[10px] font-mono space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-yellow-400 flex items-center gap-1">
+                <Sparkles className="w-3 h-3" />
+                {signal.quantAnomaly.anomalyType.replace(/_/g, ' ')}
+              </span>
+              <span className="text-[9px] px-1.5 py-0.2 rounded bg-yellow-500/20 text-yellow-300 font-bold">
+                Skor {signal.quantAnomaly.score}/100
+              </span>
+            </div>
+            <p className="text-zinc-200 font-bold leading-tight">
+              👉 {signal.quantAnomaly.actionGuidance}
+            </p>
+            <p className="text-zinc-400 italic text-[9.5px]">
+              {signal.quantAnomaly.antiTrapRule}
+            </p>
+          </div>
+        )}
+
         {/* Rationale Quote */}
         <p className="text-[11px] text-zinc-400 italic bg-zinc-900/30 p-2.5 rounded-lg border-l-2 border-zinc-700">
           &quot;{signal.rationale}&quot;

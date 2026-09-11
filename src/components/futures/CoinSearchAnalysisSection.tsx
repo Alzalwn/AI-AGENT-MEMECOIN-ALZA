@@ -706,6 +706,132 @@ export const CoinSearchAnalysisSection: React.FC<CoinSearchAnalysisSectionProps>
             </div>
           )}
 
+          {/* INTELEJEN KUANTITATIF & TEMBOK ORDERBOOK RIIL (INTEGRASI ALPHA ZOO QUANT) */}
+          <div className="p-3.5 rounded-xl bg-gradient-to-br from-zinc-900/90 via-zinc-950 to-zinc-900/90 border border-yellow-500/30 space-y-3 text-xs font-mono shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-zinc-800/80 pb-2">
+              <div className="flex items-center gap-2">
+                <div className="p-1 rounded-lg bg-yellow-500/20 text-yellow-400">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <span className="font-bold text-sm text-yellow-300 tracking-wide">
+                  Analisis Kuantitatif & Tembok Orderbook Riil (Alpha Quant)
+                </span>
+              </div>
+              {analyzedSignal.quantAnomaly && (
+                <span className="text-[10px] px-2.5 py-0.5 rounded-full font-bold bg-yellow-500/15 text-yellow-400 border border-yellow-500/30 self-start sm:self-auto">
+                  ⚡ Anomali: {analyzedSignal.quantAnomaly.anomalyType.replace(/_/g, ' ')}
+                </span>
+              )}
+            </div>
+
+            {/* 1. Tembok Orderbook Riil (Bid vs Ask Depth & Imbalance) */}
+            {analyzedSignal.orderbookDepth ? (
+              <div className="p-3 rounded-lg bg-zinc-950 border border-zinc-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-zinc-400 font-bold flex items-center gap-1.5">
+                    <Shield className="w-3.5 h-3.5 text-cyan-400" />
+                    Kedalaman Orderbook (Top 20 Bids vs Asks):
+                  </span>
+                  <span className={`px-2 py-0.5 rounded font-black text-[10px] border ${
+                    analyzedSignal.orderbookDepth.status === 'BUY_WALL'
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : analyzedSignal.orderbookDepth.status === 'SELL_WALL'
+                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                      : 'bg-zinc-800 text-zinc-300 border-zinc-700'
+                  }`}>
+                    {analyzedSignal.orderbookDepth.status === 'BUY_WALL' ? '🛡️ TEMBOK BELI MASIF' : analyzedSignal.orderbookDepth.status === 'SELL_WALL' ? '🧱 TEMBOK JUAL MASIF' : '⚖️ SEIMBANG'} (Rasio {analyzedSignal.orderbookDepth.imbalanceRatio}x)
+                  </span>
+                </div>
+
+                {/* Depth Visual Bar */}
+                {(() => {
+                  const total = (analyzedSignal.orderbookDepth.totalBidUsd + analyzedSignal.orderbookDepth.totalAskUsd) || 1;
+                  const bidPct = Math.round((analyzedSignal.orderbookDepth.totalBidUsd / total) * 100);
+                  const askPct = 100 - bidPct;
+                  return (
+                    <div className="space-y-1">
+                      <div className="h-2.5 w-full bg-zinc-900 rounded-full overflow-hidden flex border border-zinc-800">
+                        <div style={{ width: `${bidPct}%` }} className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-500" />
+                        <div style={{ width: `${askPct}%` }} className="h-full bg-gradient-to-r from-rose-400 to-rose-600 transition-all duration-500" />
+                      </div>
+                      <div className="flex justify-between text-[10px] text-zinc-400">
+                        <span className="text-emerald-400 font-bold">
+                          Bids: ${(analyzedSignal.orderbookDepth.totalBidUsd / 1e6).toFixed(2)}M ({bidPct}%)
+                          {analyzedSignal.orderbookDepth.topBidWallPrice ? ` @ $${formatFuturesPrice(analyzedSignal.orderbookDepth.topBidWallPrice)}` : ''}
+                        </span>
+                        <span className="text-rose-400 font-bold">
+                          Asks: ${(analyzedSignal.orderbookDepth.totalAskUsd / 1e6).toFixed(2)}M ({askPct}%)
+                          {analyzedSignal.orderbookDepth.topAskWallPrice ? ` @ $${formatFuturesPrice(analyzedSignal.orderbookDepth.topAskWallPrice)}` : ''}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <p className="text-[11px] text-zinc-300 leading-relaxed pt-1 border-t border-zinc-900">
+                  {analyzedSignal.orderbookDepth.insight}
+                </p>
+              </div>
+            ) : (
+              <div className="p-2.5 rounded-lg bg-zinc-950 border border-zinc-800 text-[11px] text-zinc-400">
+                Orderbook likuiditas terdistribusi merata pada spread 24 jam.
+              </div>
+            )}
+
+            {/* 2. Quant Radar & Panduan Squeeze */}
+            {analyzedSignal.quantAnomaly && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                <div className="p-2.5 rounded-lg bg-zinc-950 border border-zinc-800/90 space-y-1">
+                  <span className="text-[10px] text-zinc-400 font-bold block">🎯 Panduan Eksekusi Quant:</span>
+                  <span className="text-yellow-400 font-bold block">{analyzedSignal.quantAnomaly.actionGuidance}</span>
+                  <p className="text-[10px] text-zinc-400 leading-tight">{analyzedSignal.quantAnomaly.antiTrapRule}</p>
+                </div>
+                <div className="p-2.5 rounded-lg bg-zinc-950 border border-zinc-800/90 space-y-1">
+                  <span className="text-[10px] text-zinc-400 font-bold block">⚡ Telemetri Squeeze & Sentimen:</span>
+                  <p className="text-zinc-300 leading-tight">{analyzedSignal.quantAnomaly.fundingInsight}</p>
+                  <span className="text-[10px] text-zinc-500 block">Volatilitas 24h: {analyzedSignal.quantAnomaly.volatility24h}%</span>
+                </div>
+              </div>
+            )}
+
+            {/* 3. 4-Pillar AI Agent Consensus Cards */}
+            <div className="space-y-1.5 pt-1">
+              <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider block">
+                Konsensus 4 Pilar AI Agent:
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-[10px]">
+                <div className="p-2 rounded-lg bg-zinc-950 border border-zinc-800">
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span className="text-zinc-400 font-bold">Trend Agent</span>
+                    <span className="text-emerald-400 font-black">{analyzedSignal.agentConsensus.trendAgent.score}/100</span>
+                  </div>
+                  <p className="text-zinc-300 leading-tight">{analyzedSignal.agentConsensus.trendAgent.reason}</p>
+                </div>
+                <div className="p-2 rounded-lg bg-zinc-950 border border-zinc-800">
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span className="text-zinc-400 font-bold">Volatility Agent</span>
+                    <span className="text-yellow-400 font-black">{analyzedSignal.agentConsensus.volatilityAgent.score}/100</span>
+                  </div>
+                  <p className="text-zinc-300 leading-tight">{analyzedSignal.agentConsensus.volatilityAgent.reason}</p>
+                </div>
+                <div className="p-2 rounded-lg bg-zinc-950 border border-zinc-800">
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span className="text-zinc-400 font-bold">Derivatives Agent</span>
+                    <span className="text-cyan-400 font-black">{analyzedSignal.agentConsensus.derivativesAgent.score}/100</span>
+                  </div>
+                  <p className="text-zinc-300 leading-tight">{analyzedSignal.agentConsensus.derivativesAgent.reason}</p>
+                </div>
+                <div className="p-2 rounded-lg bg-zinc-950 border border-zinc-800">
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span className="text-zinc-400 font-bold">Orderbook Agent</span>
+                    <span className="text-purple-400 font-black">{analyzedSignal.agentConsensus.orderbookAgent.score}/100</span>
+                  </div>
+                  <p className="text-zinc-300 leading-tight">{analyzedSignal.agentConsensus.orderbookAgent.reason}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* ACTION BUTTONS (Send to Telegram, Open Chart, Copy Text, Binance) */}
           <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-800/80 font-mono text-xs">
             {/* Primary Action 1: Send via Telegram Bot API */}
