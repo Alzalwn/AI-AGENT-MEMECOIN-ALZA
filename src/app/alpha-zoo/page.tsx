@@ -2,7 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Bot, RefreshCw, AlertTriangle, TrendingUp, TrendingDown, Target } from 'lucide-react';
+import { ArrowLeft, Bot, RefreshCw, AlertTriangle, TrendingUp, TrendingDown, Target, Info } from 'lucide-react';
+import { FuturesSignalCard } from '@/components/futures/FuturesSignalCard';
 
 interface Anomaly {
   symbol: string;
@@ -23,6 +24,7 @@ export default function AlphaZooPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [scannedCount, setScannedCount] = useState(0);
   const [error, setError] = useState('');
+  const [selectedSignal, setSelectedSignal] = useState<any | null>(null);
 
   const fetchAnomalies = async () => {
     setIsLoading(true);
@@ -119,7 +121,15 @@ export default function AlphaZooPage() {
             const isWait = hasConsensus && item.consensusAction?.includes('WAIT');
             
             return (
-              <div key={idx} className="relative p-5 bg-zinc-900/40 border border-zinc-800 rounded-2xl hover:bg-zinc-900/80 transition-colors flex flex-col justify-between">
+              <div 
+                key={idx} 
+                onClick={() => {
+                  if (item.microSignal) {
+                    setSelectedSignal(item.microSignal);
+                  }
+                }}
+                className={`relative p-5 bg-zinc-900/40 border ${item.microSignal ? 'border-emerald-500/30 hover:border-emerald-500/60 cursor-pointer' : 'border-zinc-800'} rounded-2xl hover:bg-zinc-900/80 transition-all flex flex-col justify-between`}
+              >
                 <div>
                   <div className="flex justify-between items-start mb-4">
                     <div>
@@ -171,6 +181,10 @@ export default function AlphaZooPage() {
                             <span className="font-bold text-amber-300">{item.microSignal.candlestickPattern.name}</span>
                           </div>
                         )}
+                        <div className="mt-3 flex items-center justify-center gap-1.5 text-[10px] text-emerald-400 font-bold bg-emerald-500/10 py-1.5 rounded-lg border border-emerald-500/20">
+                          <Info className="w-3.5 h-3.5" />
+                          KLIK UNTUK LIHAT DETAIL ANALISIS
+                        </div>
                       </div>
                     )}
                   </div>
@@ -208,6 +222,24 @@ export default function AlphaZooPage() {
           })}
         </div>
       </div>
+
+      {/* Modal Detail Signal */}
+      {selectedSignal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto" onClick={() => setSelectedSignal(null)}>
+          <div 
+            className="relative w-full max-w-xl max-h-[95vh] overflow-y-auto rounded-2xl no-scrollbar"
+            onClick={e => e.stopPropagation()}
+          >
+             <FuturesSignalCard 
+               signal={selectedSignal} 
+               onOpenChart={(symbol) => {
+                 window.open(`https://www.binance.com/en/futures/${symbol}`, '_blank');
+               }}
+               onDismiss={() => setSelectedSignal(null)}
+             />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
