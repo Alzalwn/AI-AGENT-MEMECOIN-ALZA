@@ -22,7 +22,7 @@ const modules = [
     title: 'Shadow Account',
     icon: <History className="w-4 h-4 text-purple-400" />,
     href: '/shadow-account',
-    status: 'WIP'
+    status: 'BETA'
   },
   {
     title: 'Quant Library',

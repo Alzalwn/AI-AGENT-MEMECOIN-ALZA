@@ -14,6 +14,8 @@ interface Anomaly {
   score: number;
   action: string;
   timestamp: number;
+  consensusAction?: string;
+  microSignal?: any;
 }
 
 export default function AlphaZooPage() {
@@ -92,7 +94,7 @@ export default function AlphaZooPage() {
         {isLoading && anomalies.length === 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-pulse">
             {[1, 2, 3, 4, 5, 6].map(i => (
-              <div key={i} className="h-48 bg-zinc-900/50 border border-zinc-800/50 rounded-2xl" />
+              <div key={i} className="h-64 bg-zinc-900/50 border border-zinc-800/50 rounded-2xl" />
             ))}
           </div>
         )}
@@ -112,54 +114,94 @@ export default function AlphaZooPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {anomalies.map((item, idx) => {
             const isBullish = item.change24h > 0;
+            const hasConsensus = !!item.consensusAction;
+            const isConfirmed = hasConsensus && item.consensusAction?.includes('TERKONFIRMASI');
+            const isWait = hasConsensus && item.consensusAction?.includes('WAIT');
+            
             return (
-              <div key={idx} className="relative p-5 bg-zinc-900/40 border border-zinc-800 rounded-2xl hover:bg-zinc-900/80 transition-colors">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h3 className="text-xl font-black text-white">{item.symbol}</h3>
-                    <div className="flex items-center gap-1 mt-1">
-                      <span className="text-zinc-400 font-mono">${item.price.toLocaleString(undefined, { maximumFractionDigits: 6 })}</span>
-                      <span className={`text-xs font-bold px-1.5 py-0.5 rounded-md ${isBullish ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
-                        {isBullish ? '+' : ''}{item.change24h.toFixed(2)}%
-                      </span>
+              <div key={idx} className="relative p-5 bg-zinc-900/40 border border-zinc-800 rounded-2xl hover:bg-zinc-900/80 transition-colors flex flex-col justify-between">
+                <div>
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h3 className="text-xl font-black text-white">{item.symbol}</h3>
+                      <div className="flex items-center gap-1 mt-1">
+                        <span className="text-zinc-400 font-mono">${item.price.toLocaleString(undefined, { maximumFractionDigits: 6 })}</span>
+                        <span className={`text-xs font-bold px-1.5 py-0.5 rounded-md ${isBullish ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                          {isBullish ? '+' : ''}{item.change24h.toFixed(2)}%
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex flex-col items-end">
+                      <span className="text-xs text-zinc-500 uppercase font-bold tracking-wider mb-1">AI Score</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xl font-black text-yellow-400">{item.score}</span>
+                        <span className="text-zinc-600">/100</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 mb-5">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-zinc-500">Tipe Anomali</span>
+                      <span className="font-bold text-zinc-300 text-right">{item.anomalyType.replace(/_/g, ' ')}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-zinc-500">Volatilitas (24h)</span>
+                      <span className="font-mono text-zinc-300">{item.volatility24h.toFixed(2)}%</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-zinc-500">Volume</span>
+                      <span className="font-mono text-zinc-300">${(item.volumeUsd / 1000000).toFixed(1)}M</span>
+                    </div>
+                    
+                    {/* Micro Signal Injection */}
+                    {item.microSignal && (
+                      <div className="pt-3 mt-3 border-t border-zinc-800/80">
+                        <span className="text-xs text-zinc-500 block mb-1">🔍 Mikro Analisa (15m):</span>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-zinc-400">Tren Micro</span>
+                          <span className={`font-bold ${item.microSignal.direction === 'LONG' ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {item.microSignal.direction}
+                          </span>
+                        </div>
+                        {item.microSignal.candlestickPattern && (
+                          <div className="flex justify-between items-center text-xs mt-1">
+                            <span className="text-zinc-400">Pola Lilin</span>
+                            <span className="font-bold text-amber-300">{item.microSignal.candlestickPattern.name}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2 mt-auto">
+                  {/* Macro Action */}
+                  <div className="p-2.5 rounded-lg border flex items-center justify-between bg-zinc-950 border-zinc-800">
+                    <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Arah Makro (24h)</span>
+                    <div className="flex items-center gap-1.5 font-bold text-xs text-zinc-300">
+                      {item.action}
                     </div>
                   </div>
                   
-                  <div className="flex flex-col items-end">
-                    <span className="text-xs text-zinc-500 uppercase font-bold tracking-wider mb-1">AI Score</span>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xl font-black text-yellow-400">{item.score}</span>
-                      <span className="text-zinc-600">/100</span>
+                  {/* Consensus Action */}
+                  {hasConsensus && (
+                    <div className={`p-3 rounded-xl border flex items-center justify-between ${
+                      isConfirmed && item.consensusAction?.includes('BUY') ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' :
+                      isConfirmed && item.consensusAction?.includes('SELL') ? 'bg-red-500/20 border-red-500/40 text-red-400' :
+                      isWait ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' :
+                      'bg-zinc-800/50 border-zinc-700 text-zinc-300'
+                    }`}>
+                      <span className="text-xs font-bold uppercase tracking-wider">KONSENSUS AI</span>
+                      <div className="flex items-center gap-1.5 font-black text-sm">
+                        {isConfirmed && item.consensusAction?.includes('BUY') && <TrendingUp className="w-4 h-4" />}
+                        {isConfirmed && item.consensusAction?.includes('SELL') && <TrendingDown className="w-4 h-4" />}
+                        {isWait && <AlertTriangle className="w-4 h-4" />}
+                        {item.consensusAction}
+                      </div>
                     </div>
-                  </div>
-                </div>
-
-                <div className="space-y-3 mb-5">
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-zinc-500">Tipe Anomali</span>
-                    <span className="font-bold text-zinc-300 text-right">{item.anomalyType.replace(/_/g, ' ')}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-zinc-500">Volatilitas (24h)</span>
-                    <span className="font-mono text-zinc-300">{item.volatility24h.toFixed(2)}%</span>
-                  </div>
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-zinc-500">Volume</span>
-                    <span className="font-mono text-zinc-300">${(item.volumeUsd / 1000000).toFixed(1)}M</span>
-                  </div>
-                </div>
-
-                <div className={`p-3 rounded-xl border flex items-center justify-between ${
-                  item.action.includes('LONG') ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
-                  item.action.includes('SHORT') ? 'bg-red-500/10 border-red-500/20 text-red-400' :
-                  'bg-yellow-500/10 border-yellow-500/20 text-yellow-400'
-                }`}>
-                  <span className="text-xs font-bold uppercase tracking-wider">Rekomendasi</span>
-                  <div className="flex items-center gap-1.5 font-black">
-                    {item.action.includes('LONG') && <TrendingUp className="w-4 h-4" />}
-                    {item.action.includes('SHORT') && <TrendingDown className="w-4 h-4" />}
-                    {item.action}
-                  </div>
+                  )}
                 </div>
               </div>
             );

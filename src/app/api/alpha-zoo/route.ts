@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import ccxt from 'ccxt';
+import { analyzeSpecificFuturesCoin } from '@/engine/futuresSignalEngine';
 
 export async function GET() {
   try {
@@ -78,10 +79,40 @@ export async function GET() {
     
     // Sort by score descending
     anomalyResults.sort((a, b) => b.score - a.score);
+    
+    // Get top 10 for micro analysis
+    const topAnomalies = anomalyResults.slice(0, 10);
+    
+    // Run micro analysis (15m technicals) concurrently
+    await Promise.allSettled(
+      topAnomalies.map(async (anomaly) => {
+        try {
+          // analyzeSpecificFuturesCoin expects the pair symbol like BTCUSDT
+          const signal = await analyzeSpecificFuturesCoin(anomaly.symbol + 'USDT');
+          if (signal) {
+            (anomaly as any).microSignal = signal;
+            
+            // Calculate Consensus
+            const macroActionBase = anomaly.action.includes('LONG') ? 'LONG' : anomaly.action.includes('SHORT') ? 'SHORT' : 'NEUTRAL';
+            const microActionBase = signal.direction;
+            
+            if (macroActionBase === 'LONG' && microActionBase === 'LONG') {
+              (anomaly as any).consensusAction = 'STRONG BUY (TERKONFIRMASI)';
+            } else if (macroActionBase === 'SHORT' && microActionBase === 'SHORT') {
+              (anomaly as any).consensusAction = 'STRONG SELL (TERKONFIRMASI)';
+            } else {
+              (anomaly as any).consensusAction = 'WAIT & SEE (RAWAN FAKEOUT)';
+            }
+          }
+        } catch (e) {
+          // If micro analysis fails, just leave it without consensus
+        }
+      })
+    );
 
     return NextResponse.json({
       success: true,
-      data: anomalyResults.slice(0, 20), // Return top 20 anomalies
+      data: topAnomalies, // Return top anomalies with consensus
       totalScanned: Object.keys(tickers).length,
       timestamp: Date.now()
     });
