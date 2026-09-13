@@ -14,6 +14,7 @@ import {
   ExternalLink,
   Bot,
   Flame,
+  Activity,
 } from 'lucide-react';
 
 interface SystemRoadmapModalProps {
@@ -104,6 +105,16 @@ export const SystemRoadmapModal: React.FC<SystemRoadmapModalProps> = ({ isOpen, 
                   Simulasi tesis Banteng vs Beruang sebelum eksekusi serta rekomendasi lindung nilai dinamis untuk mengunci risiko saat pasar bergejolak ekstrem.
                 </p>
               </div>
+
+              <div className="bg-black/40 border border-emerald-500/30 p-3 rounded-xl space-y-2 md:col-span-2">
+                <div className="text-white font-bold flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>5. Multi-Timeframe Alignment Matrix (15m, 1h, 4h, Daily)</span>
+                </div>
+                <p className="text-zinc-400 text-[11px] leading-relaxed">
+                  Higher Timeframe Alignment Protocol: Menguji keselarasan arah 4 horizon waktu secara simultan dengan sistem peringatan otomatis Counter-Trend Trap untuk mencegah trader melawan arus tren institusi.
+                </p>
+              </div>
             </div>
           </div>
 
@@ -154,19 +165,7 @@ export const SystemRoadmapModal: React.FC<SystemRoadmapModalProps> = ({ isOpen, 
               <div className="p-3 rounded-xl bg-amber-950/20 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 text-white font-bold">
-                    <span className="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px]">PRIORITAS 4</span>
-                    <span>📊 Multi-Timeframe Alignment Matrix (15m + 1h + 4h + Daily)</span>
-                  </div>
-                  <p className="text-zinc-400 text-[11px]">
-                    Menampilkan konfluensi multi-timeframe agar trader hanya membuka posisi yang selaras 100% dengan tren jangka panjang institusi.
-                  </p>
-                </div>
-              </div>
-
-              <div className="p-3 rounded-xl bg-amber-950/20 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 text-white font-bold">
-                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px]">PRIORITAS 5</span>
+                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px]">PRIORITAS 4</span>
                     <span>📥 Ekspor Jurnal Trading ke CSV / Excel</span>
                   </div>
                   <p className="text-zinc-400 text-[11px]">

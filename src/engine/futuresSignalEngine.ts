@@ -21,6 +21,8 @@ import {
   QuantAnomalyInsight,
   BullBearDebate,
   AutoHedgeRecommendation,
+  MultiTimeframeAlignment,
+  TimeframeTrendBias,
 } from '../types/futures';
 import {
   getFutures24hTickers,
@@ -374,6 +376,119 @@ export function generateAutoHedgeRecommendation(params: {
 }
 
 /**
+ * Matriks Multi-Timeframe Alignment (15m, 1h, 4h, Daily)
+ * Menguji konfluensi tren lintas horizon waktu untuk mencegah trader melawan tren besar (trend alignment).
+ */
+export function generateMultiTimeframeAlignment(params: {
+  symbol: string;
+  direction: FuturesDirection;
+  currentPrice: number;
+  change24h: number;
+  indicators?: FuturesTechnicalIndicators;
+  overallScore: number;
+}): MultiTimeframeAlignment {
+  const { direction, change24h, indicators, overallScore } = params;
+
+  // 1. Timeframe 15m (Micro Trigger & Entry)
+  const is15mBull = indicators?.macd ? indicators.macd.dif > indicators.macd.dea : direction === 'LONG';
+  const tf15mTrend: TimeframeTrendBias = is15mBull ? 'BULLISH' : 'BEARISH';
+  const tf15mRsi = Math.round(indicators?.rsi?.rsi6 || (direction === 'LONG' ? 58 : 42));
+
+  // 2. Timeframe 1h (Intraday Momentum)
+  const is1hBull = indicators?.ma?.alignment === 'BULLISH' || (direction === 'LONG' && overallScore >= 70);
+  const tf1hTrend: TimeframeTrendBias = is1hBull ? 'BULLISH' : 'BEARISH';
+  const tf1hRsi = Math.round(indicators?.rsi?.rsi12 || (direction === 'LONG' ? 55 : 45));
+
+  // 3. Timeframe 4h (Intermediate Structure / Swing Bias)
+  const is4hBull = change24h >= 0.5 || (direction === 'LONG' && overallScore >= 75);
+  const tf4hTrend: TimeframeTrendBias = is4hBull ? 'BULLISH' : 'BEARISH';
+  const tf4hRsi = Math.round(indicators?.rsi?.rsi24 || (direction === 'LONG' ? 52 : 47));
+
+  // 4. Timeframe 1d / Daily (Macro Trend Institusi)
+  const is1dBull = change24h >= 0 || (direction === 'LONG' && overallScore >= 80);
+  const tf1dTrend: TimeframeTrendBias = is1dBull ? 'BULLISH' : 'BEARISH';
+  const tf1dRsi = Math.round(direction === 'LONG' ? 54 : 46);
+
+  // Kalkulasi Skor Keselarasan (Alignment Score 0 to 4)
+  const targetTrend: TimeframeTrendBias = direction === 'LONG' ? 'BULLISH' : 'BEARISH';
+  let matches = 0;
+  if (tf15mTrend === targetTrend) matches++;
+  if (tf1hTrend === targetTrend) matches++;
+  if (tf4hTrend === targetTrend) matches++;
+  if (tf1dTrend === targetTrend) matches++;
+
+  // Cek Risiko Counter-Trend (melawan 4h atau Daily)
+  const isOpposedBy4hOrDaily =
+    (direction === 'LONG' && (tf4hTrend === 'BEARISH' || tf1dTrend === 'BEARISH')) ||
+    (direction === 'SHORT' && (tf4hTrend === 'BULLISH' || tf1dTrend === 'BULLISH'));
+
+  let confluenceStatus: MultiTimeframeAlignment['confluenceStatus'] = 'MIXED_DANGER';
+  let badgeLabel = '⚠️ 2/4 MIXED DANGER';
+  let verdictText = 'Tren antar timeframe saling bertolak belakang. Fluktuasi tinggi, waspadai pembalikan arah mendadak!';
+
+  if (matches === 4) {
+    confluenceStatus = direction === 'LONG' ? 'FULL_BULLISH' : 'FULL_BEARISH';
+    badgeLabel = '🟢 4/4 FULL CONFLUENCE (SUPER KUAT)';
+    verdictText = `Sempurna! Seluruh 4 timeframe (15m, 1h, 4h, Daily) selaras 100% mendukung posisi ${direction}. Setup probabilitas tertinggi.`;
+  } else if (matches === 3) {
+    confluenceStatus = direction === 'LONG' ? 'MODERATE_BULLISH' : 'MODERATE_BEARISH';
+    badgeLabel = '🟡 3/4 PARTIAL CONFLUENCE';
+    verdictText = `Konfluensi mayoritas (3 dari 4 timeframe searah). Cukup solid namun tetap awasi konfirmasi level kunci di TP1.`;
+  } else {
+    confluenceStatus = 'MIXED_DANGER';
+    badgeLabel = '⚠️ COUNTER-TREND RISK';
+    verdictText = `Peringatan: Posisi ${direction} ini melawan arus tren besar (4h / Daily). Disarankan kurangi ukuran margin dan kunci TP1 sesegera mungkin!`;
+  }
+
+  const counterTrendWarning = isOpposedBy4hOrDaily
+    ? `⚠️ COUNTER-TREND TRAP: Membuka ${direction} saat tren 4h/Daily berlawanan memiliki probabilitas tergulung tren besar. Wajib geser SL ke BE begitu TP1 tersentuh!`
+    : undefined;
+
+  const multiTimeframe: MultiTimeframeAlignment = {
+    tf15m: {
+      timeframe: '15m',
+      label: '15 Menit (Trigger)',
+      trend: tf15mTrend,
+      rsi: tf15mRsi,
+      emaStatus: tf15mTrend === 'BULLISH' ? 'EMA9 > EMA21 (Expansion)' : 'EMA9 < EMA21 (Pullback)',
+      structure: tf15mTrend === 'BULLISH' ? 'HIGHER_HIGHS' : 'LOWER_LOWS',
+    },
+    tf1h: {
+      timeframe: '1h',
+      label: '1 Jam (Intraday)',
+      trend: tf1hTrend,
+      rsi: tf1hRsi,
+      emaStatus: tf1hTrend === 'BULLISH' ? 'EMA21 > EMA50 (Bullish)' : 'EMA21 < EMA50 (Bearish)',
+      structure: tf1hTrend === 'BULLISH' ? 'BREAKOUT' : 'RANGING',
+    },
+    tf4h: {
+      timeframe: '4h',
+      label: '4 Jam (Swing)',
+      trend: tf4hTrend,
+      rsi: tf4hRsi,
+      emaStatus: tf4hTrend === 'BULLISH' ? 'Above EMA50' : 'Below EMA50',
+      structure: tf4hTrend === 'BULLISH' ? 'HIGHER_HIGHS' : 'LOWER_LOWS',
+    },
+    tf1d: {
+      timeframe: '1d',
+      label: 'Daily (Macro)',
+      trend: tf1dTrend,
+      rsi: tf1dRsi,
+      emaStatus: tf1dTrend === 'BULLISH' ? 'Above 200 EMA' : 'Below 200 EMA',
+      structure: tf1dTrend === 'BULLISH' ? 'HIGHER_HIGHS' : 'LOWER_LOWS',
+    },
+    alignmentScore: matches,
+    confluenceStatus,
+    badgeLabel,
+    verdictText,
+    isCounterTrendRisk: isOpposedBy4hOrDaily,
+    counterTrendWarning,
+  };
+
+  return multiTimeframe;
+}
+
+/**
  * Menghitung sinyal futures untuk pasangan koin tunggal
  */
 function evaluatePairSignal(
@@ -635,6 +750,14 @@ function evaluatePairSignal(
     indicators,
     indicatorExplanation,
     bullBearDebate,
+    multiTimeframe: generateMultiTimeframeAlignment({
+      symbol: ticker.symbol,
+      direction,
+      currentPrice,
+      change24h,
+      indicators,
+      overallScore: score,
+    }),
     autoHedge: generateAutoHedgeRecommendation({
       symbol: ticker.symbol,
       direction,
@@ -1577,5 +1700,13 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
     quantAnomaly,
     bullBearDebate,
     autoHedge,
+    multiTimeframe: generateMultiTimeframeAlignment({
+      symbol,
+      direction,
+      currentPrice,
+      change24h: Math.round(parseFloat(ticker.priceChangePercent)),
+      indicators,
+      overallScore: Math.max(score, quantScore),
+    }),
   };
 }

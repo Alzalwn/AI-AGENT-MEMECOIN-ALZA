@@ -130,6 +130,16 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
               gatekeeperStatus: signal.autoHedge.gatekeeperStatus,
             }
           : undefined,
+        multiTimeframe: signal.multiTimeframe
+          ? {
+              alignmentScore: signal.multiTimeframe.alignmentScore,
+              badgeLabel: signal.multiTimeframe.badgeLabel,
+              tf15mTrend: signal.multiTimeframe.tf15m.trend,
+              tf1hTrend: signal.multiTimeframe.tf1h.trend,
+              tf4hTrend: signal.multiTimeframe.tf4h.trend,
+              tf1dTrend: signal.multiTimeframe.tf1d.trend,
+            }
+          : undefined,
       });
 
       // Bangkitkan gambar grafik analisis berkualitas tinggi
@@ -287,7 +297,69 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
       </div>
 
       {/* Card Body */}
-      <div className="p-4 sm:p-5 flex flex-col gap-4 flex-1">
+      <div className="p-4 sm:p-5 flex flex-col gap-3.5 flex-1">
+        {/* 📊 Multi-Timeframe Alignment Matrix (15m, 1h, 4h, Daily) */}
+        {signal.multiTimeframe && (
+          <div
+            className={`p-2.5 rounded-xl border font-mono text-xs transition-all ${
+              signal.multiTimeframe.confluenceStatus === 'FULL_BULLISH' ||
+              signal.multiTimeframe.confluenceStatus === 'FULL_BEARISH'
+                ? 'bg-emerald-950/20 border-emerald-500/40'
+                : signal.multiTimeframe.isCounterTrendRisk
+                ? 'bg-rose-950/25 border-rose-500/40'
+                : 'bg-zinc-900/70 border-zinc-800'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                📊 Multi-Timeframe Matrix:
+              </span>
+              <span
+                className={`text-[9.5px] px-1.5 py-0.5 rounded font-bold border ${
+                  signal.multiTimeframe.alignmentScore === 4
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : signal.multiTimeframe.alignmentScore === 3
+                    ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40'
+                    : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                }`}
+              >
+                {signal.multiTimeframe.badgeLabel}
+              </span>
+            </div>
+
+            {/* 4 Timeframe Badges Row */}
+            <div className="grid grid-cols-4 gap-1.5 text-center">
+              {[
+                signal.multiTimeframe.tf15m,
+                signal.multiTimeframe.tf1h,
+                signal.multiTimeframe.tf4h,
+                signal.multiTimeframe.tf1d,
+              ].map((tf) => (
+                <div
+                  key={tf.timeframe}
+                  className={`py-1 px-1 rounded-lg border text-[10px] flex flex-col items-center justify-center ${
+                    tf.trend === 'BULLISH'
+                      ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-400'
+                      : 'bg-rose-950/30 border-rose-500/30 text-rose-400'
+                  }`}
+                >
+                  <span className="text-[9px] text-zinc-400 font-bold">{tf.timeframe.toUpperCase()}</span>
+                  <span className="font-black text-[9.5px]">
+                    {tf.trend === 'BULLISH' ? '🟢 BULL' : '🔴 BEAR'}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Counter-Trend Warning */}
+            {signal.multiTimeframe.counterTrendWarning && (
+              <div className="mt-2 pt-1.5 border-t border-rose-500/20 text-[9.5px] text-rose-300 leading-tight">
+                {signal.multiTimeframe.counterTrendWarning}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Entry Zone & Stop Loss Box */}
         <div className="grid grid-cols-2 gap-2 bg-zinc-900/60 p-3 rounded-xl border border-zinc-800/80 font-mono text-xs">
           <div>

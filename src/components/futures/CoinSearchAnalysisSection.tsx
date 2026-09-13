@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Settings,
   X,
+  Activity,
 } from 'lucide-react';
 import { BinanceFuturesSignal } from '../../types/futures';
 import { formatFuturesPrice } from '../../engine/futuresSignalEngine';
@@ -181,6 +182,16 @@ export const CoinSearchAnalysisSection: React.FC<CoinSearchAnalysisSectionProps>
             hedgeRatioPct: analyzedSignal.autoHedge.hedgeRatioPct,
             strategyObjective: analyzedSignal.autoHedge.strategyObjective,
             gatekeeperStatus: analyzedSignal.autoHedge.gatekeeperStatus,
+          }
+        : undefined,
+      multiTimeframe: analyzedSignal.multiTimeframe
+        ? {
+            alignmentScore: analyzedSignal.multiTimeframe.alignmentScore,
+            badgeLabel: analyzedSignal.multiTimeframe.badgeLabel,
+            tf15mTrend: analyzedSignal.multiTimeframe.tf15m.trend,
+            tf1hTrend: analyzedSignal.multiTimeframe.tf1h.trend,
+            tf4hTrend: analyzedSignal.multiTimeframe.tf4h.trend,
+            tf1dTrend: analyzedSignal.multiTimeframe.tf1d.trend,
           }
         : undefined,
     });
@@ -922,6 +933,104 @@ export const CoinSearchAnalysisSection: React.FC<CoinSearchAnalysisSectionProps>
               </div>
             </div>
           </div>
+
+          {/* 📊 MULTI-TIMEFRAME ALIGNMENT MATRIX (15m, 1h, 4h, Daily) */}
+          {analyzedSignal.multiTimeframe && (
+            <div
+              className={`p-4 rounded-xl border space-y-3.5 text-xs font-mono shadow-2xl relative overflow-hidden ${
+                analyzedSignal.multiTimeframe.confluenceStatus === 'FULL_BULLISH' ||
+                analyzedSignal.multiTimeframe.confluenceStatus === 'FULL_BEARISH'
+                  ? 'bg-gradient-to-br from-zinc-950 via-emerald-950/20 to-zinc-950 border-emerald-500/40'
+                  : analyzedSignal.multiTimeframe.isCounterTrendRisk
+                  ? 'bg-gradient-to-br from-zinc-950 via-rose-950/25 to-zinc-950 border-rose-500/40'
+                  : 'bg-zinc-950 border-zinc-800'
+              }`}
+            >
+              {/* Header Matrix */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800/80 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    <Activity className="w-4 h-4 text-emerald-400" />
+                  </div>
+                  <div>
+                    <span className="font-bold text-sm text-white tracking-wide flex items-center gap-1.5">
+                      <span>📊</span> Matriks Konfluensi Multi-Timeframe (15m, 1h, 4h, Daily)
+                    </span>
+                    <span className="text-[10px] text-zinc-400 block">
+                      Higher Timeframe Alignment Protocol — Memastikan Arah Posisi Selaras dengan Tren Besar
+                    </span>
+                  </div>
+                </div>
+
+                <span
+                  className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border self-start sm:self-auto ${
+                    analyzedSignal.multiTimeframe.alignmentScore === 4
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : analyzedSignal.multiTimeframe.alignmentScore === 3
+                      ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40'
+                      : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                  }`}
+                >
+                  {analyzedSignal.multiTimeframe.badgeLabel}
+                </span>
+              </div>
+
+              {/* 4 Cards Grid */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+                {[
+                  analyzedSignal.multiTimeframe.tf15m,
+                  analyzedSignal.multiTimeframe.tf1h,
+                  analyzedSignal.multiTimeframe.tf4h,
+                  analyzedSignal.multiTimeframe.tf1d,
+                ].map((tf) => (
+                  <div
+                    key={tf.timeframe}
+                    className={`p-3 rounded-xl border flex flex-col justify-between ${
+                      tf.trend === 'BULLISH'
+                        ? 'bg-emerald-950/25 border-emerald-500/30'
+                        : 'bg-rose-950/25 border-rose-500/30'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="font-bold text-xs text-zinc-300 uppercase">{tf.timeframe} ({tf.label.split(' ')[0]})</span>
+                        <span
+                          className={`text-[9px] px-1.5 py-0.2 rounded font-black ${
+                            tf.trend === 'BULLISH'
+                              ? 'bg-emerald-500/20 text-emerald-400'
+                              : 'bg-rose-500/20 text-rose-400'
+                          }`}
+                        >
+                          {tf.trend === 'BULLISH' ? '🟢 BULLISH' : '🔴 BEARISH'}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-zinc-400 space-y-0.5">
+                        <div>RSI: <strong className="text-zinc-200">{tf.rsi}</strong></div>
+                        <div className="truncate">EMA: <span className="text-zinc-300">{tf.emaStatus}</span></div>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 pt-1.5 border-t border-white/5 text-[10px] text-zinc-400">
+                      Struktur: <span className="text-white font-bold">{tf.structure}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Verdict & Guidance */}
+              <div className="p-2.5 rounded-lg bg-black/40 border border-white/5 space-y-1">
+                <div className="text-[11px] text-zinc-300 leading-relaxed">
+                  <span className="font-bold text-cyan-400">Vonis AI Confluence: </span>
+                  {analyzedSignal.multiTimeframe.verdictText}
+                </div>
+                {analyzedSignal.multiTimeframe.counterTrendWarning && (
+                  <div className="text-[10px] text-rose-300 font-bold leading-relaxed pt-1 border-t border-rose-500/20">
+                    {analyzedSignal.multiTimeframe.counterTrendWarning}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* ARENA DEBAT ADVERSARIAL: BANTENG vs BERUANG (TRADINGAGENTS MULTI-AGENT PROTOCOL) */}
           {analyzedSignal.bullBearDebate && (

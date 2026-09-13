@@ -50,6 +50,14 @@ export interface SignalPostParams {
     strategyObjective: string;
     gatekeeperStatus: 'APPROVED' | 'CAUTION' | 'RESTRICTED';
   };
+  multiTimeframe?: {
+    alignmentScore: number;
+    badgeLabel: string;
+    tf15mTrend: string;
+    tf1hTrend: string;
+    tf4hTrend: string;
+    tf1dTrend: string;
+  };
 }
 
 /**
@@ -129,6 +137,9 @@ export function generateCommunitySignalPost(params: SignalPostParams): string {
     if (params.autoHedge.isHedgeNeeded) {
       extraLines.push(`🛡️ Auto-Hedge Delta-Neutral: Buka ${params.autoHedge.hedgeDirection} ${params.autoHedge.hedgePair} (${params.autoHedge.hedgeRatioPct}% Notional)`);
     }
+  }
+  if (params.multiTimeframe) {
+    extraLines.push(`📊 Konfluensi 4-Timeframe: [15m: ${params.multiTimeframe.tf15mTrend === 'BULLISH' ? '🟢' : '🔴'}] [1h: ${params.multiTimeframe.tf1hTrend === 'BULLISH' ? '🟢' : '🔴'}] [4h: ${params.multiTimeframe.tf4hTrend === 'BULLISH' ? '🟢' : '🔴'}] [Daily: ${params.multiTimeframe.tf1dTrend === 'BULLISH' ? '🟢' : '🔴'}] (${params.multiTimeframe.badgeLabel})`);
   }
   if (params.binanceUrl) {
     extraLines.push(`🔗 Eksekusi di Binance: ${params.binanceUrl}`);

@@ -156,6 +156,31 @@ export interface BinanceFuturesSignal {
   quantAnomaly?: QuantAnomalyInsight;
   bullBearDebate?: BullBearDebate;
   autoHedge?: AutoHedgeRecommendation;
+  multiTimeframe?: MultiTimeframeAlignment;
+}
+
+export type TimeframeTrendBias = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+
+export interface TimeframeTrendDetail {
+  timeframe: '15m' | '1h' | '4h' | '1d';
+  label: string;
+  trend: TimeframeTrendBias;
+  rsi: number;
+  emaStatus: string;
+  structure: 'HIGHER_HIGHS' | 'LOWER_LOWS' | 'RANGING' | 'BREAKOUT';
+}
+
+export interface MultiTimeframeAlignment {
+  tf15m: TimeframeTrendDetail;
+  tf1h: TimeframeTrendDetail;
+  tf4h: TimeframeTrendDetail;
+  tf1d: TimeframeTrendDetail;
+  alignmentScore: number; // e.g. 4 (4/4), 3 (3/4), 2 (2/4)
+  confluenceStatus: 'FULL_BULLISH' | 'FULL_BEARISH' | 'MODERATE_BULLISH' | 'MODERATE_BEARISH' | 'MIXED_DANGER';
+  badgeLabel: string;
+  verdictText: string;
+  isCounterTrendRisk: boolean;
+  counterTrendWarning?: string;
 }
 
 export interface AutoHedgeRecommendation {

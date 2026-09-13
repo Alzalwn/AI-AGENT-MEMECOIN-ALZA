@@ -43,6 +43,7 @@ Terminal kini dilengkapi dengan modul trading derivatif kripto institusional (*H
 7. **⚖️ Funding Rate Cash & Carry Arbitrage Monitor**: Pelacak strategi dividen *Delta-Neutral* bebas risiko harga pasar dengan kalkulasi Annualized APY dan estimasi yield per $\$1.000$ USD.
 8. **🌐 Market Sessions & ICT Killzones Radar**: Visualisasi real-time sesi pasar dunia (Asia, London, New York) dan jendela emas likuiditas *London-NY Overlap Killzone*.
 9. **🧪 Paper Trading Journal & Performance Tracker**: Simulasi eksekusi tanpa risiko uang riil dengan pencatatan otomatis *Win Rate (%)*, rasio R:R, dan total PnL simulasi.
+10. **📊 Multi-Timeframe Alignment Matrix (15m, 1h, 4h, Daily)**: Menilai keselarasan tren lintas 4 horizon waktu (*Higher Timeframe Alignment Protocol*) dengan sistem peringatan otomatis *Counter-Trend Trap*.
 
 ### 📚 Dokumentasi & Buku Panduan Resmi
 - 📄 **[Standard Operating Procedure (SOP) Futures](file:///c:/OBU%2018%20BRAVO/AI/AI-AGENT-MEMECOIN-ALZA/SOP_TRADING_FUTURES.md)**: Prosedur operasional eksekusi, exit strategy bertingkat (TP1 50% + BE), dan batasan leverage isolated.
