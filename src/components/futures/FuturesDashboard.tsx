@@ -28,12 +28,16 @@ import { OpenInterestWidget } from './OpenInterestWidget';
 import { FundingRateArbitrageMonitor } from './FundingRateArbitrageMonitor';
 import { MarketSessionsKillzoneWidget } from './MarketSessionsKillzoneWidget';
 import { PaperTradingJournal } from './PaperTradingJournal';
+import { SystemRoadmapModal } from './SystemRoadmapModal';
 
 export const FuturesDashboard: React.FC = () => {
   const [signals, setSignals] = useState<BinanceFuturesSignal[]>([]);
   const [marketStats, setMarketStats] = useState<FuturesMarketStats | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  // System Roadmap / Audit Modal Window State
+  const [isRoadmapOpen, setIsRoadmapOpen] = useState<boolean>(false);
 
   // Institutional Suite Active Tab ('NONE' | 'CALCULATOR' | 'OI_MATRIX' | 'ARBITRAGE' | 'KILLZONES' | 'PAPER_TRADE')
   const [activeToolSuite, setActiveToolSuite] = useState<
@@ -212,6 +216,13 @@ export const FuturesDashboard: React.FC = () => {
               <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
               INSTITUTIONAL SUITE:
             </span>
+            <button
+              onClick={() => setIsRoadmapOpen(true)}
+              className="px-2.5 py-1 rounded-xl text-xs font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 hover:bg-cyan-500 hover:text-black transition-all flex items-center gap-1 cursor-pointer shadow-md whitespace-nowrap active:scale-95"
+              title="Buka ringkasan sistem dan analisis fitur yang masih kurang"
+            >
+              <span>📋 Rangkuman & Roadmap</span>
+            </button>
           </div>
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
             <button
@@ -552,6 +563,12 @@ export const FuturesDashboard: React.FC = () => {
           signal={selectedChartSignal}
         />
       )}
+
+      {/* 8. System Roadmap & Gap Analysis Modal Window */}
+      <SystemRoadmapModal
+        isOpen={isRoadmapOpen}
+        onClose={() => setIsRoadmapOpen(false)}
+      />
     </div>
   );
 };
