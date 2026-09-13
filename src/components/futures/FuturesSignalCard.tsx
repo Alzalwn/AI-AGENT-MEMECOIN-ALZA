@@ -113,6 +113,23 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
               reliability: signal.candlestickPattern.reliability,
             }
           : undefined,
+        bullBearDebate: signal.bullBearDebate
+          ? {
+              winner: signal.bullBearDebate.verdict.winner,
+              summary: signal.bullBearDebate.verdict.summary,
+              mitigationAdvice: signal.bullBearDebate.verdict.mitigationAdvice,
+            }
+          : undefined,
+        autoHedge: signal.autoHedge
+          ? {
+              isHedgeNeeded: signal.autoHedge.isHedgeNeeded,
+              hedgePair: signal.autoHedge.hedgePair,
+              hedgeDirection: signal.autoHedge.hedgeDirection,
+              hedgeRatioPct: signal.autoHedge.hedgeRatioPct,
+              strategyObjective: signal.autoHedge.strategyObjective,
+              gatekeeperStatus: signal.autoHedge.gatekeeperStatus,
+            }
+          : undefined,
       });
 
       // Bangkitkan gambar grafik analisis berkualitas tinggi
@@ -511,6 +528,78 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
                             <span className="font-bold">Konfirmasi Valid:</span>
                             <span>{signal.candlestickPattern.confirmationRule}</span>
                           </div>
+                        </div>
+                      )}
+
+                      {/* Bull vs Bear Debate Compact Card */}
+                      {signal.bullBearDebate && (
+                        <div className="p-2.5 rounded-lg bg-zinc-950 border border-cyan-500/30 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-cyan-300 flex items-center gap-1.5 text-[10px]">
+                              <span>⚔️</span> Debat Adversarial Banteng vs Beruang:
+                            </span>
+                            <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold border ${
+                              signal.bullBearDebate.verdict.winner === 'BULL'
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                : signal.bullBearDebate.verdict.winner === 'BEAR'
+                                ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                                : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                            }`}>
+                              Vonis: {signal.bullBearDebate.verdict.winner === 'BULL' ? 'Banteng (Bull Win)' : signal.bullBearDebate.verdict.winner === 'BEAR' ? 'Beruang (Bear Win)' : 'Netral'}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[9.5px]">
+                            <div className="p-1.5 rounded bg-emerald-950/30 border border-emerald-500/20 space-y-1">
+                              <span className="font-bold text-emerald-400 block">🐂 Bull Case ({signal.bullBearDebate.bullCase.convictionScore}%):</span>
+                              <ul className="space-y-0.5 text-zinc-300">
+                                {signal.bullBearDebate.bullCase.points.slice(0, 2).map((pt, i) => (
+                                  <li key={i} className="line-clamp-2">• {pt}</li>
+                                ))}
+                              </ul>
+                            </div>
+                            <div className="p-1.5 rounded bg-rose-950/30 border border-rose-500/20 space-y-1">
+                              <span className="font-bold text-rose-400 block">🐻 Bear Risk ({signal.bullBearDebate.bearCase.riskSeverity}):</span>
+                              <ul className="space-y-0.5 text-zinc-300">
+                                {signal.bullBearDebate.bearCase.points.slice(0, 2).map((pt, i) => (
+                                  <li key={i} className="line-clamp-2">• {pt}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+
+                          <p className="text-[9.5px] text-amber-300/90 leading-tight pt-1 border-t border-zinc-900">
+                            🛡️ <strong>Mitigasi:</strong> {signal.bullBearDebate.verdict.mitigationAdvice}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Auto-Hedge Gatekeeper Compact Info */}
+                      {signal.autoHedge && (
+                        <div className="p-2 rounded-lg bg-zinc-950 border border-purple-500/30 flex items-center justify-between text-[10px]">
+                          <div className="flex items-center gap-1.5">
+                            <Shield className="w-3.5 h-3.5 text-purple-400" />
+                            <span className="text-zinc-300 font-bold">Gatekeeper:</span>
+                            <span className={`px-1.5 py-0.5 rounded font-black text-[9px] border ${
+                              signal.autoHedge.gatekeeperStatus === 'APPROVED'
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                : signal.autoHedge.gatekeeperStatus === 'CAUTION'
+                                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                            }`}>
+                              {signal.autoHedge.gatekeeperStatus}
+                            </span>
+                          </div>
+
+                          {signal.autoHedge.isHedgeNeeded ? (
+                            <span className="text-purple-300 font-bold text-[9px]">
+                              ⚡ Auto-Hedge: {signal.autoHedge.hedgeDirection} {signal.autoHedge.hedgePair}
+                            </span>
+                          ) : (
+                            <span className="text-zinc-500 text-[9px]">
+                              Portofolio Unhedged (Aman)
+                            </span>
+                          )}
                         </div>
                       )}
                     </div>

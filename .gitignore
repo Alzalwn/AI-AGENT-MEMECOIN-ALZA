@@ -40,6 +40,6 @@ next-env.d.ts
 
 # Private manuals & sensitive docs
 *.pdf
-panduan_login.html
-panduan*
+panduan_login*
+scratch/
 

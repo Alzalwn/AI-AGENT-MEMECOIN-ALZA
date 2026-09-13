@@ -59,6 +59,12 @@ export interface DualLeverageConfig {
   scalp: LeverageOption;
 }
 
+export interface MacroFearAndGreed {
+  score: number;
+  classification: string;
+  updateTime?: number;
+}
+
 export interface DerivativesTelemetry {
   fundingRate: number;          // e.g. 0.0001
   fundingRatePct: number;       // e.g. 0.01 (%)
@@ -67,10 +73,13 @@ export interface DerivativesTelemetry {
   openInterestUsd: number;      // Open interest dalam USD
   openInterestChange24h: number;// % perubahan OI 24 jam
   longShortRatio: number;       // e.g. 1.25 (55.5% Long vs 44.5% Short)
+  topTraderLongShortRatio?: number; // Rasio posisi Whale/Top Trader
+  takerBuySellRatio?: number;   // Rasio volume taker beli vs jual (orderflow agresif)
   volume24hUsd: number;         // Total volume 24 jam dalam USD
   priceChange24hPct: number;    // % perubahan harga 24 jam
   high24h: number;
   low24h: number;
+  macroFearAndGreed?: MacroFearAndGreed;
 }
 
 export interface FuturesAgentVerdict {
@@ -145,6 +154,38 @@ export interface BinanceFuturesSignal {
   positionSizing?: PositionSizingRecommendation;
   orderbookDepth?: OrderbookDepthAnalysis;
   quantAnomaly?: QuantAnomalyInsight;
+  bullBearDebate?: BullBearDebate;
+  autoHedge?: AutoHedgeRecommendation;
+}
+
+export interface AutoHedgeRecommendation {
+  isHedgeNeeded: boolean;
+  riskTrigger: string;
+  hedgePair: string;
+  hedgeDirection: FuturesDirection;
+  hedgeRatioPct: number;
+  recommendedHedgeLeverage: number;
+  targetHedgeEntry: number;
+  hedgeStopLoss: number;
+  strategyObjective: string;
+  gatekeeperStatus: 'APPROVED' | 'CAUTION' | 'RESTRICTED';
+  gatekeeperReason: string;
+}
+
+export interface BullBearDebate {
+  bullCase: {
+    points: string[];
+    convictionScore: number; // 0 - 100
+  };
+  bearCase: {
+    points: string[];
+    riskSeverity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  };
+  verdict: {
+    winner: 'BULL' | 'BEAR' | 'NEUTRAL';
+    summary: string;
+    mitigationAdvice: string;
+  };
 }
 
 export interface BtcMarketContext {
@@ -155,6 +196,7 @@ export interface BtcMarketContext {
   trend: 'STRONG_BULLISH' | 'BULLISH' | 'NEUTRAL' | 'BEARISH' | 'DUMP_ALERT';
   warningMessage?: string;
   isSafeForAltLong: boolean;
+  fearAndGreed?: MacroFearAndGreed;
 }
 
 export interface PositionSizingRecommendation {
@@ -245,6 +287,8 @@ export interface FuturesMarketStats {
   longAccountPct: number;
   shortAccountPct: number;
   avgFundingRate: number;
+  fearAndGreed?: MacroFearAndGreed;
+  smartMoneyBias?: 'WHALES_ACCUMULATING_LONG' | 'WHALES_HEDGING_SHORT' | 'NEUTRAL';
   topSqueezeCoins: Array<{
     symbol: string;
     fundingRatePct: number;
@@ -264,4 +308,88 @@ export interface FuturesMarketStats {
     volumeUsd: number;
   }>;
   lastUpdated: number;
+}
+
+// -------------------------------------------------------------
+// 🧪 Paper Trading Simulation Types
+// -------------------------------------------------------------
+export interface PaperTradeRecord {
+  id: string;
+  symbol: string;
+  direction: FuturesDirection;
+  entryPrice: number;
+  currentPrice: number;
+  stopLossPrice: number;
+  takeProfit1Price: number;
+  takeProfit2Price: number;
+  takeProfit3Price: number;
+  leverage: number;
+  marginUsd: number;
+  notionalUsd: number;
+  status: 'OPEN' | 'TP1_HIT' | 'TP2_HIT' | 'TP3_HIT' | 'SL_HIT' | 'CLOSED_MANUAL';
+  realizedPnlUsd: number;
+  unrealizedPnlUsd: number;
+  roiPct: number;
+  createdAt: number;
+  closedAt?: number;
+  strategyName: string;
+}
+
+export interface PaperTradingSummary {
+  totalTrades: number;
+  winCount: number;
+  lossCount: number;
+  winRatePct: number;
+  totalPnlUsd: number;
+  avgRiskRewardRatio: number;
+  profitFactor: number;
+  activeTradesCount: number;
+}
+
+// -------------------------------------------------------------
+// ⚖️ Funding Rate Arbitrage (Cash & Carry)
+// -------------------------------------------------------------
+export interface ArbitrageOpportunity {
+  symbol: string;
+  fundingRate8hPct: number;
+  fundingRate24hPct: number;
+  annualizedApyPct: number;
+  strategyType: 'CASH_AND_CARRY_LONG_SPOT_SHORT_FUTURES' | 'REVERSE_CARRY_SHORT_SPOT_LONG_FUTURES';
+  nextFundingCountdown: string;
+  riskLevel: 'LOW_DELTA_NEUTRAL' | 'MODERATE_BORROWING_COST';
+  estimatedYieldUsdPer1000: number; // Daily yield on $1,000 investment
+  instruction: string;
+}
+
+// -------------------------------------------------------------
+// 📈 Open Interest (OI) vs Price Matrix
+// -------------------------------------------------------------
+export type OIRegimeType =
+  | 'AGGRESSIVE_LONG_ACCUMULATION' // Price Up + OI Up
+  | 'SHORT_SQUEEZE_FRAGILE'        // Price Up + OI Down
+  | 'AGGRESSIVE_SHORT_DISTRIBUTION'// Price Down + OI Up
+  | 'LONG_LIQUIDATION_CAPITULATION'// Price Down + OI Down
+  | 'CONSOLIDATION_NEUTRAL';
+
+export interface OpenInterestRegime {
+  regime: OIRegimeType;
+  title: string;
+  color: string;
+  sentiment: 'BULLISH' | 'BEARISH' | 'REVERSAL_RISK' | 'BOTTOM_FISHING' | 'NEUTRAL';
+  description: string;
+  institutionalAction: string;
+  recommendedPlay: string;
+}
+
+// -------------------------------------------------------------
+// 🌐 Market Sessions & ICT Killzones
+// -------------------------------------------------------------
+export interface MarketSessionInfo {
+  sessionName: 'ASIA' | 'LONDON' | 'NEW_YORK' | 'LONDON_NY_OVERLAP' | 'WEEKEND_OFFPEAK';
+  displayName: string;
+  timeRangeWib: string;
+  volatilityLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME_KILLZONE';
+  status: 'ACTIVE' | 'UPCOMING' | 'CLOSED';
+  description: string;
+  recommendedBias: string;
 }

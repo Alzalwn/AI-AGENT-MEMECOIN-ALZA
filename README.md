@@ -28,6 +28,28 @@ Pipeline evaluasi paralel beroperasi dengan aturan **Single-Veto Distributed Con
 
 ---
 
+---
+
+## 📈 Binance Futures USDT-M Terminal & AI Engine
+
+Terminal kini dilengkapi dengan modul trading derivatif kripto institusional (*Hedge Fund Grade*):
+
+1. **AI Alpha Signal Engine**: Filter likuiditas pasar 24h $\ge \$12M$, MACD/RSI konfluensi, dan Orderbook Imbalance.
+2. **BTC Market Guard**: Otomatis mendeteksi flash dump Bitcoin (penurunan $\le -1.5\%$ dalam 15m) untuk mem-veto sinyal beli altcoin.
+3. **⚔️ Adversarial Bull vs Bear Debate**: Mensimulasikan tesis *Bullish* vs *Bearish* secara real-time sebelum mengeksekusi order.
+4. **🛡️ Auto-Hedge Gatekeeper**: Rekomendasi lindung nilai delta-neutral dinamis untuk mengunci risiko saat volatilitas pasar melonjak.
+5. **🧮 Interactive Position Sizing & Margin Calculator**: Widget kalkulator risiko dengan aturan SOP 2%, kalkulasi margin USDT otomatis, dan tombol 1-klik salin parameter order ke aplikasi Binance.
+6. **📈 Open Interest (OI) vs Price Matrix Interpreter**: Menganalisis 4 rezim pergerakan institusi (Akumulasi Long Sehat, Short Squeeze Rapuh, Distribusi Short, dan Kapitulasi Long).
+7. **⚖️ Funding Rate Cash & Carry Arbitrage Monitor**: Pelacak strategi dividen *Delta-Neutral* bebas risiko harga pasar dengan kalkulasi Annualized APY dan estimasi yield per $\$1.000$ USD.
+8. **🌐 Market Sessions & ICT Killzones Radar**: Visualisasi real-time sesi pasar dunia (Asia, London, New York) dan jendela emas likuiditas *London-NY Overlap Killzone*.
+9. **🧪 Paper Trading Journal & Performance Tracker**: Simulasi eksekusi tanpa risiko uang riil dengan pencatatan otomatis *Win Rate (%)*, rasio R:R, dan total PnL simulasi.
+
+### 📚 Dokumentasi & Buku Panduan Resmi
+- 📄 **[Standard Operating Procedure (SOP) Futures](file:///c:/OBU%2018%20BRAVO/AI/AI-AGENT-MEMECOIN-ALZA/SOP_TRADING_FUTURES.md)**: Prosedur operasional eksekusi, exit strategy bertingkat (TP1 50% + BE), dan batasan leverage isolated.
+- 📖 **[Ensiklopedia & Panduan Lengkap Crypto Futures](file:///c:/OBU%2018%20BRAVO/AI/AI-AGENT-MEMECOIN-ALZA/PANDUAN_LENGKAP_CRYPTO_FUTURES.md)**: Master knowledge base lengkap mencakup mekanika Mark Price, Funding Rate, Orderbook Imbalance, Squeeze Hunting, ICT Killzones, dan psikologi trading kuantitatif.
+
+---
+
 ## 💻 Menjalankan Terminal Lokal
 
 ```bash
@@ -41,4 +63,4 @@ npm install
 npm run dev
 ```
 
-Buka peramban di [http://localhost:3001](http://localhost:3001) (atau port 3000) untuk mengakses **High-Density Dark Terminal Dashboard**.
+Buka peramban di [http://localhost:3000](http://localhost:3000) (atau port 3001) untuk mengakses **High-Density Dark Terminal Dashboard**.

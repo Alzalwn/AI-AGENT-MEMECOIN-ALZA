@@ -37,6 +37,19 @@ export interface SignalPostParams {
     type?: string;
     reliability?: number;
   };
+  bullBearDebate?: {
+    winner: 'BULL' | 'BEAR' | 'NEUTRAL';
+    summary: string;
+    mitigationAdvice: string;
+  };
+  autoHedge?: {
+    isHedgeNeeded: boolean;
+    hedgePair: string;
+    hedgeDirection: 'SHORT' | 'LONG';
+    hedgeRatioPct: number;
+    strategyObjective: string;
+    gatekeeperStatus: 'APPROVED' | 'CAUTION' | 'RESTRICTED';
+  };
 }
 
 /**
@@ -106,6 +119,16 @@ export function generateCommunitySignalPost(params: SignalPostParams): string {
   }
   if (params.fundingRatePct !== undefined) {
     extraLines.push(`📊 Funding Rate: ${params.fundingRatePct > 0 ? '+' : ''}${params.fundingRatePct.toFixed(4)}%`);
+  }
+  if (params.bullBearDebate) {
+    extraLines.push(`⚔️ Vonis Arbiter Debat: ${params.bullBearDebate.winner === 'BULL' ? 'Banteng (Bullish Win)' : params.bullBearDebate.winner === 'BEAR' ? 'Beruang (Bearish Win)' : 'Netral / Wait & See'}`);
+    extraLines.push(`🛡️ Saran Mitigasi Risiko: ${params.bullBearDebate.mitigationAdvice}`);
+  }
+  if (params.autoHedge) {
+    extraLines.push(`🚦 Risk Gatekeeper: [${params.autoHedge.gatekeeperStatus}]`);
+    if (params.autoHedge.isHedgeNeeded) {
+      extraLines.push(`🛡️ Auto-Hedge Delta-Neutral: Buka ${params.autoHedge.hedgeDirection} ${params.autoHedge.hedgePair} (${params.autoHedge.hedgeRatioPct}% Notional)`);
+    }
   }
   if (params.binanceUrl) {
     extraLines.push(`🔗 Eksekusi di Binance: ${params.binanceUrl}`);

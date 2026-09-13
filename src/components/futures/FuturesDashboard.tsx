@@ -23,12 +23,22 @@ import { FundingRateHeatmap } from './FundingRateHeatmap';
 import { TradingViewModal } from './TradingViewModal';
 import { CoinSearchAnalysisSection } from './CoinSearchAnalysisSection';
 import { FuturesEcosystemNav } from './FuturesEcosystemNav';
+import { InteractiveRiskCalculator } from './InteractiveRiskCalculator';
+import { OpenInterestWidget } from './OpenInterestWidget';
+import { FundingRateArbitrageMonitor } from './FundingRateArbitrageMonitor';
+import { MarketSessionsKillzoneWidget } from './MarketSessionsKillzoneWidget';
+import { PaperTradingJournal } from './PaperTradingJournal';
 
 export const FuturesDashboard: React.FC = () => {
   const [signals, setSignals] = useState<BinanceFuturesSignal[]>([]);
   const [marketStats, setMarketStats] = useState<FuturesMarketStats | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Institutional Suite Active Tab ('NONE' | 'CALCULATOR' | 'OI_MATRIX' | 'ARBITRAGE' | 'KILLZONES' | 'PAPER_TRADE')
+  const [activeToolSuite, setActiveToolSuite] = useState<
+    'NONE' | 'CALCULATOR' | 'OI_MATRIX' | 'ARBITRAGE' | 'KILLZONES' | 'PAPER_TRADE'
+  >('NONE');
 
   // Filter & Multi-Choice States
   const [directionFilter, setDirectionFilter] = useState<'ALL' | 'LONG' | 'SHORT'>('ALL');
@@ -193,6 +203,107 @@ export const FuturesDashboard: React.FC = () => {
 
       {/* 2.5. Dedicated Coin Search & Direct Telegram Broadcast Engine */}
       <CoinSearchAnalysisSection onOpenChart={handleOpenChart} />
+
+      {/* 2.8. 🏛️ Institutional Quantitative Suite Toolbar */}
+      <div className="bg-[#0b0e14] border border-white/10 rounded-2xl p-2.5 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono font-bold text-zinc-400 flex items-center gap-1.5 px-2">
+              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+              INSTITUTIONAL SUITE:
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+            <button
+              onClick={() => setActiveToolSuite(activeToolSuite === 'CALCULATOR' ? 'NONE' : 'CALCULATOR')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                activeToolSuite === 'CALCULATOR'
+                  ? 'bg-cyan-500 text-black shadow-[0_0_12px_rgba(6,182,212,0.4)]'
+                  : 'bg-zinc-900 text-zinc-300 hover:text-white border border-zinc-800'
+              }`}
+            >
+              <span>🧮 Kalkulator Margin (2% SOP)</span>
+            </button>
+
+            <button
+              onClick={() => setActiveToolSuite(activeToolSuite === 'OI_MATRIX' ? 'NONE' : 'OI_MATRIX')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                activeToolSuite === 'OI_MATRIX'
+                  ? 'bg-emerald-500 text-black shadow-[0_0_12px_rgba(16,185,129,0.4)]'
+                  : 'bg-zinc-900 text-zinc-300 hover:text-white border border-zinc-800'
+              }`}
+            >
+              <span>📈 Matriks Open Interest</span>
+            </button>
+
+            <button
+              onClick={() => setActiveToolSuite(activeToolSuite === 'ARBITRAGE' ? 'NONE' : 'ARBITRAGE')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                activeToolSuite === 'ARBITRAGE'
+                  ? 'bg-amber-500 text-black shadow-[0_0_12px_rgba(245,158,11,0.4)]'
+                  : 'bg-zinc-900 text-zinc-300 hover:text-white border border-zinc-800'
+              }`}
+            >
+              <span>⚖️ Arbitrase Cash & Carry</span>
+            </button>
+
+            <button
+              onClick={() => setActiveToolSuite(activeToolSuite === 'KILLZONES' ? 'NONE' : 'KILLZONES')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                activeToolSuite === 'KILLZONES'
+                  ? 'bg-blue-500 text-white shadow-[0_0_12px_rgba(59,130,246,0.4)]'
+                  : 'bg-zinc-900 text-zinc-300 hover:text-white border border-zinc-800'
+              }`}
+            >
+              <span>🌐 Sesi Pasar & Killzones</span>
+            </button>
+
+            <button
+              onClick={() => setActiveToolSuite(activeToolSuite === 'PAPER_TRADE' ? 'NONE' : 'PAPER_TRADE')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                activeToolSuite === 'PAPER_TRADE'
+                  ? 'bg-purple-500 text-white shadow-[0_0_12px_rgba(168,85,247,0.4)]'
+                  : 'bg-zinc-900 text-zinc-300 hover:text-white border border-zinc-800'
+              }`}
+            >
+              <span>🧪 Jurnal Paper Trading</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Render Active Institutional Tool if selected */}
+      {activeToolSuite === 'CALCULATOR' && (
+        <InteractiveRiskCalculator
+          activeSignal={signals[0] || null}
+          onClose={() => setActiveToolSuite('NONE')}
+        />
+      )}
+
+      {activeToolSuite === 'OI_MATRIX' && (
+        <OpenInterestWidget
+          stats={marketStats}
+          onSelectCoin={(sym) => setSearchQuery(sym.replace('USDT', ''))}
+        />
+      )}
+
+      {activeToolSuite === 'ARBITRAGE' && (
+        <FundingRateArbitrageMonitor
+          stats={marketStats}
+          onSelectCoin={(sym) => setSearchQuery(sym.replace('USDT', ''))}
+        />
+      )}
+
+      {activeToolSuite === 'KILLZONES' && (
+        <MarketSessionsKillzoneWidget />
+      )}
+
+      {activeToolSuite === 'PAPER_TRADE' && (
+        <PaperTradingJournal
+          signals={signals}
+          onOpenChart={handleOpenChart}
+        />
+      )}
 
       {/* 3. Main Action Bar: Tombol Cari Otomatis & Search Bar */}
       <div className="bg-[#0e0e0e] border border-white/10 rounded-2xl p-3 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 shadow-xl">

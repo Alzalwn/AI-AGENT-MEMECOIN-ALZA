@@ -19,6 +19,8 @@ import {
   PositionSizingRecommendation,
   OrderbookDepthAnalysis,
   QuantAnomalyInsight,
+  BullBearDebate,
+  AutoHedgeRecommendation,
 } from '../types/futures';
 import {
   getFutures24hTickers,
@@ -28,6 +30,9 @@ import {
   getSingleFundingRate,
   getFuturesOpenInterest,
   getFuturesLongShortRatio,
+  getTopTraderLongShortRatio,
+  getTakerBuySellRatio,
+  getFearAndGreedIndex,
   getBtcMarketContext,
   getFuturesOrderbookDepth,
   Raw24hTicker,
@@ -96,6 +101,275 @@ function getDualLeverage(volatilityPct: number): DualLeverageConfig {
       mode: 'ISOLATED',
       description: 'Disiplin Scalp: Target TP1 cepat dengan eksekusi Stop Loss ketat.',
     },
+  };
+}
+
+/**
+ * Protokol Debat Terstruktur Banteng vs Beruang (Adversarial Bull vs Bear Debate)
+ * Mengadopsi arsitektur multi-agent TradingAgents (TauricResearch):
+ * Mempertemukan Agen Banteng (Bull Advocate) dan Agen Beruang (Bear Devil's Advocate / Skeptic)
+ * untuk mengevaluasi data teknikal, orderbook wall, funding fee drag, serta BTC market guard secara kritis,
+ * kemudian dirangkum oleh Arbiter menjadi vonis dan saran mitigasi risiko konkret.
+ */
+export function generateBullBearDebate(params: {
+  symbol: string;
+  direction: FuturesDirection;
+  currentPrice: number;
+  change24h: number;
+  fundingRatePct: number;
+  indicators?: FuturesTechnicalIndicators;
+  detectedPattern?: CandlestickPatternResult | null;
+  orderbookDepth?: OrderbookDepthAnalysis;
+  btcContext?: BtcMarketContext;
+  takerRatio?: number | null;
+  topTraderRatio?: number | null;
+  overallScore: number;
+  tp1Price?: number;
+}): BullBearDebate {
+  const {
+    direction,
+    currentPrice,
+    change24h,
+    fundingRatePct,
+    indicators,
+    detectedPattern,
+    orderbookDepth,
+    btcContext,
+    takerRatio,
+    topTraderRatio,
+    overallScore,
+    tp1Price,
+  } = params;
+
+  // 1. ARGUMEN AGEN BANTENG (BULL ADVOCATE)
+  const bullPoints: string[] = [];
+
+  // Tren & Moving Average Alignment
+  if (indicators?.ma?.alignment === 'BULLISH' || indicators?.ema?.alignment === 'BULLISH') {
+    bullPoints.push('⚡ Golden Stack MA/EMA: Formasi moving average tersusun rapi (MA7 > MA25 > MA99) mengonfirmasi tren dorongan bullish.');
+  } else if (change24h > 0) {
+    bullPoints.push(`📈 Akumulasi Positif: Kenaikan +${change24h.toFixed(1)}% dalam 24 jam menandai dominasi volume beli di pasar futures.`);
+  }
+
+  // Momentum MACD & RSI
+  if (indicators?.macd && indicators.macd.dif > indicators.macd.dea) {
+    bullPoints.push(`🚀 Momentum MACD: DIF (${indicators.macd.dif.toFixed(4)}) melompat di atas DEA dengan histogram positif.`);
+  }
+  if (indicators?.rsi && indicators.rsi.rsi6 < 70) {
+    bullPoints.push(`🟢 Ruang Upside RSI (${indicators.rsi.rsi6.toFixed(1)}): Belum jenuh beli (overbought), ruang ekspansi harga masih terbuka.`);
+  }
+
+  // Orderflow & Tembok Likuiditas (Whale Walls)
+  if (orderbookDepth && orderbookDepth.imbalanceRatio >= 1.2) {
+    bullPoints.push(`🛡️ Tembok Beli (Bid Wall): Total bid $${(orderbookDepth.totalBidUsd / 1e6).toFixed(1)}M USD (${orderbookDepth.imbalanceRatio}x dibanding ask) menopang harga.`);
+  } else if (takerRatio && takerRatio >= 1.02) {
+    bullPoints.push(`🔥 Agresi Taker Beli: Rasio taker ${takerRatio.toFixed(2)}x menandakan pesanan market buy agresif 'hajar kanan'.`);
+  }
+
+  // Squeeze Catalyst & Top Trader
+  if (fundingRatePct <= -0.01) {
+    bullPoints.push(`⚡ Katalis Short Squeeze: Funding rate negatif (${fundingRatePct.toFixed(4)}%) menjepit posisi short, rawan rally likuidasi paksa.`);
+  } else if (topTraderRatio && topTraderRatio >= 1.15) {
+    bullPoints.push(`🐋 Sentimen Whale: Akun top trader Binance memegang rasio Long ${topTraderRatio.toFixed(2)}x lebih tinggi.`);
+  }
+
+  // Candlestick Pattern
+  if (detectedPattern && detectedPattern.direction === 'LONG') {
+    bullPoints.push(`🕯️ Pola Candlestick: Terkonfirmasi formasi ${detectedPattern.name} (${detectedPattern.type}) dengan akurasi historis ${detectedPattern.reliability}%.`);
+  }
+
+  if (bullPoints.length === 0) {
+    bullPoints.push('📊 Rebound Setup: Struktur harga berada pada level support dengan rasio Risk/Reward asimetris menguntungkan.');
+  }
+
+  // Hitung Skor Keyakinan Bull
+  const bullConviction = direction === 'LONG'
+    ? Math.min(96, Math.max(68, overallScore + (orderbookDepth?.imbalanceRatio && orderbookDepth.imbalanceRatio >= 1.4 ? 4 : 0)))
+    : Math.max(25, Math.min(48, 100 - overallScore));
+
+  // 2. ARGUMEN AGEN BERUANG (BEAR SKEPTIC / DEVIL'S ADVOCATE)
+  const bearPoints: string[] = [];
+
+  // Resistensi & Tembok Jual
+  if (orderbookDepth && orderbookDepth.imbalanceRatio <= 0.8) {
+    bearPoints.push(`🧱 Tembok Jual (Ask Wall): Orderbook didominasi antrean ask $${(orderbookDepth.totalAskUsd / 1e6).toFixed(1)}M USD yang membatasi kenaikan.`);
+  } else if (orderbookDepth?.topAskWallPrice) {
+    bearPoints.push(`🧱 Resistensi Institusi: Terdeteksi tembok jual di level $${formatFuturesPrice(orderbookDepth.topAskWallPrice)} yang rawan memicu penolakan.`);
+  }
+
+  // Overbought & Exhaustion
+  if (indicators?.rsi && indicators.rsi.rsi6 >= 70) {
+    bearPoints.push(`⚠️ RSI Overbought (${indicators.rsi.rsi6.toFixed(1)}): Momentum jangka pendek mendekati jenuh beli, rawan aksi profit-taking kilat.`);
+  } else if (change24h >= 15) {
+    bearPoints.push(`🚨 Risiko Exhaustion Parabola: Reli kencang +${change24h.toFixed(1)}% rentan mengalami mean-reversion retest tajam.`);
+  } else if (indicators?.bollingerBands && currentPrice >= indicators.bollingerBands.upper) {
+    bearPoints.push('🛑 Uji Upper Bollinger Band: Harga menabrak batas atas deviasi, potensi pullback menguji kembali basis SMA20.');
+  }
+
+  // Funding Drag & Sell Taker
+  if (fundingRatePct >= 0.03) {
+    bearPoints.push(`💸 Beban Funding Fee (+${fundingRatePct.toFixed(4)}%): Posisi long yang crowded dibebani potongan komisi floating tiap 8 jam.`);
+  } else if (takerRatio && takerRatio <= 0.95) {
+    bearPoints.push(`🔻 Tekanan Jual Taker: Orderflow didominasi seller (${takerRatio.toFixed(2)}x), mencerminkan distribusi bertahap.`);
+  }
+
+  // Bitcoin Market Guard Context
+  if (btcContext && !btcContext.isSafeForAltLong) {
+    bearPoints.push(`📉 Peringatan Makro BTC: Bitcoin sedang tertekan (${btcContext.change15mPct}% 15m), berisiko memicu flush likuidasi pada altcoin.`);
+  } else {
+    bearPoints.push('🎯 Risiko Perburuan Wick: Volatilitas derivatif tinggi berpotensi memicu jarum wick sesaat untuk menyapu stop loss.');
+  }
+
+  // Tentukan Tingkat Keparahan Risiko Beruang
+  let riskSeverity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' = 'MEDIUM';
+  if ((btcContext && !btcContext.isSafeForAltLong && direction === 'LONG') || (indicators?.rsi?.rsi6 ?? 0) >= 80 || change24h >= 25) {
+    riskSeverity = 'CRITICAL';
+  } else if ((fundingRatePct >= 0.05 && direction === 'LONG') || (orderbookDepth && orderbookDepth.imbalanceRatio <= 0.65) || (indicators?.rsi?.rsi6 ?? 0) >= 73) {
+    riskSeverity = 'HIGH';
+  } else if ((indicators?.rsi?.rsi6 ?? 0) <= 55 && (!orderbookDepth || orderbookDepth.imbalanceRatio >= 1.2)) {
+    riskSeverity = 'LOW';
+  }
+
+  // 3. VONIS WASIT (ARBITER VERDICT)
+  let winner: 'BULL' | 'BEAR' | 'NEUTRAL' = 'NEUTRAL';
+  if (direction === 'LONG' && (!btcContext || btcContext.isSafeForAltLong) && overallScore >= 80) {
+    winner = 'BULL';
+  } else if (direction === 'SHORT' && overallScore >= 80) {
+    winner = 'BEAR';
+  } else {
+    winner = 'NEUTRAL';
+  }
+
+  let summary = '';
+  if (winner === 'BULL') {
+    summary = 'Banteng (Bull) unggul dalam perdebatan berkat konfluensi tren & dominasi akumulasi. Namun Beruang (Bear) mencatat titik resistensi yang mewajibkan kehati-hatian.';
+  } else if (winner === 'BEAR') {
+    summary = 'Beruang (Bear) memenangkan debat dengan tekanan breakdown & dominasi penjual. Posisi short memiliki probabilitas momentum lebih solid.';
+  } else {
+    summary = 'Debat berakhir Netral/Wait-and-See. Terdapat pertentangan antara sinyal teknikal koin dan kondisi pasar makro BTC/orderbook.';
+  }
+
+  const mitigationAdvice = `Gunakan leverage disiplin (3x–5x), kunci 50% muatan saat TP1 tercapai${tp1Price ? ` ($${formatFuturesPrice(tp1Price)})` : ''}, dan segera geser Stop Loss ke level Break-Even (BE) untuk mengamankan posisi bebas risiko.`;
+
+  return {
+    bullCase: {
+      points: bullPoints,
+      convictionScore: bullConviction,
+    },
+    bearCase: {
+      points: bearPoints,
+      riskSeverity,
+    },
+    verdict: {
+      winner,
+      summary,
+      mitigationAdvice,
+    },
+  };
+}
+
+/**
+ * Modul Auto-Hedge & Risk Gatekeeper (Mengadopsi Konsep AutoHedge - Swarms)
+ * Menjalankan filter gerbang risiko (Risk Gatekeeper) sebelum order dieksekusi,
+ * serta menghitung posisi lindung nilai otomatis (Delta-Neutral Hedging)
+ * berbasis pergerakan makro BTC untuk memproteksi modal dari flash dump.
+ */
+export function generateAutoHedgeRecommendation(params: {
+  symbol: string;
+  direction: FuturesDirection;
+  currentPrice: number;
+  change24h: number;
+  fundingRatePct: number;
+  btcContext?: BtcMarketContext;
+  indicators?: FuturesTechnicalIndicators;
+  orderbookDepth?: OrderbookDepthAnalysis;
+  overallScore: number;
+  slPct: number;
+}): AutoHedgeRecommendation {
+  const {
+    symbol,
+    direction,
+    change24h,
+    fundingRatePct,
+    btcContext,
+    indicators,
+    orderbookDepth,
+    overallScore,
+    slPct,
+  } = params;
+
+  const isBtcPair = symbol.toUpperCase().startsWith('BTC');
+  const btcPrice = btcContext?.price || 75000;
+  const isBtcDumping = btcContext && !btcContext.isSafeForAltLong;
+  const isOverheatedFunding = fundingRatePct >= 0.04;
+  const isHighVolatility = Math.abs(change24h) >= 15;
+  const isRsiOverbought = (indicators?.rsi?.rsi6 ?? 0) >= 75;
+
+  let isHedgeNeeded = false;
+  let riskTrigger = 'Risiko Terkendali (Kondisi Makro Normal)';
+  let hedgeDirection: FuturesDirection = 'SHORT';
+  let hedgeRatioPct = 0;
+  let recommendedHedgeLeverage = 3;
+  let gatekeeperStatus: 'APPROVED' | 'CAUTION' | 'RESTRICTED' = 'APPROVED';
+  let gatekeeperReason = 'Parameter risiko dan batas drawdown modal memenuhi standar aman eksekusi.';
+
+  // 1. Evaluasi Risk Gatekeeper
+  if (isBtcDumping && direction === 'LONG') {
+    gatekeeperStatus = 'RESTRICTED';
+    gatekeeperReason = `Peringatan Keras Gatekeeper: Bitcoin sedang terkoreksi tajam (${btcContext.change15mPct}% 15m). Risiko sangat tinggi membuka posisi Long baru pada altcoin.`;
+    isHedgeNeeded = !isBtcPair;
+    riskTrigger = `BTC Flash Dump Spillover (${btcContext.change15mPct}% 15m)`;
+    hedgeDirection = 'SHORT';
+    hedgeRatioPct = 75;
+    recommendedHedgeLeverage = 3;
+  } else if (isOverheatedFunding && direction === 'LONG') {
+    gatekeeperStatus = 'CAUTION';
+    gatekeeperReason = `Waspada Gatekeeper: Funding rate sangat tinggi (+${fundingRatePct.toFixed(4)}%), pasar padat posisi long, rawan aksi profit taking.`;
+    if (isHighVolatility) {
+      isHedgeNeeded = !isBtcPair;
+      riskTrigger = `Overheated Long Crowding (+${fundingRatePct.toFixed(4)}% Funding)`;
+      hedgeDirection = 'SHORT';
+      hedgeRatioPct = 50;
+      recommendedHedgeLeverage = 3;
+    }
+  } else if (isRsiOverbought && direction === 'LONG') {
+    gatekeeperStatus = 'CAUTION';
+    gatekeeperReason = `Waspada Gatekeeper: RSI berada di level ${indicators?.rsi?.rsi6.toFixed(1)} (jenuh beli), rawan pullback mendadak.`;
+  } else if (slPct >= 4.0) {
+    gatekeeperStatus = 'CAUTION';
+    gatekeeperReason = `Jarak Stop Loss lebar (${slPct.toFixed(1)}%). Wajib kurangi ukuran margin agar risiko tidak melebihi 2% modal.`;
+  } else if (overallScore < 80) {
+    gatekeeperStatus = 'CAUTION';
+    gatekeeperReason = 'Skor konfluensi teknikal di bawah 80. Disiplin gunakan leverage rendah.';
+  }
+
+  // Jika koin yang dianalisis itu sendiri adalah BTCUSDT, hedging diarahkan ke ETHUSDT
+  const hedgePair = isBtcPair ? 'ETHUSDT' : 'BTCUSDT';
+  const targetHedgeEntry = btcPrice;
+  // Stop loss hedge 1.5% di atas/bawah entry
+  const hedgeStopLoss = hedgeDirection === 'SHORT'
+    ? Number((btcPrice * 1.015).toFixed(2))
+    : Number((btcPrice * 0.985).toFixed(2));
+
+  let strategyObjective = '';
+  if (isHedgeNeeded) {
+    strategyObjective = `Lindung Nilai Delta-Neutral: Buka posisi ${hedgeDirection} pada ${hedgePair} sebesar ${hedgeRatioPct}% dari nominal notional Long ${symbol}. Keuntungan dari posisi short ${hedgePair} akan mengimbangi drawdown Long altcoin saat pasar koreksi tajam.`;
+  } else {
+    strategyObjective = `Struktur risiko posisi ${direction} terpantau terukur. Tidak diperlukan pembukaan posisi lindung nilai (hedging) terpisah saat ini.`;
+  }
+
+  return {
+    isHedgeNeeded,
+    riskTrigger,
+    hedgePair,
+    hedgeDirection,
+    hedgeRatioPct,
+    recommendedHedgeLeverage,
+    targetHedgeEntry,
+    hedgeStopLoss,
+    strategyObjective,
+    gatekeeperStatus,
+    gatekeeperReason,
   };
 }
 
@@ -262,6 +536,17 @@ function evaluatePairSignal(
     }
   );
 
+  const bullBearDebate = generateBullBearDebate({
+    symbol: ticker.symbol,
+    direction,
+    currentPrice,
+    change24h,
+    fundingRatePct,
+    indicators,
+    overallScore: score,
+    tp1Price,
+  });
+
   return {
     id: `bf-${ticker.symbol}-${Date.now().toString(36)}`,
     symbol: ticker.symbol,
@@ -349,6 +634,17 @@ function evaluatePairSignal(
     timestamp: Date.now(),
     indicators,
     indicatorExplanation,
+    bullBearDebate,
+    autoHedge: generateAutoHedgeRecommendation({
+      symbol: ticker.symbol,
+      direction,
+      currentPrice,
+      change24h,
+      fundingRatePct,
+      indicators,
+      overallScore: score,
+      slPct,
+    }),
   };
 }
 
@@ -700,9 +996,10 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
  * Menghitung statistik ringkasan pasar futures
  */
 export async function computeFuturesMarketStats(signals: BinanceFuturesSignal[]): Promise<FuturesMarketStats> {
-  const [tickers, fundingMap] = await Promise.all([
+  const [tickers, fundingMap, fearAndGreed] = await Promise.all([
     getFutures24hTickers(),
     getFundingRates(),
+    getFearAndGreedIndex(),
   ]);
 
   let totalVol = 0;
@@ -795,6 +1092,16 @@ export async function computeFuturesMarketStats(signals: BinanceFuturesSignal[])
   else if (longRatio <= 35) bias = 'STRONG_BEARISH';
   else if (longRatio <= 45) bias = 'BEARISH';
 
+  // Analisa Smart Money Bias menggabungkan Fear & Greed dan rata-rata Funding
+  let smartMoneyBias: FuturesMarketStats['smartMoneyBias'] = 'NEUTRAL';
+  if (fearAndGreed) {
+    if (fearAndGreed.score >= 70 && (bias === 'BULLISH' || bias === 'STRONG_BULLISH')) {
+      smartMoneyBias = 'WHALES_ACCUMULATING_LONG';
+    } else if (fearAndGreed.score <= 30 || bias === 'BEARISH' || bias === 'STRONG_BEARISH') {
+      smartMoneyBias = 'WHALES_HEDGING_SHORT';
+    }
+  }
+
   return {
     totalPairs,
     activeSignalsCount: signals.length,
@@ -803,6 +1110,8 @@ export async function computeFuturesMarketStats(signals: BinanceFuturesSignal[])
     longAccountPct: longRatio,
     shortAccountPct: shortRatio,
     avgFundingRate: Number(avgFunding.toFixed(4)),
+    fearAndGreed: fearAndGreed || undefined,
+    smartMoneyBias,
     topSqueezeCoins: topSqueezeCoins.slice(0, 6),
     topGainers,
     topLosers,
@@ -835,13 +1144,24 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
     throw new Error(`Koin "${rawSymbol.toUpperCase()}" tidak ditemukan di pasar Binance Futures USDT-M.`);
   }
 
-  const [fundingInfo, rawKlines, rawOi, liveLsRatio, btcContext, rawDepth] = await Promise.all([
+  const [
+    fundingInfo,
+    rawKlines,
+    rawOi,
+    liveLsRatio,
+    btcContext,
+    rawDepth,
+    topTraderRatio,
+    takerRatio,
+  ] = await Promise.all([
     getSingleFundingRate(symbol),
     getKlines(symbol, '15m', 100),
     getFuturesOpenInterest(symbol),
     getFuturesLongShortRatio(symbol),
     getBtcMarketContext(),
     getFuturesOrderbookDepth(symbol, 20),
+    getTopTraderLongShortRatio(symbol),
+    getTakerBuySellRatio(symbol),
   ]);
 
   const currentPrice = parseFloat(ticker.lastPrice);
@@ -1140,6 +1460,37 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
   // Kalkulasi Position Sizing Modal Aman (Referensi modal $20)
   const positionSizing = calculatePositionSizing(20, slPct, 5);
 
+  // Sintesis Debat Terstruktur Banteng vs Beruang (Adversarial Multi-Agent Bull vs Bear)
+  const bullBearDebate = generateBullBearDebate({
+    symbol,
+    direction,
+    currentPrice,
+    change24h,
+    fundingRatePct,
+    indicators,
+    detectedPattern,
+    orderbookDepth,
+    btcContext,
+    takerRatio,
+    topTraderRatio,
+    overallScore: Math.max(score, quantScore),
+    tp1Price,
+  });
+
+  // Modul Auto-Hedge & Risk Gatekeeper (Konsep AutoHedge - Swarms)
+  const autoHedge = generateAutoHedgeRecommendation({
+    symbol,
+    direction,
+    currentPrice,
+    change24h,
+    fundingRatePct,
+    btcContext,
+    indicators,
+    orderbookDepth,
+    overallScore: Math.max(score, quantScore),
+    slPct,
+  });
+
   return {
     id: `custom-${symbol}-${Date.now().toString(36)}`,
     symbol,
@@ -1177,10 +1528,13 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
       openInterestUsd,
       openInterestChange24h: Number((change24h * 0.7).toFixed(2)),
       longShortRatio,
+      topTraderLongShortRatio: topTraderRatio !== null ? topTraderRatio : undefined,
+      takerBuySellRatio: takerRatio !== null ? takerRatio : undefined,
       volume24hUsd: quoteVolume,
       priceChange24hPct: change24h,
       high24h,
       low24h,
+      macroFearAndGreed: btcContext.fearAndGreed,
     },
     agentConsensus: {
       trendAgent: {
@@ -1221,5 +1575,7 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
     positionSizing,
     orderbookDepth,
     quantAnomaly,
+    bullBearDebate,
+    autoHedge,
   };
 }

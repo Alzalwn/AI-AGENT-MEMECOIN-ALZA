@@ -4,7 +4,7 @@
  * Memiliki mekanisme failover otomatis jika endpoint utama dibatasi oleh ISP/WAF.
  */
 
-import { BtcMarketContext } from '../types/futures';
+import { BtcMarketContext, MacroFearAndGreed } from '../types/futures';
 
 // Bypass local Windows certificate issues in dev if necessary
 if (process.env.NODE_ENV !== 'production') {
@@ -292,6 +292,97 @@ export async function getFuturesLongShortRatio(symbol: string): Promise<number |
 }
 
 /**
+ * Mengambil Top Trader Long/Short Position Ratio (Whale Positioning) dari Binance Futures
+ */
+export async function getTopTraderLongShortRatio(symbol: string): Promise<number | null> {
+  const cleanSymbol = symbol.trim().toUpperCase();
+  const cacheKey = `top_trader_position_ratio_${cleanSymbol}`;
+  const cached = getCached<number>(cacheKey);
+  if (cached !== null) return cached;
+
+  try {
+    const res = await fetchWithFailover(
+      `/futures/data/topLongShortPositionRatio?symbol=${cleanSymbol}&period=15m&limit=1`
+    );
+    const data = await res.json();
+    if (Array.isArray(data) && data.length > 0 && data[0].longShortRatio) {
+      const ratio = parseFloat(data[0].longShortRatio);
+      if (!isNaN(ratio)) {
+        setCached(cacheKey, ratio, 30_000);
+        return ratio;
+      }
+    }
+  } catch {
+    setCached(cacheKey, null as unknown as number, 60_000);
+  }
+  return null;
+}
+
+/**
+ * Mengambil Taker Long/Short Buy/Sell Volume Ratio (Orderflow Agresif) dari Binance Futures
+ */
+export async function getTakerBuySellRatio(symbol: string): Promise<number | null> {
+  const cleanSymbol = symbol.trim().toUpperCase();
+  const cacheKey = `taker_buy_sell_ratio_${cleanSymbol}`;
+  const cached = getCached<number>(cacheKey);
+  if (cached !== null) return cached;
+
+  try {
+    const res = await fetchWithFailover(
+      `/futures/data/takerlongshortRatio?symbol=${cleanSymbol}&period=15m&limit=1`
+    );
+    const data = await res.json();
+    if (Array.isArray(data) && data.length > 0 && data[0].buySellRatio) {
+      const ratio = parseFloat(data[0].buySellRatio);
+      if (!isNaN(ratio)) {
+        setCached(cacheKey, ratio, 30_000);
+        return ratio;
+      }
+    }
+  } catch {
+    setCached(cacheKey, null as unknown as number, 60_000);
+  }
+  return null;
+}
+
+/**
+ * Mengambil Crypto Fear & Greed Index dari Alternative.me
+ * API Publik Gratis tanpa API key. Cache 60 detik.
+ */
+export async function getFearAndGreedIndex(): Promise<MacroFearAndGreed | null> {
+  const cacheKey = 'alternative_fear_and_greed';
+  const cached = getCached<MacroFearAndGreed>(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch('https://api.alternative.me/fng/?limit=1', {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.data && Array.isArray(data.data) && data.data.length > 0) {
+        const item = data.data[0];
+        const result: MacroFearAndGreed = {
+          score: parseInt(item.value, 10) || 50,
+          classification: item.value_classification || 'Neutral',
+          updateTime: parseInt(item.timestamp, 10) * 1000 || Date.now(),
+        };
+        setCached(cacheKey, result, 60_000); // 60 detik cache
+        return result;
+      }
+    }
+  } catch (err) {
+    console.warn('[BinanceClient] Gagal mengambil Fear & Greed Index:', err);
+  }
+  return null;
+}
+
+/**
  * Memeriksa Kondisi Induk Pasar (BTC Market Guard) untuk proteksi sinyal Altcoin
  */
 export async function getBtcMarketContext(): Promise<BtcMarketContext> {
@@ -300,9 +391,10 @@ export async function getBtcMarketContext(): Promise<BtcMarketContext> {
   if (cached) return cached;
 
   try {
-    const [ticker, klines] = await Promise.all([
+    const [ticker, klines, fng] = await Promise.all([
       getFuturesSingleTicker('BTCUSDT'),
       getKlines('BTCUSDT', '15m', 20),
+      getFearAndGreedIndex(),
     ]);
 
     const price = ticker ? parseFloat(ticker.lastPrice) : 65000;
@@ -341,6 +433,14 @@ export async function getBtcMarketContext(): Promise<BtcMarketContext> {
       isSafeForAltLong = true;
     }
 
+    if (fng) {
+      if (fng.score <= 25 && trend === 'NEUTRAL') {
+        warningMessage = (warningMessage ? warningMessage + ' ' : '') + `❄️ SENTIMEN MAKRO: Extreme Fear (${fng.score}/100 - ${fng.classification}). Hati-hati cascade likuidasi long; waspadai potensi Short Squeeze tajam.`;
+      } else if (fng.score >= 75) {
+        warningMessage = (warningMessage ? warningMessage + ' ' : '') + `🔥 SENTIMEN MAKRO: Extreme Greed (${fng.score}/100 - ${fng.classification}). Pasar rentan long-squeeze koreksi mendadak. Disarankan leverage rendah (Safe Mode).`;
+      }
+    }
+
     const context: BtcMarketContext = {
       symbol: 'BTCUSDT',
       price,
@@ -349,6 +449,7 @@ export async function getBtcMarketContext(): Promise<BtcMarketContext> {
       trend,
       warningMessage,
       isSafeForAltLong,
+      fearAndGreed: fng || undefined,
     };
 
     setCached(cacheKey, context, 20_000); // 20 detik cache

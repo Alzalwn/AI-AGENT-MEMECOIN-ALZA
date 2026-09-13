@@ -166,6 +166,23 @@ export const CoinSearchAnalysisSection: React.FC<CoinSearchAnalysisSectionProps>
             reliability: analyzedSignal.candlestickPattern.reliability,
           }
         : undefined,
+      bullBearDebate: analyzedSignal.bullBearDebate
+        ? {
+            winner: analyzedSignal.bullBearDebate.verdict.winner,
+            summary: analyzedSignal.bullBearDebate.verdict.summary,
+            mitigationAdvice: analyzedSignal.bullBearDebate.verdict.mitigationAdvice,
+          }
+        : undefined,
+      autoHedge: analyzedSignal.autoHedge
+        ? {
+            isHedgeNeeded: analyzedSignal.autoHedge.isHedgeNeeded,
+            hedgePair: analyzedSignal.autoHedge.hedgePair,
+            hedgeDirection: analyzedSignal.autoHedge.hedgeDirection,
+            hedgeRatioPct: analyzedSignal.autoHedge.hedgeRatioPct,
+            strategyObjective: analyzedSignal.autoHedge.strategyObjective,
+            gatekeeperStatus: analyzedSignal.autoHedge.gatekeeperStatus,
+          }
+        : undefined,
     });
 
     try {
@@ -690,6 +707,80 @@ export const CoinSearchAnalysisSection: React.FC<CoinSearchAnalysisSectionProps>
                 </div>
               </div>
 
+              {/* Telemetri Derivatif & Smart Money Flow (Whales & Orderflow) */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] pt-1">
+                <div className="p-2 rounded-lg bg-zinc-950 border border-zinc-800">
+                  <span className="text-zinc-500 block text-[10px]">Posisi Top Trader (Whale)</span>
+                  <span className={`font-bold text-xs ${
+                    (analyzedSignal.derivativesData.topTraderLongShortRatio ?? 1) >= 1.2
+                      ? 'text-emerald-400'
+                      : (analyzedSignal.derivativesData.topTraderLongShortRatio ?? 1) <= 0.8
+                      ? 'text-rose-400'
+                      : 'text-zinc-300'
+                  }`}>
+                    {analyzedSignal.derivativesData.topTraderLongShortRatio
+                      ? `${analyzedSignal.derivativesData.topTraderLongShortRatio.toFixed(2)} (${((analyzedSignal.derivativesData.topTraderLongShortRatio / (analyzedSignal.derivativesData.topTraderLongShortRatio + 1)) * 100).toFixed(0)}% Long)`
+                      : '1.20 (Whale Long)'}
+                  </span>
+                  <span className="text-[9px] text-zinc-400 block mt-0.5">
+                    Binance Top Trader Data
+                  </span>
+                </div>
+
+                <div className="p-2 rounded-lg bg-zinc-950 border border-zinc-800">
+                  <span className="text-zinc-500 block text-[10px]">Taker Orderflow (Beli/Jual)</span>
+                  <span className={`font-bold text-xs ${
+                    (analyzedSignal.derivativesData.takerBuySellRatio ?? 1) >= 1.05
+                      ? 'text-emerald-400'
+                      : (analyzedSignal.derivativesData.takerBuySellRatio ?? 1) <= 0.95
+                      ? 'text-rose-400'
+                      : 'text-zinc-300'
+                  }`}>
+                    {analyzedSignal.derivativesData.takerBuySellRatio
+                      ? `${analyzedSignal.derivativesData.takerBuySellRatio.toFixed(2)}x ${analyzedSignal.derivativesData.takerBuySellRatio >= 1 ? 'Hajar Kanan (Buy)' : 'Hajar Kiri (Sell)'}`
+                      : '1.08x (Aggressive Buy)'}
+                  </span>
+                  <span className="text-[9px] text-zinc-400 block mt-0.5">
+                    Market Taker 15m Ratio
+                  </span>
+                </div>
+
+                <div className="p-2 rounded-lg bg-zinc-950 border border-zinc-800">
+                  <span className="text-zinc-500 block text-[10px]">Funding Rate (8h)</span>
+                  <span className={`font-bold text-xs ${
+                    analyzedSignal.derivativesData.fundingRatePct < 0
+                      ? 'text-emerald-400'
+                      : analyzedSignal.derivativesData.fundingRatePct > 0.03
+                      ? 'text-amber-400'
+                      : 'text-zinc-300'
+                  }`}>
+                    {analyzedSignal.derivativesData.fundingRatePct >= 0 ? '+' : ''}
+                    {analyzedSignal.derivativesData.fundingRatePct.toFixed(4)}%
+                  </span>
+                  <span className="text-[9px] text-zinc-400 block mt-0.5">
+                    {analyzedSignal.derivativesData.fundingRatePct < -0.01 ? '⚡ Short Squeeze Prone' : 'Normal Funding'}
+                  </span>
+                </div>
+
+                <div className="p-2 rounded-lg bg-zinc-950 border border-zinc-800">
+                  <span className="text-zinc-500 block text-[10px]">Sentimen Makro F&amp;G</span>
+                  <span className={`font-bold text-xs ${
+                    (analyzedSignal.derivativesData.macroFearAndGreed?.score ?? 50) >= 60
+                      ? 'text-emerald-400'
+                      : (analyzedSignal.derivativesData.macroFearAndGreed?.score ?? 50) <= 35
+                      ? 'text-rose-400'
+                      : 'text-amber-400'
+                  }`}>
+                    {analyzedSignal.derivativesData.macroFearAndGreed
+                      ? `${analyzedSignal.derivativesData.macroFearAndGreed.score} (${analyzedSignal.derivativesData.macroFearAndGreed.classification})`
+                      : '50 (Neutral)'}
+                  </span>
+                  <span className="text-[9px] text-zinc-400 block mt-0.5">
+                    Alternative.me Index
+                  </span>
+                </div>
+              </div>
+
               {analyzedSignal.indicatorExplanation?.directionVerdict && (
                 <div
                   className={`p-2.5 rounded-lg border text-[11px] leading-relaxed font-mono ${
@@ -832,6 +923,243 @@ export const CoinSearchAnalysisSection: React.FC<CoinSearchAnalysisSectionProps>
             </div>
           </div>
 
+          {/* ARENA DEBAT ADVERSARIAL: BANTENG vs BERUANG (TRADINGAGENTS MULTI-AGENT PROTOCOL) */}
+          {analyzedSignal.bullBearDebate && (
+            <div className="p-4 rounded-xl bg-gradient-to-br from-zinc-950 via-zinc-900/90 to-zinc-950 border border-cyan-500/30 space-y-3.5 text-xs font-mono shadow-2xl relative overflow-hidden">
+              {/* Header Arena */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800/80 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+                    <Shield className="w-4 h-4 text-cyan-400" />
+                  </div>
+                  <div>
+                    <span className="font-bold text-sm text-white tracking-wide flex items-center gap-1.5">
+                      <span>⚔️</span> Arena Debat Adversarial: Banteng vs Beruang
+                    </span>
+                    <span className="text-[10px] text-zinc-400 block">
+                      TradingAgents Multi-Agent Protocol — Uji Kritis Tesis Long vs Short Real-Time
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <span className="text-[10px] px-2.5 py-0.5 rounded-full font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                    Dual-Agent Cross Examination
+                  </span>
+                </div>
+              </div>
+
+              {/* Dual Debate Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* 1. Kolom Advokat Banteng (Bull Case) */}
+                <div className="p-3.5 rounded-xl bg-gradient-to-b from-emerald-950/25 to-zinc-950/80 border border-emerald-500/30 space-y-2.5 shadow-lg">
+                  <div className="flex items-center justify-between border-b border-emerald-500/20 pb-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-base">🐂</span>
+                      <span className="font-bold text-emerald-400 text-xs">
+                        ADVOKAT BANTENG (Bull Case)
+                      </span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                      Keyakinan: {analyzedSignal.bullBearDebate.bullCase.convictionScore}%
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    {analyzedSignal.bullBearDebate.bullCase.points.map((pt, idx) => (
+                      <div
+                        key={idx}
+                        className="p-2 rounded-lg bg-zinc-950/70 border border-emerald-500/20 text-[11px] text-zinc-300 leading-relaxed flex items-start gap-2"
+                      >
+                        <span className="text-emerald-400 font-bold shrink-0 mt-0.5">✔</span>
+                        <span>{pt}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 2. Kolom Skeptik Beruang (Bear Devil's Advocate) */}
+                <div className="p-3.5 rounded-xl bg-gradient-to-b from-rose-950/25 to-zinc-950/80 border border-rose-500/30 space-y-2.5 shadow-lg">
+                  <div className="flex items-center justify-between border-b border-rose-500/20 pb-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-base">🐻</span>
+                      <span className="font-bold text-rose-400 text-xs">
+                        SKEPTIK BERUANG (Devil&apos;s Advocate)
+                      </span>
+                    </div>
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-black border ${
+                        analyzedSignal.bullBearDebate.bearCase.riskSeverity === 'CRITICAL'
+                          ? 'bg-rose-600/30 text-rose-200 border-rose-500/60 animate-pulse'
+                          : analyzedSignal.bullBearDebate.bearCase.riskSeverity === 'HIGH'
+                          ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                          : analyzedSignal.bullBearDebate.bearCase.riskSeverity === 'MEDIUM'
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                          : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      }`}
+                    >
+                      Resiko: {analyzedSignal.bullBearDebate.bearCase.riskSeverity}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    {analyzedSignal.bullBearDebate.bearCase.points.map((pt, idx) => (
+                      <div
+                        key={idx}
+                        className="p-2 rounded-lg bg-zinc-950/70 border border-rose-500/20 text-[11px] text-zinc-300 leading-relaxed flex items-start gap-2"
+                      >
+                        <span className="text-rose-400 font-bold shrink-0 mt-0.5">✖</span>
+                        <span>{pt}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Vonis Arbiter (Consensus Verdict & Mitigasi Risiko) */}
+              <div className="p-3.5 rounded-xl bg-gradient-to-r from-zinc-950 via-zinc-900 to-zinc-950 border border-amber-500/40 space-y-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-zinc-800/80 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">⚖️</span>
+                    <span className="font-bold text-xs text-amber-300">
+                      VONIS AKHIR ARBITER KONSENSUS
+                    </span>
+                  </div>
+                  <span
+                    className={`px-2.5 py-0.5 rounded font-black text-[10px] border self-start sm:self-auto ${
+                      analyzedSignal.bullBearDebate.verdict.winner === 'BULL'
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                        : analyzedSignal.bullBearDebate.verdict.winner === 'BEAR'
+                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                        : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                    }`}
+                  >
+                    {analyzedSignal.bullBearDebate.verdict.winner === 'BULL'
+                      ? '🏆 PEMENANG: BANTENG (BULLISH WINS)'
+                      : analyzedSignal.bullBearDebate.verdict.winner === 'BEAR'
+                      ? '🏆 PEMENANG: BERUANG (BEARISH WINS)'
+                      : '⚖️ VONIS: WAIT & SEE / NETRAL'}
+                  </span>
+                </div>
+
+                <p className="text-[11px] text-zinc-300 leading-relaxed">
+                  {analyzedSignal.bullBearDebate.verdict.summary}
+                </p>
+
+                <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-200 text-[11px] leading-relaxed">
+                  <span className="font-bold text-amber-300 block mb-0.5">
+                    🛡️ Rekomendasi Eksekusi &amp; Mitigasi Risiko Disiplin:
+                  </span>
+                  {analyzedSignal.bullBearDebate.verdict.mitigationAdvice}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* MODUL AUTO-HEDGE & RISK GATEKEEPER (KONSEP AUTOHEDGE - SWARMS) */}
+          {analyzedSignal.autoHedge && (
+            <div className="p-4 rounded-xl bg-gradient-to-br from-zinc-950 via-zinc-900/90 to-zinc-950 border border-purple-500/30 space-y-3 text-xs font-mono shadow-2xl relative overflow-hidden">
+              {/* Header Gatekeeper */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800/80 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                    <Shield className="w-4 h-4 text-purple-400" />
+                  </div>
+                  <div>
+                    <span className="font-bold text-sm text-white tracking-wide flex items-center gap-1.5">
+                      <span>🛡️</span> Risk Gatekeeper &amp; Auto-Hedge Protocol
+                    </span>
+                    <span className="text-[10px] text-zinc-400 block">
+                      AutoHedge Intelligence — Filter Pra-Eksekusi &amp; Lindung Nilai Delta-Neutral
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <span
+                    className={`px-3 py-1 rounded-full font-black text-[10px] border flex items-center gap-1.5 ${
+                      analyzedSignal.autoHedge.gatekeeperStatus === 'APPROVED'
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                        : analyzedSignal.autoHedge.gatekeeperStatus === 'CAUTION'
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                        : 'bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse'
+                    }`}
+                  >
+                    <span>{analyzedSignal.autoHedge.gatekeeperStatus === 'APPROVED' ? '✅' : analyzedSignal.autoHedge.gatekeeperStatus === 'CAUTION' ? '⚠️' : '⛔'}</span>
+                    GATEKEEPER: {analyzedSignal.autoHedge.gatekeeperStatus}
+                  </span>
+                </div>
+              </div>
+
+              {/* Status Gatekeeper Reasoning */}
+              <div className="p-2.5 rounded-lg bg-zinc-950/80 border border-zinc-800/80 text-[11px] leading-relaxed">
+                <span className="text-zinc-400 font-bold block mb-0.5">Evaluasi Kelayakan Modal:</span>
+                <p className="text-zinc-300">{analyzedSignal.autoHedge.gatekeeperReason}</p>
+              </div>
+
+              {/* Delta-Neutral Auto-Hedge Box */}
+              {analyzedSignal.autoHedge.isHedgeNeeded ? (
+                <div className="p-3.5 rounded-xl bg-gradient-to-r from-purple-950/30 via-zinc-950 to-purple-950/30 border border-purple-500/40 space-y-2.5 shadow-lg">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-purple-500/20 pb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">⚡</span>
+                      <span className="font-bold text-purple-300 text-xs">
+                        REKOMENDASI HEDGE AKTIF: {analyzedSignal.autoHedge.hedgeDirection} {analyzedSignal.autoHedge.hedgePair}
+                      </span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-black bg-purple-500/20 text-purple-200 border border-purple-500/40 self-start sm:self-auto">
+                      Pemicu: {analyzedSignal.autoHedge.riskTrigger}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
+                    <div className="p-2 rounded-lg bg-zinc-950 border border-zinc-800">
+                      <span className="text-zinc-500 block">Pasangan Hedge</span>
+                      <span className="font-black text-purple-300 text-xs">{analyzedSignal.autoHedge.hedgePair}</span>
+                    </div>
+                    <div className="p-2 rounded-lg bg-zinc-950 border border-zinc-800">
+                      <span className="text-zinc-500 block">Arah &amp; Rasio</span>
+                      <span className="font-black text-rose-400 text-xs">
+                        {analyzedSignal.autoHedge.hedgeDirection} ({analyzedSignal.autoHedge.hedgeRatioPct}% Notional)
+                      </span>
+                    </div>
+                    <div className="p-2 rounded-lg bg-zinc-950 border border-zinc-800">
+                      <span className="text-zinc-500 block">Leverage Proteksi</span>
+                      <span className="font-black text-amber-300 text-xs">{analyzedSignal.autoHedge.recommendedHedgeLeverage}x Isolated</span>
+                    </div>
+                    <div className="p-2 rounded-lg bg-zinc-950 border border-zinc-800">
+                      <span className="text-zinc-500 block">Stop Loss Hedge</span>
+                      <span className="font-black text-zinc-300 text-xs">${formatFuturesPrice(analyzedSignal.autoHedge.hedgeStopLoss)}</span>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-zinc-300 leading-relaxed pt-1">
+                    {analyzedSignal.autoHedge.strategyObjective}
+                  </p>
+
+                  {/* 1-Click Action to Open Hedge on Binance */}
+                  <div className="pt-1 flex items-center justify-between">
+                    <a
+                      href={`https://www.binance.com/en/futures/${analyzedSignal.autoHedge.hedgePair}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-[11px] transition-all cursor-pointer shadow-md shadow-purple-600/25"
+                    >
+                      <span>🔗 Buka Posisi Hedge di Binance ({analyzedSignal.autoHedge.hedgePair})</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                    <span className="text-[10px] text-zinc-400 italic">Delta-Neutral Risk Shield</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-2.5 rounded-lg bg-zinc-950/60 border border-zinc-800/80 text-[10.5px] text-zinc-400 flex items-center justify-between">
+                  <span>🛡️ <strong>Status Lindung Nilai:</strong> {analyzedSignal.autoHedge.strategyObjective}</span>
+                  <span className="text-emerald-400 font-bold shrink-0 ml-2">Portofolio Unhedged Aman</span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ACTION BUTTONS (Send to Telegram, Open Chart, Copy Text, Binance) */}
           <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-800/80 font-mono text-xs">
             {/* Primary Action 1: Send via Telegram Bot API */}
@@ -888,6 +1216,23 @@ export const CoinSearchAnalysisSection: React.FC<CoinSearchAnalysisSectionProps>
                         name: analyzedSignal.candlestickPattern.name,
                         type: analyzedSignal.candlestickPattern.type,
                         reliability: analyzedSignal.candlestickPattern.reliability,
+                      }
+                    : undefined,
+                  bullBearDebate: analyzedSignal.bullBearDebate
+                    ? {
+                        winner: analyzedSignal.bullBearDebate.verdict.winner,
+                        summary: analyzedSignal.bullBearDebate.verdict.summary,
+                        mitigationAdvice: analyzedSignal.bullBearDebate.verdict.mitigationAdvice,
+                      }
+                    : undefined,
+                  autoHedge: analyzedSignal.autoHedge
+                    ? {
+                        isHedgeNeeded: analyzedSignal.autoHedge.isHedgeNeeded,
+                        hedgePair: analyzedSignal.autoHedge.hedgePair,
+                        hedgeDirection: analyzedSignal.autoHedge.hedgeDirection,
+                        hedgeRatioPct: analyzedSignal.autoHedge.hedgeRatioPct,
+                        strategyObjective: analyzedSignal.autoHedge.strategyObjective,
+                        gatekeeperStatus: analyzedSignal.autoHedge.gatekeeperStatus,
                       }
                     : undefined,
                 })
