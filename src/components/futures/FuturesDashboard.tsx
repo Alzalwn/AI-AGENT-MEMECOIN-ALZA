@@ -15,6 +15,10 @@ import {
   SlidersHorizontal,
   Compass,
   CheckCircle2,
+  Bell,
+  BellOff,
+  Activity,
+  Award,
 } from 'lucide-react';
 import { BinanceFuturesSignal, FuturesMarketStats, FuturesDirection } from '../../types/futures';
 import { FuturesHeroStats } from './FuturesHeroStats';
@@ -29,6 +33,11 @@ import { FundingRateArbitrageMonitor } from './FundingRateArbitrageMonitor';
 import { MarketSessionsKillzoneWidget } from './MarketSessionsKillzoneWidget';
 import { PaperTradingJournal } from './PaperTradingJournal';
 import { SystemRoadmapModal } from './SystemRoadmapModal';
+import { KnowledgeHubDrawer } from '../KnowledgeHubDrawer';
+import { AgentRationaleModal } from '../AgentRationaleModal';
+import { LivePositionTracker } from './LivePositionTracker';
+import { DailyPerformanceSummary } from './DailyPerformanceSummary';
+import { soundFx } from '../../engine/audioEngine';
 
 export const FuturesDashboard: React.FC = () => {
   const [signals, setSignals] = useState<BinanceFuturesSignal[]>([]);
@@ -39,9 +48,14 @@ export const FuturesDashboard: React.FC = () => {
   // System Roadmap / Audit Modal Window State
   const [isRoadmapOpen, setIsRoadmapOpen] = useState<boolean>(false);
 
-  // Institutional Suite Active Tab ('NONE' | 'CALCULATOR' | 'OI_MATRIX' | 'ARBITRAGE' | 'KILLZONES' | 'PAPER_TRADE')
+  // SOP Knowledge Hub & 5-Agent Rationale Modals
+  const [isSopDrawerOpen, setIsSopDrawerOpen] = useState<boolean>(false);
+  const [isRationaleOpen, setIsRationaleOpen] = useState<boolean>(false);
+  const [selectedRationaleSignal, setSelectedRationaleSignal] = useState<{ symbol: string; direction: 'LONG' | 'SHORT'; score: number } | null>(null);
+
+  // Institutional Suite Active Tab
   const [activeToolSuite, setActiveToolSuite] = useState<
-    'NONE' | 'CALCULATOR' | 'OI_MATRIX' | 'ARBITRAGE' | 'KILLZONES' | 'PAPER_TRADE'
+    'NONE' | 'CALCULATOR' | 'OI_MATRIX' | 'ARBITRAGE' | 'KILLZONES' | 'PAPER_TRADE' | 'LIVE_POSITIONS' | 'DAILY_REPORT'
   >('NONE');
 
   // Filter & Multi-Choice States
@@ -52,6 +66,24 @@ export const FuturesDashboard: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [sortBy, setSortBy] = useState<'SCORE' | 'RR' | 'VOLUME' | 'CHANGE'>('SCORE');
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+
+  // GAP-8: Browser Push Notification & Audio Chime
+  const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(false);
+  const seenSignalIdsRef = React.useRef<Set<string>>(new Set());
+
+  // Request browser notification permission
+  const requestNotificationPermission = async () => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      const perm = await Notification.requestPermission();
+      setNotificationsEnabled(perm === 'granted');
+      if (perm === 'granted') {
+        soundFx.playApproval();
+        new Notification('⚡ Binance Futures Radar Aktif', {
+          body: 'Notifikasi sinyal institusional dengan skor ≥ 90 akan muncul di desktop Anda.',
+        });
+      }
+    }
+  };
 
   // Auto-Scan / Radar Scanner State
   const [isAutoScanning, setIsAutoScanning] = useState<boolean>(false);
@@ -79,7 +111,27 @@ export const FuturesDashboard: React.FC = () => {
       const marketData = await marketRes.json();
 
       if (signalsData.success) {
-        setSignals(signalsData.signals || []);
+        const incomingSignals: BinanceFuturesSignal[] = signalsData.signals || [];
+        setSignals(incomingSignals);
+
+        // Check for new High-Conviction signals (Score >= 90)
+        incomingSignals.forEach((sig) => {
+          if (sig.overallScore >= 90 && !seenSignalIdsRef.current.has(sig.id)) {
+            seenSignalIdsRef.current.add(sig.id);
+            // Trigger audio chime
+            soundFx.playApproval();
+
+            // Trigger desktop notification if granted
+            if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+              new Notification(`⚡ BINANCE ALPHA: ${sig.symbol} (${sig.direction})`, {
+                body: `Skor ${sig.overallScore}/100 [${sig.signalTier}] · R:R 1:${sig.riskRewardRatio} · ${sig.strategyLabel}`,
+                icon: '/favicon.ico',
+              });
+            }
+          } else {
+            seenSignalIdsRef.current.add(sig.id);
+          }
+        });
       }
       if (marketData.success) {
         setMarketStats(marketData.stats || null);
@@ -223,8 +275,49 @@ export const FuturesDashboard: React.FC = () => {
             >
               <span>📋 Rangkuman & Roadmap</span>
             </button>
+            <button
+              onClick={() => setIsSopDrawerOpen(true)}
+              className="px-2.5 py-1 rounded-xl text-xs font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/50 hover:bg-amber-500 hover:text-black transition-all flex items-center gap-1 cursor-pointer shadow-md whitespace-nowrap active:scale-95"
+              title="Buka 10 Perintah Trader Binance & Kalkulator Sizing 2%"
+            >
+              <span>📚 10 Perintah SOP</span>
+            </button>
+            <button
+              onClick={() => {
+                setSelectedRationaleSignal({ symbol: 'SOLUSDT', direction: 'LONG', score: 94 });
+                setIsRationaleOpen(true);
+              }}
+              className="px-2.5 py-1 rounded-xl text-xs font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 hover:bg-emerald-500 hover:text-black transition-all flex items-center gap-1 cursor-pointer shadow-md whitespace-nowrap active:scale-95"
+              title="Buka Chain-of-Thought Konsensus 5 Agen & Pilihan Tema"
+            >
+              <span>🧠 5-Agent Rationale</span>
+            </button>
           </div>
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+            <button
+              onClick={() => setActiveToolSuite(activeToolSuite === 'LIVE_POSITIONS' ? 'NONE' : 'LIVE_POSITIONS')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                activeToolSuite === 'LIVE_POSITIONS'
+                  ? 'bg-red-500 text-white shadow-[0_0_12px_rgba(239,68,68,0.4)]'
+                  : 'bg-zinc-900 text-zinc-300 hover:text-white border border-zinc-800'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5 text-red-400 animate-pulse" />
+              <span>🔴 Live P&L (Posisi)</span>
+            </button>
+
+            <button
+              onClick={() => setActiveToolSuite(activeToolSuite === 'DAILY_REPORT' ? 'NONE' : 'DAILY_REPORT')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                activeToolSuite === 'DAILY_REPORT'
+                  ? 'bg-amber-500 text-black shadow-[0_0_12px_rgba(245,158,11,0.4)]'
+                  : 'bg-zinc-900 text-zinc-300 hover:text-white border border-zinc-800'
+              }`}
+            >
+              <Award className="w-3.5 h-3.5" />
+              <span>📊 Laporan Harian (Drawdown)</span>
+            </button>
+
             <button
               onClick={() => setActiveToolSuite(activeToolSuite === 'CALCULATOR' ? 'NONE' : 'CALCULATOR')}
               className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
@@ -284,6 +377,14 @@ export const FuturesDashboard: React.FC = () => {
       </div>
 
       {/* Render Active Institutional Tool if selected */}
+      {activeToolSuite === 'LIVE_POSITIONS' && (
+        <LivePositionTracker onOpenChart={handleOpenChart} />
+      )}
+
+      {activeToolSuite === 'DAILY_REPORT' && (
+        <DailyPerformanceSummary />
+      )}
+
       {activeToolSuite === 'CALCULATOR' && (
         <InteractiveRiskCalculator
           activeSignal={signals[0] || null}
@@ -345,7 +446,25 @@ export const FuturesDashboard: React.FC = () => {
             title="Auto-scan pasar tiap 30 detik"
           >
             <Radio className={`w-3.5 h-3.5 ${autoRadarEnabled ? 'text-emerald-400 animate-pulse' : ''}`} />
-            <span>Auto-Radar 30s: {autoRadarEnabled ? 'ON' : 'OFF'}</span>
+            <span>Radar: {autoRadarEnabled ? 'ON' : 'OFF'}</span>
+          </button>
+
+          {/* GAP-8: Desktop Alerts & Audio Switch */}
+          <button
+            onClick={requestNotificationPermission}
+            className={`hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-mono font-bold border transition-all cursor-pointer ${
+              notificationsEnabled
+                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-zinc-200'
+            }`}
+            title="Aktifkan notifikasi desktop & chime suara saat ada sinyal Supernova (Skor ≥ 90)"
+          >
+            {notificationsEnabled ? (
+              <Bell className="w-3.5 h-3.5 text-cyan-400 animate-bounce" />
+            ) : (
+              <BellOff className="w-3.5 h-3.5" />
+            )}
+            <span>Alerts: {notificationsEnabled ? 'ON' : 'OFF'}</span>
           </button>
         </div>
 
@@ -568,6 +687,21 @@ export const FuturesDashboard: React.FC = () => {
       <SystemRoadmapModal
         isOpen={isRoadmapOpen}
         onClose={() => setIsRoadmapOpen(false)}
+      />
+
+      {/* 9. SOP Knowledge Hub Drawer */}
+      <KnowledgeHubDrawer
+        isOpen={isSopDrawerOpen}
+        onClose={() => setIsSopDrawerOpen(false)}
+      />
+
+      {/* 10. 5-Agent Consensus Chain-of-Thought Modal */}
+      <AgentRationaleModal
+        isOpen={isRationaleOpen}
+        onClose={() => setIsRationaleOpen(false)}
+        symbol={selectedRationaleSignal?.symbol || 'SOLUSDT'}
+        direction={selectedRationaleSignal?.direction || 'LONG'}
+        overallScore={selectedRationaleSignal?.score || 94}
       />
     </div>
   );

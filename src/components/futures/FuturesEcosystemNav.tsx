@@ -8,7 +8,9 @@ import {
   Wallet, 
   Bot, 
   LineChart,
-  KeyRound
+  KeyRound,
+  BookOpen,
+  Cpu
 } from 'lucide-react';
 import Link from 'next/link';
 import {
@@ -16,6 +18,8 @@ import {
   BINANCE_STORAGE_KEY,
   SavedBinanceConfig,
 } from './BinanceConnectModal';
+import { KnowledgeHubDrawer } from '../KnowledgeHubDrawer';
+import { AgentRationaleModal } from '../AgentRationaleModal';
 
 const modules = [
   {
@@ -58,6 +62,8 @@ const modules = [
 
 export const FuturesEcosystemNav: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isKnowledgeHubOpen, setIsKnowledgeHubOpen] = useState(false);
+  const [isRationaleModalOpen, setIsRationaleModalOpen] = useState(false);
   const [binanceConfig, setBinanceConfig] = useState<SavedBinanceConfig | null>(null);
 
   const refreshConfig = () => {
@@ -114,8 +120,26 @@ export const FuturesEcosystemNav: React.FC = () => {
         </div>
       </div>
 
-      {/* Global In-Website Binance Sync Pill */}
-      <div className="shrink-0 flex items-center justify-end">
+      {/* Action Buttons & Global In-Website Binance Sync Pill */}
+      <div className="shrink-0 flex items-center justify-end gap-2 flex-wrap sm:flex-nowrap">
+        <button
+          onClick={() => setIsKnowledgeHubOpen(true)}
+          className="px-3 py-1.5 rounded-xl text-xs font-mono font-bold bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+          title="Buka 10 Perintah Trader Binance & Kalkulator Sizing 2%"
+        >
+          <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+          <span>SOP Hub</span>
+        </button>
+
+        <button
+          onClick={() => setIsRationaleModalOpen(true)}
+          className="px-3 py-1.5 rounded-xl text-xs font-mono font-bold bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+          title="Buka 5-Agent Consensus Chain-of-Thought & Pilihan Tema"
+        >
+          <Cpu className="w-3.5 h-3.5 text-emerald-400" />
+          <span>5-Agent Rationale</span>
+        </button>
+
         {binanceConfig?.apiKey ? (
           <button
             onClick={() => setIsModalOpen(true)}
@@ -158,6 +182,18 @@ export const FuturesEcosystemNav: React.FC = () => {
         onConnectionSuccess={() => {
           refreshConfig();
         }}
+      />
+
+      {/* Knowledge Hub Drawer */}
+      <KnowledgeHubDrawer
+        isOpen={isKnowledgeHubOpen}
+        onClose={() => setIsKnowledgeHubOpen(false)}
+      />
+
+      {/* 5-Agent Consensus Chain-of-Thought Modal */}
+      <AgentRationaleModal
+        isOpen={isRationaleModalOpen}
+        onClose={() => setIsRationaleModalOpen(false)}
       />
     </div>
   );

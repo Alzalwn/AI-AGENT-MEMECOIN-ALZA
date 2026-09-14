@@ -91,6 +91,21 @@ export const InteractiveRiskCalculator: React.FC<InteractiveRiskCalculatorProps>
   const isRiskViolation = riskPercent > 2.0;
   const isLeverageViolation = leverage > 10;
 
+  // GAP-5: Liquidation Price & Margin Health Calculation (USDT-M Isolated)
+  // Maintenance Margin Rate (MMR) default ~0.5% (0.005)
+  const mmr = 0.005;
+  const rawLiqPrice =
+    direction === 'LONG'
+      ? entryPrice * (1 - (1 / leverage) + mmr)
+      : entryPrice * (1 + (1 / leverage) - mmr);
+  const estimatedLiqPrice = Math.max(rawLiqPrice, 0);
+
+  const liqDistancePct =
+    entryPrice > 0 ? Math.abs((entryPrice - estimatedLiqPrice) / entryPrice) * 100 : 0;
+  
+  // Verify that SL triggers well before liquidation (Anti-Liquidation Assurance)
+  const isSlSafeFromLiq = slDistancePct > 0 && slDistancePct < liqDistancePct * 0.75;
+
   const handleCopyParameters = () => {
     const text = `📋 PARAMETER ORDER BINANCE FUTURES (SOP 2% RISK)
 Pair: ${symbol}
@@ -410,7 +425,7 @@ Catatan SOP: Begitu TP1 tercapai, segera geser Stop Loss ke Break-Even (BE)!`;
             </div>
 
             {/* Crucial Metric 2: Max Dollar Risk if SL is hit */}
-            <div className="grid grid-cols-2 gap-2 mb-2.5">
+            <div className="grid grid-cols-2 gap-2 mb-2">
               <div className="bg-rose-950/30 border border-rose-500/30 rounded-lg p-2">
                 <div className="text-[10px] text-rose-300 font-mono">Maksimal Risiko (SL):</div>
                 <div className="text-sm font-bold text-rose-400 font-mono">
@@ -427,6 +442,29 @@ Catatan SOP: Begitu TP1 tercapai, segera geser Stop Loss ke Break-Even (BE)!`;
                 <div className="text-[9px] text-zinc-400 font-mono">
                   +{(accountBalance > 0 ? (totalTargetProfitUsd / accountBalance) * 100 : 0).toFixed(1)}% akun
                 </div>
+              </div>
+            </div>
+
+            {/* GAP-5: Liquidation Health & Safety Metric */}
+            <div className="bg-zinc-950/70 border border-white/10 rounded-lg p-2.5 mb-2.5 font-mono">
+              <div className="flex items-center justify-between text-[11px] mb-1">
+                <span className="text-zinc-400">Estimasi Harga Likuidasi:</span>
+                <span className="text-amber-300 font-bold">${estimatedLiqPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</span>
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-1.5">
+                <span>Jarak ke Likuidasi: {liqDistancePct.toFixed(2)}%</span>
+                <span>Jarak ke SL: {slDistancePct.toFixed(2)}%</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-[10px] font-bold">
+                {isSlSafeFromLiq ? (
+                  <span className="text-emerald-400 flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3" /> Anti-Liquidation Safe: SL terkena jauh sebelum Likuidasi
+                  </span>
+                ) : (
+                  <span className="text-rose-400 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" /> Warning: SL terlalu dekat dengan titik Likuidasi!
+                  </span>
+                )}
               </div>
             </div>
 

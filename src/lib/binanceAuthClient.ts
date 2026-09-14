@@ -225,3 +225,124 @@ export async function getBinanceUserTrades(
     'GET'
   );
 }
+
+/**
+ * Hasil eksekusi order dari Binance Futures API
+ */
+export interface BinanceOrderResult {
+  orderId: number;
+  symbol: string;
+  status: string; // 'NEW' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELED' | 'EXPIRED'
+  clientOrderId: string;
+  price: string;
+  avgPrice: string;
+  origQty: string;
+  executedQty: string;
+  type: string;
+  side: string;
+  positionSide: string;
+  timeInForce: string;
+  reduceOnly: boolean;
+  closePosition: boolean;
+  stopPrice: string;
+  workingType: string;
+  updateTime: number;
+}
+
+/**
+ * Tipe request untuk membuka posisi futures
+ */
+export interface PlaceOrderParams {
+  symbol: string;         // e.g. 'BTCUSDT'
+  side: 'BUY' | 'SELL';  // BUY = LONG baru / tutup SHORT; SELL = SHORT baru / tutup LONG
+  type: 'MARKET' | 'LIMIT' | 'STOP_MARKET' | 'TAKE_PROFIT_MARKET';
+  quantity?: string;      // qty dalam base asset (e.g. '0.01' BTC)
+  price?: string;         // untuk LIMIT order
+  stopPrice?: string;     // untuk STOP_MARKET / TAKE_PROFIT_MARKET
+  positionSide?: 'BOTH' | 'LONG' | 'SHORT'; // default 'BOTH' (one-way mode)
+  reduceOnly?: boolean;   // true = hanya menutup posisi
+  timeInForce?: 'GTC' | 'IOC' | 'FOK'; // untuk LIMIT
+  closePosition?: boolean; // true = tutup seluruh posisi
+  workingType?: 'CONTRACT_PRICE' | 'MARK_PRICE';
+}
+
+/**
+ * 4. Membuka Posisi Futures Baru (POST /fapi/v1/order)
+ * Gunakan hati-hati — ini adalah eksekusi nyata dengan uang nyata jika isTestnet=false.
+ */
+export async function placeFuturesOrder(
+  credentials: BinanceApiCredentials,
+  params: PlaceOrderParams
+): Promise<BinanceOrderResult> {
+  const orderParams: Record<string, string | number | boolean | undefined> = {
+    symbol: params.symbol.trim().toUpperCase(),
+    side: params.side,
+    type: params.type,
+    positionSide: params.positionSide || 'BOTH',
+  };
+
+  if (params.quantity) orderParams.quantity = params.quantity;
+  if (params.price) orderParams.price = params.price;
+  if (params.stopPrice) orderParams.stopPrice = params.stopPrice;
+  if (params.reduceOnly !== undefined) orderParams.reduceOnly = String(params.reduceOnly);
+  if (params.closePosition !== undefined) orderParams.closePosition = String(params.closePosition);
+  if (params.timeInForce) orderParams.timeInForce = params.timeInForce;
+  if (params.workingType) orderParams.workingType = params.workingType;
+
+  return makeSignedRequest<BinanceOrderResult>('/fapi/v1/order', credentials, orderParams, 'POST');
+}
+
+/**
+ * 5. Menutup Seluruh Posisi pada Simbol Tertentu (Market Close)
+ * Otomatis menentukan sisi berlawanan berdasarkan positionAmt.
+ */
+export async function closeFuturesPosition(
+  credentials: BinanceApiCredentials,
+  symbol: string,
+  positionAmt: string // nilai positionAmt dari getBinancePositions
+): Promise<BinanceOrderResult> {
+  const qty = Math.abs(parseFloat(positionAmt));
+  if (qty <= 0) throw new Error(`Posisi ${symbol} tidak ditemukan atau sudah tertutup.`);
+
+  // positionAmt positif = LONG (perlu SELL untuk tutup), negatif = SHORT (perlu BUY untuk tutup)
+  const closeSide: 'BUY' | 'SELL' = parseFloat(positionAmt) > 0 ? 'SELL' : 'BUY';
+
+  return placeFuturesOrder(credentials, {
+    symbol,
+    side: closeSide,
+    type: 'MARKET',
+    quantity: qty.toString(),
+    reduceOnly: true,
+  });
+}
+
+/**
+ * 6. Mengambil Income/PnL Harian Dari Riwayat (GET /fapi/v1/income)
+ * Digunakan untuk Daily Performance Summary & Drawdown Guard.
+ */
+export interface BinanceIncomeRecord {
+  symbol: string;
+  incomeType: string; // 'REALIZED_PNL' | 'FUNDING_FEE' | 'COMMISSION' | etc
+  income: string;
+  asset: string;
+  info: string;
+  time: number;
+  tranId: string;
+  tradeId: string;
+}
+
+export async function getBinanceDailyIncome(
+  credentials: BinanceApiCredentials,
+  startTime?: number,
+  endTime?: number,
+  limit: number = 1000
+): Promise<BinanceIncomeRecord[]> {
+  const params: Record<string, string | number | undefined> = {
+    incomeType: 'REALIZED_PNL',
+    limit,
+  };
+  if (startTime) params.startTime = startTime;
+  if (endTime) params.endTime = endTime;
+
+  return makeSignedRequest<BinanceIncomeRecord[]>('/fapi/v1/income', credentials, params, 'GET');
+}

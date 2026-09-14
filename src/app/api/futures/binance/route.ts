@@ -4,6 +4,10 @@ import {
   getBinanceAccountInfo,
   getBinancePositions,
   getBinanceUserTrades,
+  placeFuturesOrder,
+  closeFuturesPosition,
+  getBinanceDailyIncome,
+  PlaceOrderParams,
 } from '@/lib/binanceAuthClient';
 
 export const dynamic = 'force-dynamic';
@@ -26,7 +30,7 @@ function resolveCredentials(body: {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { action = 'get_account', symbol, limit } = body;
+    const { action = 'get_account', symbol, limit, order, startTime, endTime } = body;
     const credentials = resolveCredentials(body);
 
     if (!credentials.apiKey || !credentials.apiSecret) {
@@ -85,6 +89,79 @@ export async function POST(req: NextRequest) {
         });
       }
 
+      // GAP-2: Ambil PnL Harian untuk Daily Performance Summary
+      case 'get_daily_income': {
+        const now = Date.now();
+        const dayStartMs = startTime || (now - 24 * 60 * 60 * 1000); // default: 24 jam terakhir
+        const income = await getBinanceDailyIncome(credentials, dayStartMs, endTime || now, limit || 500);
+        const totalPnl = income.reduce((sum, r) => sum + parseFloat(r.income || '0'), 0);
+        return NextResponse.json({
+          success: true,
+          isTestnet: credentials.isTestnet,
+          income,
+          totalRealizedPnl: totalPnl.toFixed(4),
+          recordCount: income.length,
+          periodStartMs: dayStartMs,
+          periodEndMs: endTime || now,
+          timestamp: Date.now(),
+        });
+      }
+
+      // GAP-1: Place Order (buka posisi baru)
+      case 'place_order': {
+        if (!order) {
+          return NextResponse.json(
+            { success: false, error: 'Parameter "order" wajib diisi untuk action place_order.' },
+            { status: 400 }
+          );
+        }
+        const orderParams = order as PlaceOrderParams;
+        if (!orderParams.symbol || !orderParams.side || !orderParams.type) {
+          return NextResponse.json(
+            { success: false, error: 'Field wajib: symbol, side, type.' },
+            { status: 400 }
+          );
+        }
+        const result = await placeFuturesOrder(credentials, orderParams);
+        return NextResponse.json({
+          success: true,
+          isTestnet: credentials.isTestnet,
+          order: result,
+          message: `Order ${orderParams.side} ${orderParams.symbol} berhasil dikirim ke Binance (Status: ${result.status})`,
+          timestamp: Date.now(),
+        });
+      }
+
+      // GAP-1: Close Position (tutup posisi aktif)
+      case 'close_position': {
+        if (!symbol) {
+          return NextResponse.json(
+            { success: false, error: 'Parameter "symbol" wajib untuk action close_position.' },
+            { status: 400 }
+          );
+        }
+        // Ambil posisi aktif dulu untuk mendapatkan positionAmt
+        const positions = await getBinancePositions(credentials, symbol);
+        const activePos = positions.find(
+          (p) => p.symbol === symbol.toUpperCase() && Math.abs(parseFloat(p.positionAmt)) > 0
+        );
+        if (!activePos) {
+          return NextResponse.json(
+            { success: false, error: `Tidak ada posisi aktif untuk ${symbol}.` },
+            { status: 404 }
+          );
+        }
+        const result = await closeFuturesPosition(credentials, symbol, activePos.positionAmt);
+        return NextResponse.json({
+          success: true,
+          isTestnet: credentials.isTestnet,
+          order: result,
+          closedPositionAmt: activePos.positionAmt,
+          message: `Posisi ${symbol} berhasil ditutup (Market Order — Status: ${result.status})`,
+          timestamp: Date.now(),
+        });
+      }
+
       default:
         return NextResponse.json(
           {
@@ -115,7 +192,15 @@ export async function GET() {
     service: 'Binance Futures Proxy Service',
     configuredInEnv: hasEnvKey,
     defaultMode: isTestnet ? 'TESTNET' : 'MAINNET_LIVE',
-    supportedActions: ['test_connection', 'get_account', 'get_positions', 'sync_trades'],
+    supportedActions: [
+      'test_connection',
+      'get_account',
+      'get_positions',
+      'sync_trades',
+      'get_daily_income',  // NEW: Daily PnL summary
+      'place_order',       // NEW: Order execution
+      'close_position',    // NEW: Close active position
+    ],
     timestamp: Date.now(),
   });
 }

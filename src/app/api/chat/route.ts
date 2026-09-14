@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 import { generateFuturesSignals } from '@/engine/futuresSignalEngine';
+import { BINANCE_FUTURES_COPILOT_PROMPT } from '@/lib/grokSystemPrompt';
 import dns from 'node:dns';
 
 // Pastikan Node.js memprioritaskan IPv4 untuk mencegah timeout IPv6 di VPS
@@ -51,20 +52,15 @@ Ringkasan Analisa AI: ${s.rationale}
       signalsContext = 'Sinyal realtime sedang di-refresh di latar belakang.';
     }
 
-    const systemPrompt = `Anda adalah AI Trading Assistant ahli untuk Binance Futures. Anda diintegrasikan langsung ke dalam dashboard trading pengguna.
-Tugas Anda: Menjawab pertanyaan pengguna dengan singkat, padat, jelas, dan ramah menggunakan bahasa Indonesia ala trader crypto profesional.
-Gunakan data sinyal terkini yang didapatkan sistem di bawah ini jika relevan:
+    const systemPrompt = `${BINANCE_FUTURES_COPILOT_PROMPT}
 
---- DATA SINYAL TERKINI ---
+========================================================================
+📡 DATA REALTIME LIVE SETUP FUTURES SAAT INI
+========================================================================
 ${signalsContext}
----------------------------
+========================================================================
 
-Aturan Menjawab:
-1. Jika pengguna hanya menyapa (seperti "halo", "hai", "p"), balas dengan ramah, perkenalkan diri sebagai AI Trading Assistant, dan tawarkan analisa koin atau kondisi market terkini.
-2. Jika pengguna menanyakan koin yang ada di data sinyal, berikan insight berdasarkan data tersebut (Entry, TP, SL, Arah, dan Analisanya).
-3. Jika pengguna menanyakan koin yang tidak ada di data, berikan analisa singkat atau beri tahu bahwa sistem algoritma teknikal saat ini belum mendeteksi setup yang solid untuk koin tersebut.
-4. Gunakan format yang rapi dan mudah dibaca (bullet points, bold angka).
-5. Selalu ingatkan manajemen risiko (Risk/Reward, Stop Loss).`;
+Selalu utamakan SOP, batasan risiko 2%, dan protokol Bitcoin Guard saat Alza menanyakan setup trading!`;
 
     const response = await client.models.generateContent({
       model: 'gemini-3.6-flash',

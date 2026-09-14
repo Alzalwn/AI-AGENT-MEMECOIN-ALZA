@@ -35,6 +35,7 @@ import {
   downloadImageBlob,
 } from '../../utils/generateSignalImage';
 import { SignalShareModal } from './SignalShareModal';
+import { BinanceOrderModal } from './BinanceOrderModal';
 
 interface FuturesSignalCardProps {
   signal: BinanceFuturesSignal;
@@ -47,9 +48,11 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
   onOpenChart,
   onDismiss,
 }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
   const [activeLeverageTab, setActiveLeverageTab] = useState<'both' | 'safe' | 'scalp'>('both');
   const [showAiAnalysis, setShowAiAnalysis] = useState(false);
 
@@ -834,15 +837,15 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
 
       {/* Card Actions Footer */}
       <div className="p-4 bg-zinc-900/60 border-t border-zinc-800/80 flex items-center gap-2">
-        <a
-          href={signal.binanceUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-zinc-950 font-black text-xs transition-all shadow-[0_0_15px_rgba(234,179,8,0.25)] cursor-pointer"
+        {/* GAP-3: Eksekusi Langsung ke Akun Binance Futures */}
+        <button
+          onClick={() => setIsOrderModalOpen(true)}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-gradient-to-r from-yellow-500 via-amber-400 to-yellow-500 hover:from-yellow-400 hover:to-amber-300 text-zinc-950 font-black text-xs transition-all shadow-[0_0_15px_rgba(234,179,8,0.3)] cursor-pointer active:scale-95"
+          title="Eksekusi order langsung ke akun Binance Futures Anda dengan batas risiko 2% SOP"
         >
-          <span>Eksekusi di Binance</span>
-          <ExternalLink className="w-3.5 h-3.5" />
-        </a>
+          <Zap className="w-3.5 h-3.5" />
+          <span>⚡ Order Binance</span>
+        </button>
 
         <button
           onClick={() => onOpenChart(signal.symbol, signal)}
@@ -954,6 +957,13 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
         tpPrice={signal.targets.tp1.price}
         slPrice={signal.stopLoss.price}
         binanceUrl={signal.binanceUrl}
+      />
+
+      {/* GAP-3: Modal Eksekusi Order Langsung ke Binance */}
+      <BinanceOrderModal
+        isOpen={isOrderModalOpen}
+        onClose={() => setIsOrderModalOpen(false)}
+        signal={signal}
       />
     </div>
   );
