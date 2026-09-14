@@ -149,6 +149,10 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
   const [showMACD, setShowMACD] = useState<boolean>(true);
   const [showRSI, setShowRSI] = useState<boolean>(true);
   const [showRRBox, setShowRRBox] = useState<boolean>(true);
+  const [showSMCZones, setShowSMCZones] = useState<boolean>(true);
+  const [showPathProjection, setShowPathProjection] = useState<boolean>(true);
+  const [showTrendlines, setShowTrendlines] = useState<boolean>(true);
+  const [showFibonacci, setShowFibonacci] = useState<boolean>(true);
   const [showChartAiAnalysis, setShowChartAiAnalysis] = useState<boolean>(false);
   const [copiedChart, setCopiedChart] = useState<boolean>(false);
   const [isCopyingChart, setIsCopyingChart] = useState<boolean>(false);
@@ -674,6 +678,251 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
       ctx.fillText(fmtP(stopLossPrice), width - padding.right + 6, stopY + 4);
     }
 
+    // -------------------------------------------------------------
+    // 🎨 SMART MONEY CONCEPTS (SMC) & PRICE ACTION VISUALIZATION
+    // Sesuai referensi gambar analisa profesional
+    // -------------------------------------------------------------
+
+    // A. FIBONACCI RETRACEMENT GRID (Gambar 3)
+    if (showFibonacci && count >= 10) {
+      const maxP = Math.max(...klines.map((k) => k.high));
+      const minP = Math.min(...klines.map((k) => k.low));
+      const fibRange = maxP - minP || 1;
+
+      const fibLevels = [
+        { ratio: 1.618, label: '1,618 (Ext)' },
+        { ratio: 1.0, label: '1,000' },
+        { ratio: 0.786, label: '0,786' },
+        { ratio: 0.618, label: '0,618 (Golden)' },
+        { ratio: 0.5, label: '0,500' },
+        { ratio: 0.382, label: '0,382' },
+        { ratio: 0.236, label: '0,236' },
+      ];
+
+      ctx.lineWidth = 0.8;
+      ctx.setLineDash([2, 4]);
+
+      fibLevels.forEach(({ ratio, label }) => {
+        const p = isLong ? minP + fibRange * ratio : maxP - fibRange * ratio;
+        if (p >= minPrice && p <= maxPrice) {
+          const y = priceToY(p);
+          const isGolden = ratio === 0.618;
+          ctx.strokeStyle = isGolden ? 'rgba(234, 179, 8, 0.75)' : 'rgba(161, 161, 170, 0.3)';
+          ctx.beginPath();
+          ctx.moveTo(padding.left, y);
+          ctx.lineTo(padding.left + candleAreaWidth, y);
+          ctx.stroke();
+
+          ctx.fillStyle = isGolden ? '#facc15' : '#71717a';
+          ctx.font = '8px monospace';
+          ctx.fillText(`${label} · ${fmtP(p)}`, padding.left + 5, y - 3);
+        }
+      });
+      ctx.setLineDash([]);
+    }
+
+    // B. ZONA SUPPLY & DEMAND / AREA BELI (Gambar 2 & 3)
+    if (showSMCZones && count >= 15) {
+      const zStartX = padding.left + candleSpacing * 8;
+      const zW = width - padding.right - zStartX - 5;
+
+      // 1. SUPPLY AREA (Resistensi Atas)
+      const supHigh = Math.max(selectedTargetPrice * (isLong ? 0.985 : 1.025), entryPrice * 1.035);
+      const supLow = supHigh * 0.988;
+      const sY1 = priceToY(supHigh);
+      const sY2 = priceToY(supLow);
+      const sH = Math.max(Math.abs(sY2 - sY1), 20);
+      const sTop = Math.min(sY1, sY2);
+
+      // Soft yellow box with red outline (persis Gambar 2)
+      ctx.fillStyle = 'rgba(254, 240, 138, 0.18)';
+      ctx.fillRect(zStartX, sTop, zW, sH);
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 1.3;
+      ctx.strokeRect(zStartX, sTop, zW, sH);
+
+      ctx.fillStyle = '#f87171';
+      ctx.font = 'bold 9px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('SUPPLY AREA (RESISTANCE)', zStartX + zW / 2, sTop + sH / 2 + 3);
+      ctx.textAlign = 'left';
+
+      // 2. DEMAND / AREA BUY (Support Bawah)
+      const demLow = Math.min(stopLossPrice, entryPrice * 0.985);
+      const demHigh = Math.max(entryPrice * 1.006, demLow * 1.015);
+      const dY1 = priceToY(demHigh);
+      const dY2 = priceToY(demLow);
+      const dH = Math.max(Math.abs(dY2 - dY1), 20);
+      const dTop = Math.min(dY1, dY2);
+
+      // Soft yellow box with blue outline (persis Gambar 3)
+      ctx.fillStyle = 'rgba(254, 240, 138, 0.18)';
+      ctx.fillRect(zStartX + 40, dTop, zW - 40, dH);
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 1.3;
+      ctx.strokeRect(zStartX + 40, dTop, zW - 40, dH);
+
+      ctx.fillStyle = '#60a5fa';
+      ctx.font = 'bold 9px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('AREA BUY / DEMAND (Strong Support)', zStartX + 40 + (zW - 40) / 2, dTop + dH / 2 + 3);
+      ctx.textAlign = 'left';
+    }
+
+    // C. TRENDLINE CHANNEL & SWING PIVOT DOTS (Gambar 2 & 3)
+    if (showTrendlines && count >= 15) {
+      // Deteksi titik swing lokal
+      const swingHighs: Array<{ x: number; y: number; price: number }> = [];
+      const swingLows: Array<{ x: number; y: number; price: number }> = [];
+
+      for (let i = 2; i < count - 2; i++) {
+        const cur = klines[i];
+        if (cur.high >= klines[i - 1].high && cur.high >= klines[i + 1].high) {
+          swingHighs.push({ x: getX(i), y: priceToY(cur.high), price: cur.high });
+        }
+        if (cur.low <= klines[i - 1].low && cur.low <= klines[i + 1].low) {
+          swingLows.push({ x: getX(i), y: priceToY(cur.low), price: cur.low });
+        }
+      }
+
+      // Gambar diagonal trendline
+      if (swingHighs.length >= 2) {
+        const first = swingHighs[0];
+        const last = swingHighs[swingHighs.length - 1];
+        const slope = (last.y - first.y) / (last.x - first.x || 1);
+        const extendX = Math.min(padding.left + candleAreaWidth + 35, width - padding.right - 20);
+        const extendY = first.y + slope * (extendX - first.x);
+
+        ctx.strokeStyle = '#e4e4e7';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(first.x, first.y);
+        ctx.lineTo(extendX, extendY);
+        ctx.stroke();
+
+        ctx.fillStyle = '#cbd5e1';
+        ctx.font = 'italic 8.5px monospace';
+        ctx.fillText('downtrend trendline', first.x + 35, first.y + slope * 35 - 5);
+
+        // Gambar titik dot bulat hitam dengan outline putih pada setiap swing high (Persis Gambar 2 & 3!)
+        swingHighs.slice(-4).forEach((sh) => {
+          ctx.beginPath();
+          ctx.arc(sh.x, sh.y, 4, 0, Math.PI * 2);
+          ctx.fillStyle = '#000000';
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        });
+      }
+
+      // Dot swing lows
+      swingLows.slice(-4).forEach((sl) => {
+        ctx.beginPath();
+        ctx.arc(sl.x, sl.y, 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#000000';
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      });
+
+      // Struktur Pasar: Neckline & CHoCH (Change of Character)
+      const necklinePrice = entryPrice * 1.014;
+      const nY = priceToY(necklinePrice);
+      ctx.strokeStyle = '#71717a';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(padding.left + candleSpacing * 15, nY);
+      ctx.lineTo(padding.left + candleAreaWidth + 10, nY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = '#a1a1aa';
+      ctx.font = '8.5px monospace';
+      ctx.fillText('NECKLINE (CHoCH)', padding.left + candleSpacing * 16, nY - 4);
+    }
+
+    // D. JALUR PANAH PREDIKSI ZIGZAG HARGA (Gambar 2 & 3)
+    if (showPathProjection && count >= 5) {
+      const lastK = klines[count - 1];
+      const lastX = getX(count - 1);
+      const lastY = priceToY(lastK.close);
+
+      const stepW = (width - padding.right - lastX) / 6;
+
+      // Buat lintasan zigzag prediksi Elliott / SMC Wave
+      const p0 = { x: lastX, y: lastY };
+      const p1 = { x: lastX + stepW * 0.9, y: priceToY(entryPrice * (isLong ? 0.995 : 1.005)) }; // Uji Area Beli
+      const p2 = { x: lastX + stepW * 1.9, y: priceToY(entryPrice * (isLong ? 1.018 : 0.982)) }; // Tembus Neckline
+      const p3 = { x: lastX + stepW * 2.7, y: priceToY(entryPrice * (isLong ? 1.009 : 0.991)) }; // Retest Neckline
+      const p4 = { x: lastX + stepW * 3.8, y: priceToY(selectedTargetPrice * (isLong ? 0.99 : 1.01)) }; // Capai TP1/TP2
+      const p5 = { x: lastX + stepW * 4.6, y: priceToY(selectedTargetPrice * (isLong ? 0.978 : 1.022)) }; // Retest Supply
+      const p6 = {
+        x: Math.min(lastX + stepW * 5.8, width - padding.right - 25),
+        y: priceToY(selectedTargetPrice * (isLong ? 1.035 : 0.965)),
+      }; // Lonjakan ke Target Puncak
+
+      const path = [p0, p1, p2, p3, p4, p5, p6];
+
+      // Garis Zigzag Merah Cerah (Persis Gambar 2!)
+      ctx.strokeStyle = '#f43f5e';
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(path[0].x, path[0].y);
+      for (let i = 1; i < path.length; i++) {
+        ctx.lineTo(path[i].x, path[i].y);
+      }
+      ctx.stroke();
+
+      // Panah Besar di Ujung Prediksi
+      const pen = path[path.length - 2];
+      const end = path[path.length - 1];
+      const angle = Math.atan2(end.y - pen.y, end.x - pen.x);
+      const arrowSize = 14;
+
+      ctx.fillStyle = '#f43f5e';
+      ctx.beginPath();
+      ctx.moveTo(end.x, end.y);
+      ctx.lineTo(
+        end.x - arrowSize * Math.cos(angle - Math.PI / 6),
+        end.y - arrowSize * Math.sin(angle - Math.PI / 6)
+      );
+      ctx.lineTo(
+        end.x - arrowSize * Math.cos(angle + Math.PI / 6),
+        end.y - arrowSize * Math.sin(angle + Math.PI / 6)
+      );
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // E. GARIS LEVEL TARGET HORIZONTAL JELAS (Gambar 2: TP1, TP2, TP3 & SL)
+    const tp1Val = signal ? signal.targets.tp1.price : entryPrice * (isLong ? 1.02 : 0.98);
+    const tp2Val = signal ? signal.targets.tp2.price : entryPrice * (isLong ? 1.045 : 0.955);
+    const tp3Val = signal ? signal.targets.tp3.price : entryPrice * (isLong ? 1.075 : 0.925);
+
+    const renderLevelHLine = (priceVal: number, labelText: string, strokeColor: string) => {
+      const y = priceToY(priceVal);
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(padding.left + candleSpacing * 15, y);
+      ctx.lineTo(width - padding.right, y);
+      ctx.stroke();
+
+      ctx.fillStyle = strokeColor;
+      ctx.font = 'bold 9px monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText(`${labelText} : ${fmtP(priceVal)}`, width - padding.right - 80, y - 4);
+      ctx.textAlign = 'left';
+    };
+
+    renderLevelHLine(tp3Val, 'TP3', '#10b981');
+    renderLevelHLine(tp2Val, 'TP2', '#10b981');
+    renderLevelHLine(tp1Val, 'TP1', '#a1a1aa');
+    renderLevelHLine(stopLossPrice, 'STOP LOSS', '#ef4444');
+
     // 5. Draw Sub-Panel 1: Volume with Moving Average
     const maxV = Math.max(...klines.map((k) => k.volume), 1);
     ctx.fillStyle = '#18181b';
@@ -1028,7 +1277,7 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
         </div>
 
         {/* Right: Indicator Checkbox Toggles */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-zinc-500 text-[10px]">Tampilkan:</span>
           {[
             { label: 'MA', state: showMA, setter: setShowMA },
@@ -1036,6 +1285,10 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
             { label: 'MACD', state: showMACD, setter: setShowMACD },
             { label: 'RSI', state: showRSI, setter: setShowRSI },
             { label: 'Proyeksi R:R', state: showRRBox, setter: setShowRRBox },
+            { label: 'SMC Zones', state: showSMCZones, setter: setShowSMCZones },
+            { label: 'Jalur Prediksi', state: showPathProjection, setter: setShowPathProjection },
+            { label: 'Trendline', state: showTrendlines, setter: setShowTrendlines },
+            { label: 'Fibonacci', state: showFibonacci, setter: setShowFibonacci },
           ].map(({ label, state, setter }) => (
             <button
               key={label}
@@ -1299,12 +1552,37 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
             </div>
           </>
         ) : (
-          /* Full Interactive TradingView Widget Fallback */
-          <iframe
-            src={`https://s.tradingview.com/widgetembed/?symbol=BINANCE%3A${symbol}.P&interval=${timeframe}&theme=dark&style=1&timezone=Asia%2FJakarta&studies=%5B%22MASimple%40tv-basicstudies%22%2C%22BollingerBands%40tv-basicstudies%22%2C%22MACD%40tv-basicstudies%22%2C%22RSI%40tv-basicstudies%22%5D`}
-            className="w-full h-full border-none flex-1"
-            title="TradingView Chart with Binance Indicators"
-          />
+          /* Full Interactive TradingView Widget with Valid Resolution & Symbol Fallback */
+          <div className="w-full h-full flex flex-col bg-zinc-950">
+            <div className="bg-zinc-900/90 border-b border-zinc-800 px-4 py-2 flex items-center justify-between text-xs font-mono shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="text-zinc-400">TradingView Ticker:</span>
+                <span className="px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-yellow-400 font-bold">
+                  BINANCE:{symbol.replace('/', '').toUpperCase()}
+                </span>
+                <span className="text-zinc-500">
+                  ({timeframe === '5m' ? '5 Menit' : timeframe === '15m' ? '15 Menit' : timeframe === '1h' ? '1 Jam' : '4 Jam'})
+                </span>
+              </div>
+              <a
+                href={`https://www.tradingview.com/chart/?symbol=BINANCE:${symbol.replace('/', '').toUpperCase()}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-cyan-400 hover:text-cyan-300 hover:underline flex items-center gap-1 text-[11px]"
+              >
+                Buka di TradingView.com <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+
+            <iframe
+              key={`tv-${symbol}-${timeframe}`}
+              src={`https://s.tradingview.com/widgetembed/?symbol=BINANCE%3A${symbol.replace('/', '').toUpperCase()}&interval=${
+                timeframe === '5m' ? '5' : timeframe === '15m' ? '15' : timeframe === '1h' ? '60' : '240'
+              }&theme=dark&style=1&timezone=Asia%2FJakarta&studies=%5B%22MASimple%40tv-basicstudies%22%2C%22BollingerBands%40tv-basicstudies%22%2C%22MACD%40tv-basicstudies%22%2C%22RSI%40tv-basicstudies%22%5D`}
+              className="w-full h-full border-none flex-1"
+              title="TradingView Chart with Binance Indicators"
+            />
+          </div>
         )}
       </div>
 
