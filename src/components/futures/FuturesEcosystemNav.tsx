@@ -1,15 +1,21 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Activity, 
   Library, 
   History, 
   Wallet, 
   Bot, 
-  LineChart
+  LineChart,
+  KeyRound
 } from 'lucide-react';
 import Link from 'next/link';
+import {
+  BinanceConnectModal,
+  BINANCE_STORAGE_KEY,
+  SavedBinanceConfig,
+} from './BinanceConnectModal';
 
 const modules = [
   {
@@ -51,37 +57,108 @@ const modules = [
 ];
 
 export const FuturesEcosystemNav: React.FC = () => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [binanceConfig, setBinanceConfig] = useState<SavedBinanceConfig | null>(null);
+
+  const refreshConfig = () => {
+    try {
+      const saved = localStorage.getItem(BINANCE_STORAGE_KEY);
+      if (saved) {
+        setBinanceConfig(JSON.parse(saved));
+      } else {
+        setBinanceConfig(null);
+      }
+    } catch {
+      setBinanceConfig(null);
+    }
+  };
+
+  useEffect(() => {
+    refreshConfig();
+    // Listen for storage events across tabs or components
+    window.addEventListener('storage', refreshConfig);
+    return () => window.removeEventListener('storage', refreshConfig);
+  }, []);
+
   return (
-    <div className="bg-[#0e0e0e] border border-white/5 rounded-2xl p-3 flex flex-col sm:flex-row items-center gap-3 shadow-xl overflow-x-auto custom-scrollbar">
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-500/10 border border-yellow-500/20 rounded-lg shrink-0">
-        <span className="text-xs font-bold text-yellow-500 uppercase tracking-wider">Pro Ecosystem</span>
+    <div className="bg-[#0e0e0e] border border-white/5 rounded-2xl p-3 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 shadow-xl font-mono">
+      <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 lg:pb-0">
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-500/10 border border-yellow-500/20 rounded-lg shrink-0">
+          <span className="text-xs font-bold text-yellow-500 uppercase tracking-wider">Pro Ecosystem</span>
+        </div>
+        
+        <div className="flex items-center gap-2 min-w-max">
+          {modules.map((mod, idx) => (
+            <Link 
+              key={idx} 
+              href={mod.href}
+              className="group flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 rounded-xl transition-all cursor-pointer"
+              onClick={(e) => {
+                 if (mod.status === 'WIP') {
+                   e.preventDefault();
+                   alert(`Modul ${mod.title} sedang menunggu integrasi tahap selanjutnya.`);
+                 }
+              }}
+            >
+              {mod.icon}
+              <span className="text-sm font-medium text-zinc-300 group-hover:text-white">{mod.title}</span>
+              <span className={`text-[9px] px-1.5 py-0.5 rounded-sm font-bold uppercase ${
+                mod.status === 'LIVE' ? 'bg-emerald-500/20 text-emerald-400' :
+                mod.status === 'BETA' ? 'bg-blue-500/20 text-blue-400' :
+                'bg-zinc-800 text-zinc-500'
+              }`}>
+                {mod.status}
+              </span>
+            </Link>
+          ))}
+        </div>
       </div>
-      
-      <div className="flex items-center gap-2 min-w-max">
-        {modules.map((mod, idx) => (
-          <Link 
-            key={idx} 
-            href={mod.href}
-            className="group flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 rounded-xl transition-all cursor-pointer"
-            onClick={(e) => {
-               if (mod.status === 'WIP') {
-                 e.preventDefault();
-                 alert(`Modul ${mod.title} sedang menunggu integrasi tahap selanjutnya.`);
-               }
-            }}
+
+      {/* Global In-Website Binance Sync Pill */}
+      <div className="shrink-0 flex items-center justify-end">
+        {binanceConfig?.apiKey ? (
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-2 border transition-all cursor-pointer shadow-md ${
+              binanceConfig.isTestnet
+                ? 'bg-amber-500/15 text-amber-300 border-amber-500/40 hover:bg-amber-500/25'
+                : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/25'
+            }`}
+            title="Kelola koneksi Binance Futures (Sinkronisasi Otomatis)"
           >
-            {mod.icon}
-            <span className="text-sm font-medium text-zinc-300 group-hover:text-white">{mod.title}</span>
-            <span className={`text-[9px] px-1.5 py-0.5 rounded-sm font-bold uppercase ${
-              mod.status === 'LIVE' ? 'bg-emerald-500/20 text-emerald-400' :
-              mod.status === 'BETA' ? 'bg-blue-500/20 text-blue-400' :
-              'bg-zinc-800 text-zinc-500'
-            }`}>
-              {mod.status}
-            </span>
-          </Link>
-        ))}
+            <span
+              className={`w-2 h-2 rounded-full ${
+                binanceConfig.isTestnet ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
+              }`}
+            ></span>
+            <span>Binance {binanceConfig.isTestnet ? 'Testnet' : 'Live'}</span>
+            {binanceConfig.walletBalance && (
+              <span className="text-white font-black">(${binanceConfig.walletBalance})</span>
+            )}
+          </button>
+        ) : (
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="px-3 py-1.5 rounded-xl text-xs font-mono font-bold bg-zinc-900 border border-zinc-700 hover:border-amber-500/50 text-zinc-300 hover:text-amber-300 flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
+            title="Hubungkan akun Binance langsung di dalam website tanpa perlu edit file server"
+          >
+            <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+            <span>Hubungkan Binance</span>
+          </button>
+        )}
       </div>
+
+      {/* Unified Binance Modal */}
+      <BinanceConnectModal
+        isOpen={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false);
+          refreshConfig();
+        }}
+        onConnectionSuccess={() => {
+          refreshConfig();
+        }}
+      />
     </div>
   );
 };

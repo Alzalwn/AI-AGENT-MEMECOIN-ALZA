@@ -1,103 +1,126 @@
-import { NextResponse } from 'next/server';
-import ccxt from 'ccxt';
+import { NextRequest, NextResponse } from 'next/server';
+import {
+  getBinanceUserTrades,
+  BinanceApiCredentials,
+  BinanceUserTrade,
+} from '@/lib/binanceAuthClient';
 
-export async function GET() {
+export const dynamic = 'force-dynamic';
+
+function getCredentials(req: NextRequest): BinanceApiCredentials {
+  const apiKey = (
+    req.headers.get('x-binance-api-key') ||
+    process.env.BINANCE_API_KEY ||
+    ''
+  ).trim();
+
+  const apiSecret = (
+    req.headers.get('x-binance-secret') ||
+    process.env.BINANCE_API_SECRET ||
+    ''
+  ).trim();
+
+  const isTestnetHeader = req.headers.get('x-binance-testnet');
+  const isTestnet =
+    isTestnetHeader !== null
+      ? isTestnetHeader === 'true'
+      : process.env.BINANCE_USE_TESTNET !== 'false';
+
+  return { apiKey, apiSecret, isTestnet };
+}
+
+export async function GET(req: NextRequest) {
   try {
-    const apiKey = process.env.BINANCE_API_KEY;
-    const secret = process.env.BINANCE_API_SECRET;
+    const credentials = getCredentials(req);
 
-    // Use dummy data if no API keys are provided
-    if (!apiKey || !secret) {
+    // Gunakan data dummy jika kunci API belum disediakan
+    if (!credentials.apiKey || !credentials.apiSecret) {
       return getDummyData();
     }
 
-    const exchange = new ccxt.binance({
-      apiKey: apiKey,
-      secret: secret,
-      options: { defaultType: 'future' },
-      enableRateLimit: true,
-    });
-
     try {
-      // Trying to fetch user trades (requires valid API key with read permissions)
-      // Since fetching all symbols is rate-limit heavy, we will just fetch recent trades of BTCUSDT for demonstration.
-      // In a real quant system, we would iterate or use a specialized database.
-      const trades = await exchange.fetchMyTrades('BTC/USDT');
+      // Ambil 50 trade riil terakhir pengguna
+      const trades = await getBinanceUserTrades(credentials, undefined, 50);
 
       if (!trades || trades.length === 0) {
-        return getDummyData(); // Fallback if no history
+        return getDummyData(
+          'Akun Binance terhubung, namun belum memiliki histori transaksi. Menampilkan data benchmark simulasi.'
+        );
       }
 
-      // Analyze real trades
+      // Analisis psikologi dari data riil
       const analysis = analyzeTrades(trades);
 
       return NextResponse.json({
         success: true,
         data: analysis,
         isDummy: false,
-        timestamp: Date.now()
+        isTestnet: credentials.isTestnet,
+        timestamp: Date.now(),
       });
-
-    } catch (err: any) {
-      console.warn("Error fetching real trades, falling back to dummy data:", err.message);
-      return getDummyData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Gagal mengambil data trade Binance';
+      console.warn('Gagal mengambil data trade asli, fallback ke dummy:', msg);
+      return getDummyData(`Gagal menghubungkan ke Binance (${msg}). Menampilkan data simulasi.`);
     }
-
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Shadow Account API Error:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan sistem';
+    return NextResponse.json({ success: false, error: errorMessage }, { status: 500 });
   }
 }
 
 // Psychology and behavior analyzer
-function analyzeTrades(trades: any[]) {
+function analyzeTrades(trades: BinanceUserTrade[]) {
   // Sort trades by timestamp descending
-  const sorted = [...trades].sort((a, b) => b.timestamp - a.timestamp);
-  
-  // Basic metrics
+  const sorted = [...trades].sort((a, b) => b.time - a.time);
   const totalTrades = sorted.length;
-  
-  // Group trades by day to find overtrading
+
+  // Group trades by day to detect overtrading
   const tradesByDay: Record<string, number> = {};
-  sorted.forEach(t => {
-    const date = new Date(t.timestamp).toISOString().split('T')[0];
+  sorted.forEach((t) => {
+    const date = new Date(t.time).toISOString().split('T')[0];
     tradesByDay[date] = (tradesByDay[date] || 0) + 1;
   });
 
   const dates = Object.keys(tradesByDay);
   const avgTradesPerDay = dates.length > 0 ? totalTrades / dates.length : 0;
-  
-  // Calculate a mock win rate (ccxt trades don't easily give PnL without order matching, so we simulate PnL for analysis purposes based on side/price if not available directly)
-  // Since real PnL requires matching entry/exit, we will use a pseudo win rate based on realizedPnl if available, else random for demo
+
+  // Realized PnL analysis
   let winningTrades = 0;
   let losingTrades = 0;
-  
-  sorted.forEach(t => {
-    if (t.info && t.info.realizedPnl) {
-       if (parseFloat(t.info.realizedPnl) > 0) winningTrades++;
-       if (parseFloat(t.info.realizedPnl) < 0) losingTrades++;
-    } else {
-       // fallback simulation for the sake of the dashboard
-       if (Math.random() > 0.45) winningTrades++;
-       else losingTrades++;
+  let totalProfit = 0;
+  let totalLoss = 0;
+
+  sorted.forEach((t) => {
+    const pnl = parseFloat(t.realizedPnl) || 0;
+    if (pnl > 0) {
+      winningTrades++;
+      totalProfit += pnl;
+    } else if (pnl < 0) {
+      losingTrades++;
+      totalLoss += Math.abs(pnl);
     }
   });
 
   const totalResolved = winningTrades + losingTrades;
   const winRate = totalResolved > 0 ? (winningTrades / totalResolved) * 100 : 0;
 
-  let psychologyState = 'Disciplined';
-  let warning = null;
-  
+  let psychologyState = 'Disiplin Terjaga (Optimal)';
+  let warning: string | null = null;
+
   if (avgTradesPerDay > 15) {
     psychologyState = 'Revenge Trading / Overtrading';
-    warning = 'Anda melakukan terlalu banyak transaksi harian. Emosi Anda mungkin sedang tidak stabil. Istirahatlah sejenak.';
-  } else if (winRate < 40 && totalResolved > 5) {
-    psychologyState = 'Fear / Tilt';
-    warning = 'Win rate Anda sedang menurun drastis. Evaluasi kembali strategi Anda sebelum membuka posisi baru.';
-  } else if (winRate > 75 && totalResolved > 5) {
-    psychologyState = 'Overconfident / Greed';
-    warning = 'Anda sedang dalam kemenangan beruntun. Hati-hati dengan rasa terlalu percaya diri yang bisa merusak risk management.';
+    warning =
+      'Frekuensi transaksi Anda sangat tinggi dalam sehari. Emosi Anda mungkin sedang terpacu. Tarik napas dan istirahat sejenak untuk memulihkan fokus mental.';
+  } else if (winRate < 40 && totalResolved >= 5) {
+    psychologyState = 'Fear / Tilt Phase';
+    warning =
+      'Win rate transaksi Anda berada di bawah 40%. Turunkan ukuran posisi (size) dan evaluasi kembali setup teknikal sebelum mengambil risiko baru.';
+  } else if (winRate > 75 && totalResolved >= 5) {
+    psychologyState = 'Overconfident / Greed Hazard';
+    warning =
+      'Anda sedang dalam kemenangan beruntun. Waspadai godaan memperbesar leverage atau melanggar Stop Loss karena rasa terlalu percaya diri.';
   }
 
   return {
@@ -106,37 +129,75 @@ function analyzeTrades(trades: any[]) {
     winRate: winRate.toFixed(1),
     totalTrades,
     avgTradesPerDay: avgTradesPerDay.toFixed(1),
-    recentActivity: sorted.slice(0, 10).map(t => ({
-      id: t.id,
+    totalProfitUsd: totalProfit.toFixed(2),
+    totalLossUsd: totalLoss.toFixed(2),
+    recentActivity: sorted.slice(0, 10).map((t) => ({
+      id: String(t.id),
       symbol: t.symbol,
-      side: t.side,
-      price: t.price,
-      amount: t.amount,
-      timestamp: t.timestamp
-    }))
+      side: t.side.toLowerCase(),
+      price: parseFloat(t.price),
+      amount: parseFloat(t.qty),
+      realizedPnl: parseFloat(t.realizedPnl),
+      timestamp: t.time,
+    })),
   };
 }
 
-// Dummy data generator for when API keys are missing or no history exists
-function getDummyData() {
+function getDummyData(customWarning?: string) {
   const dummyAnalysis = {
-    psychologyState: 'Overtrading / Tilt',
-    warning: 'Ini adalah data SIMULASI (Dummy). Tambahkan API Key Binance dengan riwayat trading untuk melihat data asli. Berdasarkan simulasi: Anda melakukan terlalu banyak transaksi harian. Emosi Anda mungkin sedang tidak stabil. Istirahatlah.',
-    winRate: "35.5",
+    psychologyState: 'Overtrading / Tilt (Benchmark Demo)',
+    warning:
+      customWarning ||
+      'Ini adalah data SIMULASI benchmark. Hubungkan API Key Binance Anda di atas untuk menganalisis kebiasaan trading dan psikologi riil Anda secara otomatis.',
+    winRate: '35.5',
     totalTrades: 142,
-    avgTradesPerDay: "18.5",
+    avgTradesPerDay: '18.5',
+    totalProfitUsd: '124.50',
+    totalLossUsd: '210.80',
     recentActivity: [
-      { id: '1', symbol: 'BTC/USDT', side: 'buy', price: 62500, amount: 0.1, timestamp: Date.now() - 1000 * 60 * 5 },
-      { id: '2', symbol: 'BTC/USDT', side: 'sell', price: 62100, amount: 0.1, timestamp: Date.now() - 1000 * 60 * 35 }, // Loss
-      { id: '3', symbol: 'ETH/USDT', side: 'buy', price: 3400, amount: 1.5, timestamp: Date.now() - 1000 * 60 * 120 },
-      { id: '4', symbol: 'SOL/USDT', side: 'buy', price: 145, amount: 20, timestamp: Date.now() - 1000 * 60 * 180 },
-    ]
+      {
+        id: '1',
+        symbol: 'BTCUSDT',
+        side: 'buy',
+        price: 64500,
+        amount: 0.1,
+        realizedPnl: 15.2,
+        timestamp: Date.now() - 1000 * 60 * 5,
+      },
+      {
+        id: '2',
+        symbol: 'BTCUSDT',
+        side: 'sell',
+        price: 64100,
+        amount: 0.1,
+        realizedPnl: -22.5,
+        timestamp: Date.now() - 1000 * 60 * 35,
+      },
+      {
+        id: '3',
+        symbol: 'ETHUSDT',
+        side: 'buy',
+        price: 3420,
+        amount: 1.5,
+        realizedPnl: 45.0,
+        timestamp: Date.now() - 1000 * 60 * 120,
+      },
+      {
+        id: '4',
+        symbol: 'SOLUSDT',
+        side: 'buy',
+        price: 152,
+        amount: 20,
+        realizedPnl: -18.0,
+        timestamp: Date.now() - 1000 * 60 * 180,
+      },
+    ],
   };
 
   return NextResponse.json({
     success: true,
     data: dummyAnalysis,
     isDummy: true,
-    timestamp: Date.now()
+    timestamp: Date.now(),
   });
 }
