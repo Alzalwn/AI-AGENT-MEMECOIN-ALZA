@@ -4,6 +4,7 @@ import {
   analyzeSentimentForSymbol,
   analyzeManualNewsText,
   getAllCachedSentiments,
+  deleteCachedSentiment,
 } from '@/engine/newsSentimentEngine';
 import { NewsImpactScore } from '@/types/newsTypes';
 
@@ -75,6 +76,26 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('[API news-sentiment POST] Error:', error);
+    return NextResponse.json(
+      { success: false, error: error.message || 'Internal Server Error' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const symbol = searchParams.get('symbol');
+
+    deleteCachedSentiment(symbol || 'ALL');
+
+    return NextResponse.json({
+      success: true,
+      message: symbol ? `Sentimen untuk ${symbol} berhasil dihapus.` : 'Semua cache sentimen berhasil dibersihkan.',
+    });
+  } catch (error: any) {
+    console.error('[API news-sentiment DELETE] Error:', error);
     return NextResponse.json(
       { success: false, error: error.message || 'Internal Server Error' },
       { status: 500 }

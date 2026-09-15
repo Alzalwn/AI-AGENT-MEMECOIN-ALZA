@@ -356,3 +356,14 @@ export function getAllCachedSentiments(): Record<string, NewsImpactScore> {
   }
   return result;
 }
+
+/**
+ * Hapus sentimen tersimpan untuk simbol tertentu atau bersihkan semua
+ */
+export function deleteCachedSentiment(symbol?: string): void {
+  if (!symbol || symbol === 'ALL') {
+    sentimentCache.clear();
+  } else {
+    sentimentCache.delete(symbol.toUpperCase());
+  }
+}

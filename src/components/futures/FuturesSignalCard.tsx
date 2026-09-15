@@ -55,6 +55,7 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
   const [activeLeverageTab, setActiveLeverageTab] = useState<'both' | 'safe' | 'scalp'>('both');
   const [showAiAnalysis, setShowAiAnalysis] = useState(false);
+  const [dismissNewsBanner, setDismissNewsBanner] = useState(false);
 
   // State Modal Bagikan Sinyal & Gambar
   const [shareModalOpen, setShareModalOpen] = useState(false);
@@ -363,15 +364,13 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
           </div>
         )}
 
-        {/* News Sentiment Context Banner */}
-        {signal.newsContext && (
+        {/* News Sentiment Context Banner (Hanya tampil jika ada sentimen dan skor bukan 0) */}
+        {signal.newsContext && signal.newsContext.sentimentScore !== 0 && !dismissNewsBanner && (
           <div
             className={`p-2.5 rounded-xl border font-mono text-xs flex items-center justify-between gap-2 ${
               signal.newsContext.sentimentScore > 0
                 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                : signal.newsContext.sentimentScore < 0
-                ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
-                : 'bg-zinc-900 border-zinc-800 text-zinc-400'
+                : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
             }`}
           >
             <div className="flex items-center gap-2 truncate">
@@ -391,9 +390,19 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
                 </p>
               </div>
             </div>
-            <span className="text-[9px] font-bold shrink-0 px-1.5 py-0.5 rounded bg-black/40">
-              {signal.newsContext.signalModifier.replace(/_/g, ' ')}
-            </span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-black/40">
+                {signal.newsContext.signalModifier.replace(/_/g, ' ')}
+              </span>
+              <button
+                type="button"
+                onClick={() => setDismissNewsBanner(true)}
+                className="p-1 rounded-md bg-black/40 hover:bg-rose-500/20 text-zinc-400 hover:text-rose-300 border border-white/5 transition-colors cursor-pointer"
+                title="Tutup banner sentimen berita"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
           </div>
         )}
 
@@ -561,6 +570,42 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
                         {signal.indicatorExplanation.directionVerdict}
                       </p>
                     </div>
+
+                    {/* AI News Sentiment Insight (Hanya tampil jika ada sentimen dan skor bukan 0) */}
+                    {signal.newsContext && signal.newsContext.sentimentScore !== 0 && (
+                      <div
+                        className={`p-2.5 rounded-lg border space-y-1.5 ${
+                          signal.newsContext.sentimentScore > 0
+                            ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300'
+                            : 'bg-rose-950/30 border-rose-500/30 text-rose-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold flex items-center gap-1.5 text-[10px]">
+                            <span>📰</span> Katalis Berita AI: {signal.newsContext.catalystType}
+                          </span>
+                          <span
+                            className={`text-[9px] font-mono font-black px-1.5 py-0.5 rounded border ${
+                              signal.newsContext.sentimentScore > 0
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                            }`}
+                          >
+                            {signal.newsContext.sentimentScore > 0
+                              ? `+${signal.newsContext.sentimentScore} BULLISH`
+                              : `${signal.newsContext.sentimentScore} BEARISH`}
+                          </span>
+                        </div>
+                        <p className="text-zinc-200 text-[10.5px] leading-snug font-sans font-medium">
+                          &ldquo;{signal.newsContext.keyHeadline}&rdquo;
+                        </p>
+                        {signal.newsContext.summary && (
+                          <p className="text-zinc-400 text-[9.5px] leading-tight italic pt-1 border-t border-white/5">
+                            💡 {signal.newsContext.summary}
+                          </p>
+                        )}
+                      </div>
+                    )}
 
                     {/* Target Arrival ETA Timeline */}
                     <div className="p-2.5 rounded-lg bg-zinc-900/80 border border-zinc-800 space-y-1.5">
