@@ -8,6 +8,7 @@ import {
   closeFuturesPosition,
   getBinanceDailyIncome,
   PlaceOrderParams,
+  placeFullBracketOrder,
 } from '@/lib/binanceAuthClient';
 
 export const dynamic = 'force-dynamic';
@@ -107,7 +108,7 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // GAP-1: Place Order (buka posisi baru)
+      // GAP-1: Place Order (buka posisi baru dengan Enforced ISOLATED & Auto Bracket Stop Loss)
       case 'place_order': {
         if (!order) {
           return NextResponse.json(
@@ -122,12 +123,37 @@ export async function POST(req: NextRequest) {
             { status: 400 }
           );
         }
-        const result = await placeFuturesOrder(credentials, orderParams);
+
+        const orderDirection: 'LONG' | 'SHORT' =
+          body.direction === 'LONG' || body.direction === 'SHORT'
+            ? body.direction
+            : orderParams.side === 'BUY' ? 'LONG' : 'SHORT';
+
+        const stopLossPrice = typeof body.stopLossPrice === 'number' ? body.stopLossPrice : undefined;
+        const targetLeverage = typeof body.leverage === 'number' ? body.leverage : 5;
+
+        const result = await placeFullBracketOrder(credentials, {
+          ...orderParams,
+          direction: orderDirection,
+          stopLossPrice,
+          leverage: targetLeverage,
+        });
+
+        const slMsg = result.stopLossOrder
+          ? `Auto-Stop Loss terpasang di $${stopLossPrice}.`
+          : result.stopLossError
+          ? `⚠️ Peringatan: Auto-SL gagal dipasang (${result.stopLossError}). Harap pasang SL manual!`
+          : 'Tanpa Auto-SL.';
+
         return NextResponse.json({
           success: true,
           isTestnet: credentials.isTestnet,
-          order: result,
-          message: `Order ${orderParams.side} ${orderParams.symbol} berhasil dikirim ke Binance (Status: ${result.status})`,
+          marginType: result.marginType,
+          leverage: result.leverage,
+          order: result.entryOrder,
+          stopLossOrder: result.stopLossOrder,
+          stopLossError: result.stopLossError,
+          message: `Order ${orderParams.side} ${orderParams.symbol} berhasil dieksekusi [Mode: ISOLATED, Lev: ${result.leverage}x]. ${slMsg}`,
           timestamp: Date.now(),
         });
       }

@@ -40,6 +40,7 @@ export const InteractiveRiskCalculator: React.FC<InteractiveRiskCalculatorProps>
   // Inputs
   const [accountBalance, setAccountBalance] = useState<number>(100);
   const [riskPercent, setRiskPercent] = useState<number>(2.0); // SOP standard: 2.0%
+  const [isHardCapActive, setIsHardCapActive] = useState<boolean>(false); // Mode Anti-Emosi ($1)
   const [leverage, setLeverage] = useState<number>(5); // 5x default
   const [copied, setCopied] = useState<boolean>(false);
 
@@ -71,7 +72,7 @@ export const InteractiveRiskCalculator: React.FC<InteractiveRiskCalculatorProps>
   // Calculations
   const slDistancePct =
     entryPrice > 0 ? Math.abs((entryPrice - stopLossPrice) / entryPrice) * 100 : 0;
-  const maxRiskAmountUsd = accountBalance * (riskPercent / 100);
+  const maxRiskAmountUsd = isHardCapActive ? 1.0 : accountBalance * (riskPercent / 100);
   const notionalPositionUsd =
     slDistancePct > 0 ? maxRiskAmountUsd / (slDistancePct / 100) : 0;
   const marginRequiredUsd = leverage > 0 ? notionalPositionUsd / leverage : 0;
@@ -210,17 +211,31 @@ Catatan SOP: Begitu TP1 tercapai, segera geser Stop Loss ke Break-Even (BE)!`;
             </div>
           </div>
 
-          {/* Risk Percent */}
+          {/* Risk Percent & Anti-Emosi Toggle */}
           <div>
             <div className="flex items-center justify-between text-xs mb-1">
               <label htmlFor={riskInputId} className="text-zinc-300 font-mono">Batas Toleransi Risiko:</label>
-              <div className="flex gap-1">
+              <div className="flex gap-1 items-center">
+                <button
+                  type="button"
+                  onClick={() => setIsHardCapActive(!isHardCapActive)}
+                  className={`px-1.5 py-0.5 text-[10px] font-mono rounded cursor-pointer border ${
+                    isHardCapActive
+                      ? 'bg-amber-500 text-black font-black border-amber-400'
+                      : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
+                  }`}
+                >
+                  {isHardCapActive ? '🔒 KUNCI $1 USD' : 'Kunci $1'}
+                </button>
                 {[1.0, 1.5, 2.0, 3.0].map((p) => (
                   <button
                     key={p}
-                    onClick={() => setRiskPercent(p)}
+                    onClick={() => {
+                      setIsHardCapActive(false);
+                      setRiskPercent(p);
+                    }}
                     className={`px-1.5 py-0.5 text-[10px] font-mono rounded cursor-pointer ${
-                      riskPercent === p
+                      !isHardCapActive && riskPercent === p
                         ? 'bg-emerald-500 text-black font-bold'
                         : 'bg-zinc-800 text-zinc-400 hover:text-white'
                     }`}
@@ -237,20 +252,30 @@ Catatan SOP: Begitu TP1 tercapai, segera geser Stop Loss ke Break-Even (BE)!`;
                 min="0.5"
                 max="10"
                 step="0.5"
-                value={riskPercent}
+                disabled={isHardCapActive}
+                value={isHardCapActive ? Number(((1.0 / accountBalance) * 100).toFixed(2)) : riskPercent}
                 onChange={(e) => setRiskPercent(Number(e.target.value))}
-                className="w-full bg-zinc-900 border border-zinc-700/80 rounded-lg px-3 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-cyan-400"
+                className={`w-full bg-zinc-900 border rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none ${
+                  isHardCapActive
+                    ? 'border-amber-500 text-amber-300 bg-amber-950/20'
+                    : 'border-zinc-700/80 text-white focus:border-cyan-400'
+                }`}
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 font-mono text-xs">
-                %
+                {isHardCapActive ? '($1 Max Loss)' : '%'}
               </span>
             </div>
-            {isRiskViolation && (
+            {isHardCapActive ? (
+              <div className="mt-1 flex items-center gap-1 text-[11px] text-amber-400 font-mono">
+                <ShieldCheck className="w-3 h-3 shrink-0" />
+                <span>Mode Anti-Emosi Aktif: Kerugian SL dibatasi tepat -$1.00 USD!</span>
+              </div>
+            ) : isRiskViolation ? (
               <div className="mt-1 flex items-center gap-1 text-[11px] text-amber-400 font-mono">
                 <AlertTriangle className="w-3 h-3 shrink-0" />
                 <span>Peringatan: SOP menganjurkan maksimal 2% per transaksi!</span>
               </div>
-            )}
+            ) : null}
           </div>
 
           {/* Leverage Slider */}

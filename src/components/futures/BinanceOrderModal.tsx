@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { BinanceFuturesSignal } from '@/types/futures';
 import { BINANCE_STORAGE_KEY, SavedBinanceConfig, BinanceConnectModal } from './BinanceConnectModal';
-import { formatFuturesPrice } from '@/engine/futuresSignalEngine';
+import { formatFuturesPrice, validateFuturesEntryGate } from '@/engine/futuresSignalEngine';
 
 interface BinanceOrderModalProps {
   isOpen: boolean;
@@ -38,9 +38,19 @@ export const BinanceOrderModal: React.FC<BinanceOrderModalProps> = ({
   const [customRiskPct, setCustomRiskPct] = useState<number>(2.0); // SOP 2% standard
   const [walletBalance, setWalletBalance] = useState<number>(100);
 
+  const [isHardCapActive, setIsHardCapActive] = useState<boolean>(false); // Default: OFF (opt-in sesuai permintaan)
+  const [hardCapDollar, setHardCapDollar] = useState<number>(1.0); // $1.00 batas kerugian
+
   // Execution states
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
-  const [resultMsg, setResultMsg] = useState<{ type: 'success' | 'error'; text: string; orderId?: number } | null>(null);
+  const [resultMsg, setResultMsg] = useState<{
+    type: 'success' | 'error';
+    text: string;
+    orderId?: number;
+    marginType?: string;
+    stopLossOrder?: boolean;
+    stopLossError?: string;
+  } | null>(null);
 
   useEffect(() => {
     try {
@@ -60,19 +70,23 @@ export const BinanceOrderModal: React.FC<BinanceOrderModalProps> = ({
   useEffect(() => {
     if (signal) {
       setLimitPrice(signal.entryZone.current);
-      setLeverage(signal.leverage.safe.multiplier || 5);
+      setLeverage(signal.leverage?.safe?.multiplier || 5);
     }
   }, [signal]);
 
   if (!isOpen) return null;
 
-  // Position Sizing Calculations (2% Rule)
+  // Position Sizing Calculations
   const isLong = signal.direction === 'LONG';
   const entry = orderType === 'LIMIT' ? limitPrice : signal.entryZone.current;
   const sl = signal.stopLoss.price;
   const slDistPct = entry > 0 ? Math.abs((entry - sl) / entry) * 100 : 2.0;
 
-  const maxDollarRisk = (walletBalance * customRiskPct) / 100;
+  // Evaluasi Gatekeeper Anomali Pasar (Peringatan Saja)
+  const gateEvaluation = validateFuturesEntryGate(signal);
+
+  // Perhitungan Risiko (Hard Cap $1 atau SOP 2%)
+  const maxDollarRisk = isHardCapActive ? hardCapDollar : (walletBalance * customRiskPct) / 100;
   const notionalSizeUsd = slDistPct > 0 ? maxDollarRisk / (slDistPct / 100) : 10;
   const marginRequiredUsd = leverage > 0 ? notionalSizeUsd / leverage : 2;
   const quantityCoins = entry > 0 ? notionalSizeUsd / entry : 0;
@@ -94,7 +108,7 @@ export const BinanceOrderModal: React.FC<BinanceOrderModalProps> = ({
     setResultMsg(null);
 
     try {
-      // Step 1: Execute primary entry order
+      // Execute Full Bracket Order: Enforce ISOLATED + Set Leverage + Entry Order + Auto-SL
       const res = await fetch('/api/futures/binance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -103,6 +117,9 @@ export const BinanceOrderModal: React.FC<BinanceOrderModalProps> = ({
           apiKey: config.apiKey,
           apiSecret: config.apiSecret,
           isTestnet: config.isTestnet,
+          direction: isLong ? 'LONG' : 'SHORT',
+          leverage,
+          stopLossPrice: sl,
           order: {
             symbol: signal.symbol,
             side: isLong ? 'BUY' : 'SELL',
@@ -118,10 +135,14 @@ export const BinanceOrderModal: React.FC<BinanceOrderModalProps> = ({
         throw new Error(data.error || 'Gagal mengeksekusi order di Binance');
       }
 
+      const slStatus = Boolean(data.stopLossOrder);
       setResultMsg({
         type: 'success',
-        text: `Order ${isLong ? 'LONG' : 'SHORT'} ${signal.symbol} berhasil dieksekusi! Status: ${data.order?.status || 'NEW'}`,
+        text: data.message || `Order ${isLong ? 'LONG' : 'SHORT'} ${signal.symbol} berhasil dieksekusi!`,
         orderId: data.order?.orderId,
+        marginType: data.marginType || 'ISOLATED',
+        stopLossOrder: slStatus,
+        stopLossError: data.stopLossError,
       });
     } catch (err: unknown) {
       setResultMsg({
@@ -135,9 +156,9 @@ export const BinanceOrderModal: React.FC<BinanceOrderModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/80 backdrop-blur-md font-sans">
-      <div className="bg-[#0e1118] border border-cyan-500/40 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div className="bg-[#0e1118] border border-cyan-500/40 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 max-h-[95vh] flex flex-col">
         {/* Header */}
-        <div className="bg-gradient-to-r from-zinc-900 via-[#101926] to-cyan-950/40 border-b border-white/10 p-4 flex items-center justify-between">
+        <div className="bg-gradient-to-r from-zinc-900 via-[#101926] to-cyan-950/40 border-b border-white/10 p-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
               <Zap className="w-4 h-4 animate-bounce" />
@@ -154,7 +175,7 @@ export const BinanceOrderModal: React.FC<BinanceOrderModalProps> = ({
                 </span>
               </div>
               <p className="text-[11px] text-zinc-400 font-mono">
-                SOP Enforced: Mode Isolated &amp; 2% Max Risk Rule
+                Enforced: Mode Isolated &amp; Bracket Auto-SL (Mark Price)
               </p>
             </div>
           </div>
@@ -167,7 +188,7 @@ export const BinanceOrderModal: React.FC<BinanceOrderModalProps> = ({
         </div>
 
         {/* Body */}
-        <div className="p-4 space-y-3.5 font-mono text-xs">
+        <div className="p-4 space-y-3 font-mono text-xs overflow-y-auto">
           {/* Pair & Direction Banner */}
           <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-900/90 border border-white/5">
             <div className="flex items-center gap-2">
@@ -182,8 +203,51 @@ export const BinanceOrderModal: React.FC<BinanceOrderModalProps> = ({
             </div>
             <div className="flex items-center gap-1.5 text-zinc-400">
               <Lock className="w-3.5 h-3.5 text-amber-400" />
-              <span className="text-[11px] font-bold text-amber-400">ISOLATED (Wajib)</span>
+              <span className="text-[11px] font-bold text-amber-400">ISOLATED (Otomatis Dikunci)</span>
             </div>
+          </div>
+
+          {/* Peringatan Gatekeeper & Anomali Pasar (Hanya Peringatan) */}
+          {gateEvaluation.warnings.length > 0 && (
+            <div className="p-2.5 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-300 space-y-1">
+              <div className="flex items-center gap-1.5 font-bold text-[11px]">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>Peringatan Radar Anomali Pasar:</span>
+              </div>
+              {gateEvaluation.warnings.map((w, idx) => (
+                <p key={idx} className="text-[10.5px] leading-tight text-amber-200/90 pl-5">
+                  • {w}
+                </p>
+              ))}
+            </div>
+          )}
+
+          {/* Toggle Mode Anti-Emosi ($1 Hard Cap) */}
+          <div className="p-2.5 rounded-xl bg-zinc-900/80 border border-zinc-700/60 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className={`w-4 h-4 ${isHardCapActive ? 'text-amber-400' : 'text-zinc-500'}`} />
+              <div>
+                <span className="font-bold text-[11px] text-white block">
+                  Mode Anti-Emosi (Kunci Rugi Maksimal $1.00 USD)
+                </span>
+                <span className="text-[10px] text-zinc-400">
+                  {isHardCapActive
+                    ? 'Aktif: Risiko kerugian jika SL terpicu dibatasi tepat $1.00'
+                    : 'Nonaktif: Menggunakan kalkulasi standar 2% SOP'}
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsHardCapActive(!isHardCapActive)}
+              className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all border ${
+                isHardCapActive
+                  ? 'bg-amber-500 text-black border-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.4)]'
+                  : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
+              }`}
+            >
+              {isHardCapActive ? 'AKTIF ($1.00)' : 'NONAKTIF'}
+            </button>
           </div>
 
           {/* Execution Settings Grid */}
@@ -246,18 +310,20 @@ export const BinanceOrderModal: React.FC<BinanceOrderModalProps> = ({
             </div>
           )}
 
-          {/* 2% Sizing Telemetry Matrix */}
+          {/* Sizing Telemetry Matrix */}
           <div className="bg-gradient-to-br from-cyan-950/30 to-zinc-900/80 border border-cyan-500/30 rounded-xl p-3 space-y-2">
             <div className="flex items-center justify-between text-[11px] text-zinc-400 border-b border-white/5 pb-1.5">
               <span>Saldo Dompet Terdeteksi:</span>
               <span className="font-bold text-white">${walletBalance.toFixed(2)} USDT</span>
             </div>
             <div className="flex items-center justify-between text-[11px] text-zinc-400 border-b border-white/5 pb-1.5">
-              <span>Maksimal Risiko (2% Modal):</span>
-              <span className="font-bold text-rose-400">-${maxDollarRisk.toFixed(2)} USD</span>
+              <span>Batas Risiko Terkunci:</span>
+              <span className={`font-bold ${isHardCapActive ? 'text-amber-400 font-black' : 'text-rose-400'}`}>
+                -${maxDollarRisk.toFixed(2)} USD {isHardCapActive && '(Kunci $1)'}
+              </span>
             </div>
             <div className="flex items-center justify-between text-[11px] text-zinc-400 border-b border-white/5 pb-1.5">
-              <span>Jarak Stop Loss:</span>
+              <span>Jarak Auto-Stop Loss:</span>
               <span className="font-bold text-zinc-300">-${slDistPct.toFixed(2)}% (${formatFuturesPrice(sl)})</span>
             </div>
             <div className="flex items-center justify-between text-xs pt-0.5">
@@ -286,7 +352,17 @@ export const BinanceOrderModal: React.FC<BinanceOrderModalProps> = ({
                 <span>{resultMsg.text}</span>
                 {resultMsg.orderId && (
                   <span className="block mt-0.5 text-[10px] text-emerald-400 font-bold">
-                    Order ID: #{resultMsg.orderId}
+                    Order ID: #{resultMsg.orderId} | Margin: {resultMsg.marginType}
+                  </span>
+                )}
+                {resultMsg.stopLossOrder && (
+                  <span className="block text-[10px] text-cyan-300 font-bold">
+                    🛡️ Auto Stop Loss terpasang otomatis via Mark Price.
+                  </span>
+                )}
+                {resultMsg.stopLossError && (
+                  <span className="block text-[10px] text-amber-400 font-bold">
+                    ⚠️ {resultMsg.stopLossError}
                   </span>
                 )}
               </div>
@@ -314,12 +390,12 @@ export const BinanceOrderModal: React.FC<BinanceOrderModalProps> = ({
               {isExecuting ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>MENGIRIM ORDER KE BINANCE...</span>
+                  <span>MEMPROSES BRACKET ORDER...</span>
                 </>
               ) : (
                 <>
                   <Zap className="w-4 h-4" />
-                  <span>KIRIM ORDER {isLong ? 'LONG' : 'SHORT'} KE BINANCE</span>
+                  <span>KIRIM ORDER {isLong ? 'LONG' : 'SHORT'} (ISOLATED + SL)</span>
                 </>
               )}
             </button>

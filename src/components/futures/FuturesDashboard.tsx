@@ -37,6 +37,7 @@ import { KnowledgeHubDrawer } from '../KnowledgeHubDrawer';
 import { AgentRationaleModal } from '../AgentRationaleModal';
 import { LivePositionTracker } from './LivePositionTracker';
 import { DailyPerformanceSummary } from './DailyPerformanceSummary';
+import { NewsSentimentPanel } from './NewsSentimentPanel';
 import { soundFx } from '../../engine/audioEngine';
 
 export const FuturesDashboard: React.FC = () => {
@@ -416,6 +417,12 @@ export const FuturesDashboard: React.FC = () => {
           onOpenChart={handleOpenChart}
         />
       )}
+
+      {/* Persistent AI News Sentiment Engine & Manual Paste Panel */}
+      <NewsSentimentPanel
+        onSelectCoin={(sym) => setSearchQuery(sym.replace('USDT', ''))}
+        onRefreshSignals={fetchFuturesData}
+      />
 
       {/* 3. Main Action Bar: Tombol Cari Otomatis & Search Bar */}
       <div className="bg-[#0e0e0e] border border-white/10 rounded-2xl p-3 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 shadow-xl">

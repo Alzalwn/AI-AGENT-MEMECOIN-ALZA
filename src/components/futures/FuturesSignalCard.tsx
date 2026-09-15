@@ -363,6 +363,40 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
           </div>
         )}
 
+        {/* News Sentiment Context Banner */}
+        {signal.newsContext && (
+          <div
+            className={`p-2.5 rounded-xl border font-mono text-xs flex items-center justify-between gap-2 ${
+              signal.newsContext.sentimentScore > 0
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                : signal.newsContext.sentimentScore < 0
+                ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                : 'bg-zinc-900 border-zinc-800 text-zinc-400'
+            }`}
+          >
+            <div className="flex items-center gap-2 truncate">
+              <span className="text-sm">📰</span>
+              <div className="truncate">
+                <div className="flex items-center gap-1.5 font-black text-[10px]">
+                  <span>KATALIS BERITA: {signal.newsContext.catalystType}</span>
+                  <span className="px-1 py-0.2 rounded bg-black/40 text-[9px]">
+                    {signal.newsContext.sentimentScore > 0
+                      ? `+${signal.newsContext.sentimentScore}`
+                      : signal.newsContext.sentimentScore}{' '}
+                    Poin
+                  </span>
+                </div>
+                <p className="text-[10px] text-zinc-300 truncate font-sans">
+                  {signal.newsContext.keyHeadline}
+                </p>
+              </div>
+            </div>
+            <span className="text-[9px] font-bold shrink-0 px-1.5 py-0.5 rounded bg-black/40">
+              {signal.newsContext.signalModifier.replace(/_/g, ' ')}
+            </span>
+          </div>
+        )}
+
         {/* Entry Zone & Stop Loss Box */}
         <div className="grid grid-cols-2 gap-2 bg-zinc-900/60 p-3 rounded-xl border border-zinc-800/80 font-mono text-xs">
           <div>

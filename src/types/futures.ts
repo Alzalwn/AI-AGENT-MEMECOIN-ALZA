@@ -4,6 +4,9 @@
  * open interest, dan dual-dashboard state.
  */
 
+import type { NewsImpactScore } from './newsTypes';
+export type { NewsImpactScore } from './newsTypes';
+
 export type FuturesDirection = 'LONG' | 'SHORT';
 
 export type FuturesSignalTier = 'SUPERNOVA' | 'HIGH' | 'MODERATE';
@@ -157,6 +160,7 @@ export interface BinanceFuturesSignal {
   bullBearDebate?: BullBearDebate;
   autoHedge?: AutoHedgeRecommendation;
   multiTimeframe?: MultiTimeframeAlignment;
+  newsContext?: NewsImpactScore;
 }
 
 export type TimeframeTrendBias = 'BULLISH' | 'BEARISH' | 'NEUTRAL';

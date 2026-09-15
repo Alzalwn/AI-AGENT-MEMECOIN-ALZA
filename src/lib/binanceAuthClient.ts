@@ -346,3 +346,142 @@ export async function getBinanceDailyIncome(
 
   return makeSignedRequest<BinanceIncomeRecord[]>('/fapi/v1/income', credentials, params, 'GET');
 }
+
+/**
+ * 7. Mengatur Margin Type (POST /fapi/v1/marginType)
+ * Mengunci ke mode ISOLATED agar saldo cross-wallet tidak terancam likuidasi.
+ */
+export async function setMarginType(
+  credentials: BinanceApiCredentials,
+  symbol: string,
+  marginType: 'ISOLATED' | 'CROSSED'
+): Promise<void> {
+  try {
+    await makeSignedRequest('/fapi/v1/marginType', credentials, {
+      symbol: symbol.trim().toUpperCase(),
+      marginType,
+    }, 'POST');
+  } catch (err: unknown) {
+    // Error code -4046: "No need to change margin type." (sudah dalam ISOLATED/CROSSED), abaikan error ini
+    if (err instanceof Error && (err.message.includes('-4046') || err.message.includes('4046'))) {
+      return;
+    }
+    throw err;
+  }
+}
+
+/**
+ * 8. Mengatur Nilai Leverage (POST /fapi/v1/leverage)
+ */
+export async function setLeverage(
+  credentials: BinanceApiCredentials,
+  symbol: string,
+  leverage: number
+): Promise<{ leverage: number; symbol: string }> {
+  return makeSignedRequest<{ leverage: number; symbol: string }>(
+    '/fapi/v1/leverage',
+    credentials,
+    {
+      symbol: symbol.trim().toUpperCase(),
+      leverage: Math.round(leverage),
+    },
+    'POST'
+  );
+}
+
+/**
+ * 9. Memasang Auto-Bracket Stop Loss (STOP_MARKET)
+ * Menggunakan MARK_PRICE untuk melindungi dari wick manipulation.
+ */
+export async function placeBracketStopLoss(
+  credentials: BinanceApiCredentials,
+  symbol: string,
+  direction: 'LONG' | 'SHORT',
+  stopPrice: number
+): Promise<BinanceOrderResult> {
+  // Menutup LONG butuh SELL; menutup SHORT butuh BUY
+  const side: 'BUY' | 'SELL' = direction === 'LONG' ? 'SELL' : 'BUY';
+  
+  // Format stop price dengan presisi wajar
+  const formattedStopPrice = stopPrice >= 1 ? stopPrice.toFixed(4) : stopPrice.toFixed(8);
+
+  return makeSignedRequest<BinanceOrderResult>('/fapi/v1/order', credentials, {
+    symbol: symbol.trim().toUpperCase(),
+    side,
+    type: 'STOP_MARKET',
+    stopPrice: formattedStopPrice,
+    closePosition: 'true',
+    workingType: 'MARK_PRICE',
+  }, 'POST');
+}
+
+export interface BracketOrderResult {
+  marginType: 'ISOLATED';
+  leverage: number;
+  entryOrder: BinanceOrderResult;
+  stopLossOrder: BinanceOrderResult | null;
+  stopLossError?: string;
+}
+
+/**
+ * 10. Eksekusi Full Bracket Order:
+ * 1) Enforce ISOLATED margin
+ * 2) Enforce leverage
+ * 3) Eksekusi order entry (MARKET/LIMIT)
+ * 4) Pasang otomatis bracket Stop Loss (STOP_MARKET @ MARK_PRICE)
+ */
+export async function placeFullBracketOrder(
+  credentials: BinanceApiCredentials,
+  params: PlaceOrderParams & {
+    direction: 'LONG' | 'SHORT';
+    stopLossPrice?: number;
+    leverage?: number;
+  }
+): Promise<BracketOrderResult> {
+  const symbol = params.symbol.trim().toUpperCase();
+  const targetLeverage = params.leverage || 5;
+
+  // Step 1: Enforce ISOLATED Margin
+  try {
+    await setMarginType(credentials, symbol, 'ISOLATED');
+  } catch (err) {
+    console.warn(`[BinanceAuthClient] Gagal setMarginType ${symbol} ke ISOLATED:`, err);
+  }
+
+  // Step 2: Enforce Leverage
+  try {
+    await setLeverage(credentials, symbol, targetLeverage);
+  } catch (err) {
+    console.warn(`[BinanceAuthClient] Gagal setLeverage ${symbol} ke ${targetLeverage}x:`, err);
+  }
+
+  // Step 3: Eksekusi order entry
+  const entryOrder = await placeFuturesOrder(credentials, params);
+
+  // Step 4: Pasang Auto Bracket Stop Loss jika stopLossPrice valid (> 0)
+  let stopLossOrder: BinanceOrderResult | null = null;
+  let stopLossError: string | undefined;
+
+  if (params.stopLossPrice && params.stopLossPrice > 0) {
+    try {
+      stopLossOrder = await placeBracketStopLoss(
+        credentials,
+        symbol,
+        params.direction,
+        params.stopLossPrice
+      );
+    } catch (err: unknown) {
+      stopLossError = err instanceof Error ? err.message : 'Gagal memasang Auto-SL';
+      console.error(`[BinanceAuthClient] Gagal memasang Auto-SL ${symbol}:`, stopLossError);
+    }
+  }
+
+  return {
+    marginType: 'ISOLATED',
+    leverage: targetLeverage,
+    entryOrder,
+    stopLossOrder,
+    stopLossError,
+  };
+}
+

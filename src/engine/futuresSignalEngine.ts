@@ -43,6 +43,8 @@ import {
 } from '../lib/binanceClient';
 import { parseKlinesToCandles, detectCandlestickPatterns } from './candlestickPatternEngine';
 import { computeRealTechnicalIndicators } from './technicalIndicatorsEngine';
+import { fetchRecentCryptoNews } from './newsFetchEngine';
+import { analyzeSentimentForSymbol, getCachedSentiment } from './newsSentimentEngine';
 
 /**
  * Format angka presisi dinamis berdasarkan harga koin (misal BTC vs PEPE)
@@ -63,16 +65,40 @@ export function calculatePositionSizing(
   stopLossPct: number = 2.0,
   leverageMultiplier: number = 5
 ): PositionSizingRecommendation {
-  const maxRiskPct = 2.0; // Batas risiko maksimal 2% per trade
-  const maxRiskAmountUsd = Number(((walletBalanceUsd * maxRiskPct) / 100).toFixed(2));
-  
-  // Posisi nominal (notional) agar saat SL terkena, kerugian = maxRiskAmountUsd
+  return calculatePositionSizingWithHardCap(walletBalanceUsd, stopLossPct, leverageMultiplier);
+}
+
+/**
+ * Kalkulator Manajemen Risiko dengan Opsi Hard Cap Dollar (Mode Anti-Emosi: batas kerugian nominal $1 USD)
+ */
+export function calculatePositionSizingWithHardCap(
+  walletBalanceUsd: number = 20,
+  stopLossPct: number = 2.0,
+  leverageMultiplier: number = 5,
+  hardCapDollarRisk?: number
+): PositionSizingRecommendation {
+  const isHardCapActive = hardCapDollarRisk !== undefined && hardCapDollarRisk > 0;
   const safeSlPct = Math.max(stopLossPct, 0.5);
+
+  // Jika hardCap diaktifkan (misal $1.00), gunakan angka tersebut langsung; jika tidak, gunakan 2% SOP
+  const maxRiskAmountUsd = isHardCapActive
+    ? Number(hardCapDollarRisk.toFixed(2))
+    : Number(((walletBalanceUsd * 2.0) / 100).toFixed(2));
+
+  const maxRiskPct = walletBalanceUsd > 0
+    ? Number(((maxRiskAmountUsd / walletBalanceUsd) * 100).toFixed(1))
+    : 2.0;
+
+  // Notional = Risiko / Jarak SL
   const notionalUsd = maxRiskAmountUsd / (safeSlPct / 100);
-  
+
   // Margin yang dimasukkan ke order Binance = Notional / Leverage
   const rawMarginUsd = notionalUsd / leverageMultiplier;
-  const recommendedMarginUsd = Number(Math.max(rawMarginUsd, 1).toFixed(2));
+  const recommendedMarginUsd = Number(Math.max(rawMarginUsd, 0.5).toFixed(2));
+
+  const note = isHardCapActive
+    ? `🔒 MODE ANTI-EMOSI AKTIF: Jika Stop Loss (-${safeSlPct.toFixed(1)}%) tertabrak, kerugian Anda terkunci tepat -$${maxRiskAmountUsd.toFixed(2)} USD (Margin: $${recommendedMarginUsd}).`
+    : `Batas risiko SOP 2% modal ($${walletBalanceUsd}): Jika SL (-${safeSlPct.toFixed(1)}%) tertabrak, kerugian maksimal -$${maxRiskAmountUsd} USD.`;
 
   return {
     walletReferenceUsd: walletBalanceUsd,
@@ -80,7 +106,65 @@ export function calculatePositionSizing(
     maxRiskAmountUsd,
     recommendedMarginUsd,
     recommendedLeverage: leverageMultiplier,
-    note: `Batas risiko ${maxRiskPct}% modal ($${walletBalanceUsd}): Jika SL (-${safeSlPct.toFixed(1)}%) tertabrak, kerugian Anda terkontrol hanya -$${maxRiskAmountUsd} USD.`,
+    note,
+  };
+}
+
+/**
+ * Gatekeeper Evaluasi Risiko Sebelum Eksekusi Order Futures
+ * Mengecek anomali pasar (BTC Guard, Funding Rate Drag, Volatilitas Ekstrem).
+ * Sesuai instruksi: menghasilkan peringatan yang jelas dan transparan.
+ */
+export function validateFuturesEntryGate(signal: BinanceFuturesSignal): {
+  isRestricted: boolean;
+  warnings: string[];
+  notices: string[];
+} {
+  const warnings: string[] = [];
+  const notices: string[] = [];
+  let isRestricted = false;
+
+  // 1. BTC Guard Spillover / Flash Dump Alert
+  if (signal.autoHedge?.gatekeeperStatus === 'RESTRICTED') {
+    isRestricted = true;
+    warnings.push(`⚠️ PERINGATAN BTC GUARD: ${signal.autoHedge.gatekeeperReason}`);
+  } else if (signal.autoHedge?.gatekeeperStatus === 'CAUTION') {
+    warnings.push(`⚠️ PERINGATAN RISIKO: ${signal.autoHedge.gatekeeperReason}`);
+  }
+
+  // 2. Funding Rate Anomaly Warning
+  if (signal.direction === 'LONG' && signal.derivativesData.fundingRatePct >= 0.05) {
+    warnings.push(`⚠️ FUNDING RATE TINGGI (+${signal.derivativesData.fundingRatePct.toFixed(4)}%): Posisi Long sangat padat, potensi pembalikan atau biaya funding.`);
+  } else if (signal.direction === 'SHORT' && signal.derivativesData.fundingRatePct <= -0.04) {
+    warnings.push(`⚠️ FUNDING RATE NEGATIF (${signal.derivativesData.fundingRatePct.toFixed(4)}%): Posisi Short padat, rawan short squeeze mendadak.`);
+  }
+
+  // 3. Counter-Trend Warning
+  if (signal.multiTimeframe?.isCounterTrendRisk) {
+    warnings.push(`⚠️ COUNTER-TREND RISK: Posisi melawan struktur tren 4h/Daily. Disarankan disiplin trailing stop!`);
+  }
+
+  // 3b. Peringatan Sentimen Berita AI
+  if (signal.newsContext) {
+    if (signal.direction === 'LONG' && signal.newsContext.sentimentScore <= -25) {
+      warnings.push(`⚠️ SENTIMEN BERITA BEARISH (${signal.newsContext.sentimentScore}): ${signal.newsContext.keyHeadline}`);
+    } else if (signal.direction === 'SHORT' && signal.newsContext.sentimentScore >= 25) {
+      warnings.push(`⚠️ SENTIMEN BERITA BULLISH (+${signal.newsContext.sentimentScore}): ${signal.newsContext.keyHeadline}`);
+    } else if (signal.newsContext.signalModifier === 'VETO_LONG' && signal.direction === 'LONG') {
+      warnings.push(`🚨 VETO BERITA: Katalis berita sangat negatif terhadap posisi LONG.`);
+    } else if (signal.newsContext.signalModifier === 'VETO_SHORT' && signal.direction === 'SHORT') {
+      warnings.push(`🚨 VETO BERITA: Katalis berita sangat positif, rawan tergilas pump jika SHORT.`);
+    }
+  }
+
+  // 4. Catatan Kepatuhan Disiplin
+  notices.push(`Mode ISOLATED akan dikunci otomatis pada order ini.`);
+  notices.push(`Auto-Stop Loss terpasang di harga $${formatFuturesPrice(signal.stopLoss.price)} via Mark Price.`);
+
+  return {
+    isRestricted,
+    warnings,
+    notices,
   };
 }
 
@@ -966,10 +1050,11 @@ function generateIndicatorExplanation(
  * Menghasilkan sinyal futures dari seluruh daftar koin Binance
  */
 export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> {
-  const [tickers, fundingMap, btcContext] = await Promise.all([
+  const [tickers, fundingMap, btcContext, newsList] = await Promise.all([
     getFutures24hTickers(),
     getFundingRates(),
     getBtcMarketContext(),
+    fetchRecentCryptoNews().catch(() => []),
   ]);
 
   if (!tickers || tickers.length === 0) {
@@ -1091,6 +1176,46 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
                 signal.indicatorExplanation.directionVerdict = `🟡 KEPUTUSAN TEGAS: WAIT & SEE / NEUTRAL. Terdapat formasi pola candlestick ${pattern.name} yang berlawanan dengan arah indikator, meningkatkan risiko pembalikan harga mendadak.`;
               }
             }
+          }
+
+          // 4. Analisis Dampak Sentimen Berita AI (Gemini + Public Feeds)
+          try {
+            let newsScore = getCachedSentiment(signal.symbol);
+            if (!newsScore && newsList.length > 0) {
+              newsScore = await analyzeSentimentForSymbol(signal.symbol, newsList);
+            }
+            if (newsScore) {
+              signal.newsContext = newsScore;
+
+              // Formula Bobot Sentimen: 70% teknikal + 30% berita (hanya jika ada sentimen aktif)
+              if (newsScore.sentimentScore !== 0) {
+                const techScore = signal.overallScore;
+                const isLong = signal.direction === 'LONG';
+                const alignedSentiment = isLong ? newsScore.sentimentScore : -newsScore.sentimentScore;
+                const newsScoreNormalized = Math.max(0, Math.min(100, (alignedSentiment + 100) / 2));
+
+                signal.overallScore = Math.round(techScore * 0.70 + newsScoreNormalized * 0.30);
+
+                // Re-evaluasi signalTier berdasarkan sinergi berita
+                if (
+                  (newsScore.signalModifier === 'STRONG_BOOST_LONG' && isLong) ||
+                  (newsScore.signalModifier === 'STRONG_BOOST_SHORT' && !isLong)
+                ) {
+                  if (signal.overallScore >= 88) signal.signalTier = 'SUPERNOVA';
+                } else if (
+                  (newsScore.signalModifier === 'VETO_LONG' && isLong) ||
+                  (newsScore.signalModifier === 'VETO_SHORT' && !isLong)
+                ) {
+                  signal.overallScore = Math.max(50, signal.overallScore - 25);
+                  signal.signalTier = 'MODERATE';
+                  if (signal.indicatorExplanation) {
+                    signal.indicatorExplanation.directionVerdict = `⚠️ KEPUTUSAN TEGAS: WAIT & SEE. Katalis berita berlawanan arah dengan sinyal (${newsScore.keyHeadline}).`;
+                  }
+                }
+              }
+            }
+          } catch (err) {
+            // Non-blocking: kegagalan analisis berita tidak menghentikan sinyal teknikal
           }
         }
       } catch (err) {
