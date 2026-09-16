@@ -19,6 +19,7 @@ import {
   BellOff,
   Activity,
   Award,
+  Flame,
 } from 'lucide-react';
 import { BinanceFuturesSignal, FuturesMarketStats, FuturesDirection } from '../../types/futures';
 import { FuturesHeroStats } from './FuturesHeroStats';
@@ -38,6 +39,7 @@ import { AgentRationaleModal } from '../AgentRationaleModal';
 import { LivePositionTracker } from './LivePositionTracker';
 import { DailyPerformanceSummary } from './DailyPerformanceSummary';
 import { NewsSentimentPanel } from './NewsSentimentPanel';
+import { LiquidationHeatmapWidget } from './LiquidationHeatmapWidget';
 import { soundFx } from '../../engine/audioEngine';
 
 export const FuturesDashboard: React.FC = () => {
@@ -51,12 +53,17 @@ export const FuturesDashboard: React.FC = () => {
 
   // SOP Knowledge Hub & 5-Agent Rationale Modals
   const [isSopDrawerOpen, setIsSopDrawerOpen] = useState<boolean>(false);
+  const [sopDrawerTab, setSopDrawerTab] = useState<'sop' | 'calculator' | 'candlestick' | 'smc' | 'funding' | 'macro'>('sop');
+  const [sopDrawerPatternId, setSopDrawerPatternId] = useState<string | undefined>(undefined);
   const [isRationaleOpen, setIsRationaleOpen] = useState<boolean>(false);
   const [selectedRationaleSignal, setSelectedRationaleSignal] = useState<{ symbol: string; direction: 'LONG' | 'SHORT'; score: number } | null>(null);
 
+  // Selected Symbol for Liquidation Map
+  const [selectedLiquidationSymbol, setSelectedLiquidationSymbol] = useState<string>('BTCUSDT');
+
   // Institutional Suite Active Tab
   const [activeToolSuite, setActiveToolSuite] = useState<
-    'NONE' | 'CALCULATOR' | 'OI_MATRIX' | 'ARBITRAGE' | 'KILLZONES' | 'PAPER_TRADE' | 'LIVE_POSITIONS' | 'DAILY_REPORT'
+    'NONE' | 'CALCULATOR' | 'OI_MATRIX' | 'ARBITRAGE' | 'KILLZONES' | 'PAPER_TRADE' | 'LIVE_POSITIONS' | 'DAILY_REPORT' | 'LIQUIDATION_HEATMAP'
   >('NONE');
 
   // Filter & Multi-Choice States
@@ -277,11 +284,25 @@ export const FuturesDashboard: React.FC = () => {
               <span>📋 Rangkuman & Roadmap</span>
             </button>
             <button
-              onClick={() => setIsSopDrawerOpen(true)}
+              onClick={() => {
+                setSopDrawerTab('sop');
+                setIsSopDrawerOpen(true);
+              }}
               className="px-2.5 py-1 rounded-xl text-xs font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/50 hover:bg-amber-500 hover:text-black transition-all flex items-center gap-1 cursor-pointer shadow-md whitespace-nowrap active:scale-95"
               title="Buka 10 Perintah Trader Binance & Kalkulator Sizing 2%"
             >
               <span>📚 10 Perintah SOP</span>
+            </button>
+            <button
+              onClick={() => {
+                setSopDrawerTab('candlestick');
+                setSopDrawerPatternId(undefined);
+                setIsSopDrawerOpen(true);
+              }}
+              className="px-2.5 py-1 rounded-xl text-xs font-mono font-bold bg-gradient-to-r from-amber-500/20 to-yellow-500/20 text-yellow-300 border border-yellow-500/50 hover:bg-yellow-500 hover:text-black transition-all flex items-center gap-1 cursor-pointer shadow-md whitespace-nowrap active:scale-95"
+              title="Buka Kamus Pola Candlestick & Reversal Setup Institusional"
+            >
+              <span>🕯️ Kamus Candlestick</span>
             </button>
             <button
               onClick={() => {
@@ -295,6 +316,18 @@ export const FuturesDashboard: React.FC = () => {
             </button>
           </div>
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+            <button
+              onClick={() => setActiveToolSuite(activeToolSuite === 'LIQUIDATION_HEATMAP' ? 'NONE' : 'LIQUIDATION_HEATMAP')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                activeToolSuite === 'LIQUIDATION_HEATMAP'
+                  ? 'bg-gradient-to-r from-amber-500 to-red-500 text-black shadow-[0_0_12px_rgba(245,158,11,0.5)] font-black'
+                  : 'bg-zinc-900 text-amber-400 hover:text-amber-300 border border-amber-500/40'
+              }`}
+            >
+              <Flame className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+              <span>🔥 Peta Likuidasi (Heatmap)</span>
+            </button>
+
             <button
               onClick={() => setActiveToolSuite(activeToolSuite === 'LIVE_POSITIONS' ? 'NONE' : 'LIVE_POSITIONS')}
               className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
@@ -378,6 +411,14 @@ export const FuturesDashboard: React.FC = () => {
       </div>
 
       {/* Render Active Institutional Tool if selected */}
+      {activeToolSuite === 'LIQUIDATION_HEATMAP' && (
+        <LiquidationHeatmapWidget
+          initialSymbol={selectedLiquidationSymbol}
+          onOpenChart={handleOpenChart}
+          onSelectCoin={(sym) => setSearchQuery(sym.replace('USDT', ''))}
+        />
+      )}
+
       {activeToolSuite === 'LIVE_POSITIONS' && (
         <LivePositionTracker onOpenChart={handleOpenChart} />
       )}
@@ -643,6 +684,37 @@ export const FuturesDashboard: React.FC = () => {
               signal={signal}
               onOpenChart={(sym, sig) => handleOpenChart(sym, sig)}
               onDismiss={handleDismiss}
+              onOpenCandlestickPattern={(patternName) => {
+                setSopDrawerTab('candlestick');
+                // Auto match pattern name to id if applicable
+                const lower = patternName.toLowerCase();
+                if (lower.includes('pinbar') || lower.includes('hammer')) {
+                  setSopDrawerPatternId('bullish_pinbar');
+                } else if (lower.includes('shooting') || lower.includes('bintang jatuh')) {
+                  setSopDrawerPatternId('bearish_pinbar');
+                } else if (lower.includes('morning')) {
+                  setSopDrawerPatternId('morning_star');
+                } else if (lower.includes('evening')) {
+                  setSopDrawerPatternId('evening_star');
+                } else if (lower.includes('engulfing') && lower.includes('bull')) {
+                  setSopDrawerPatternId('bullish_engulfing');
+                } else if (lower.includes('engulfing') && lower.includes('bear')) {
+                  setSopDrawerPatternId('bearish_engulfing');
+                } else if (lower.includes('three line') || lower.includes('strike')) {
+                  setSopDrawerPatternId('three_line_strike_bull');
+                } else if (lower.includes('inside')) {
+                  setSopDrawerPatternId('inside_bar_breakout');
+                } else if (lower.includes('tweezer')) {
+                  setSopDrawerPatternId('tweezer_bottoms');
+                } else if (lower.includes('turtle') || lower.includes('soup')) {
+                  setSopDrawerPatternId('ict_turtle_soup');
+                }
+                setIsSopDrawerOpen(true);
+              }}
+              onOpenLiquidationMap={(sym) => {
+                setSelectedLiquidationSymbol(sym);
+                setActiveToolSuite('LIQUIDATION_HEATMAP');
+              }}
             />
           ))}
         </div>
@@ -700,6 +772,8 @@ export const FuturesDashboard: React.FC = () => {
       <KnowledgeHubDrawer
         isOpen={isSopDrawerOpen}
         onClose={() => setIsSopDrawerOpen(false)}
+        initialTab={sopDrawerTab}
+        initialPatternId={sopDrawerPatternId}
       />
 
       {/* 10. 5-Agent Consensus Chain-of-Thought Modal */}

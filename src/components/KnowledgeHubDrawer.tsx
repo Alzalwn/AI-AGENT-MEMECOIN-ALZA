@@ -16,15 +16,39 @@ import {
   ExternalLink,
   Globe,
   Brain,
+  Search,
+  Target,
+  Sparkles,
+  Filter,
 } from 'lucide-react';
+import { CandlestickVisualDiagram } from './futures/CandlestickVisualDiagram';
+import { CANDLESTICK_DICTIONARY, CandlestickPatternItem } from '../data/CandlestickDictionaryData';
 
 interface KnowledgeHubDrawerProps {
   isOpen: boolean;
   onClose: () => void;
+  initialTab?: 'sop' | 'calculator' | 'candlestick' | 'smc' | 'funding' | 'macro';
+  initialPatternId?: string;
 }
 
-export const KnowledgeHubDrawer: React.FC<KnowledgeHubDrawerProps> = ({ isOpen, onClose }) => {
-  const [activeTab, setActiveTab] = useState<'sop' | 'calculator' | 'smc' | 'funding' | 'macro'>('sop');
+export const KnowledgeHubDrawer: React.FC<KnowledgeHubDrawerProps> = ({
+  isOpen,
+  onClose,
+  initialTab = 'sop',
+  initialPatternId,
+}) => {
+  const [activeTab, setActiveTab] = useState<'sop' | 'calculator' | 'candlestick' | 'smc' | 'funding' | 'macro'>(initialTab);
+
+  // Candlestick Dictionary State
+  const [selectedPatternId, setSelectedPatternId] = useState<string>(initialPatternId || CANDLESTICK_DICTIONARY[0].id);
+  const [candlestickSearch, setCandlestickSearch] = useState<string>('');
+  const [candlestickFilter, setCandlestickFilter] = useState<'ALL' | 'BULLISH' | 'BEARISH' | 'REVERSAL' | 'CONTINUATION'>('ALL');
+
+  // Sinkronisasi tab/pattern jika prop berubah
+  React.useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+    if (initialPatternId) setSelectedPatternId(initialPatternId);
+  }, [initialTab, initialPatternId]);
 
   // Interactive Checklist State for 10 Perintah
   const [checkedItems, setCheckedItems] = useState<Record<number, boolean>>({});
@@ -171,6 +195,21 @@ export const KnowledgeHubDrawer: React.FC<KnowledgeHubDrawerProps> = ({ isOpen, 
             >
               <Calculator className="w-4 h-4" />
               Kalkulator Sizing 2%
+            </button>
+
+            <button
+              onClick={() => setActiveTab('candlestick')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all shrink-0 ${
+                activeTab === 'candlestick'
+                  ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-zinc-950 font-bold shadow-md shadow-amber-500/20'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+              }`}
+            >
+              <BookOpen className="w-4 h-4 text-amber-400" />
+              Kamus Candlestick &amp; Reversal
+              <span className="text-[9px] bg-amber-500/30 text-amber-200 px-1.5 py-0.2 rounded font-bold">
+                10+ POLA
+              </span>
             </button>
 
             <button
@@ -509,6 +548,198 @@ export const KnowledgeHubDrawer: React.FC<KnowledgeHubDrawerProps> = ({ isOpen, 
                 </div>
               </div>
             )}
+
+            {/* TAB: KAMUS CANDLESTICK & REVERSAL INSTITUSIONAL */}
+            {activeTab === 'candlestick' && (() => {
+              const currentPattern = CANDLESTICK_DICTIONARY.find((p) => p.id === selectedPatternId) || CANDLESTICK_DICTIONARY[0];
+              const filteredList = CANDLESTICK_DICTIONARY.filter((p) => {
+                if (candlestickFilter === 'BULLISH' && p.bias !== 'BULLISH') return false;
+                if (candlestickFilter === 'BEARISH' && p.bias !== 'BEARISH') return false;
+                if (candlestickFilter === 'REVERSAL' && p.type !== 'REVERSAL') return false;
+                if (candlestickFilter === 'CONTINUATION' && p.type !== 'CONTINUATION') return false;
+                if (candlestickSearch.trim()) {
+                  const q = candlestickSearch.toLowerCase();
+                  return p.name.toLowerCase().includes(q) || p.indonesianName.toLowerCase().includes(q);
+                }
+                return true;
+              });
+
+              return (
+                <div className="space-y-5 font-sans">
+                  {/* Search & Filter Toolbar */}
+                  <div className="bg-zinc-900/90 border border-white/10 rounded-xl p-3 space-y-2.5">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={candlestickSearch}
+                        onChange={(e) => setCandlestickSearch(e.target.value)}
+                        placeholder="Cari pola (misal: Pinbar, Engulfing, Morning Star, Turtle Soup)..."
+                        className="w-full bg-zinc-950/80 border border-zinc-700/80 rounded-lg px-3 py-2 pl-9 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500/70"
+                      />
+                      <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-2.5 pointer-events-none" />
+                    </div>
+
+                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1">
+                      <span className="text-[11px] text-zinc-500 font-bold shrink-0 mr-1 flex items-center gap-1">
+                        <Filter className="w-3 h-3" /> FILTER:
+                      </span>
+                      {(['ALL', 'BULLISH', 'BEARISH', 'REVERSAL', 'CONTINUATION'] as const).map((f) => (
+                        <button
+                          key={f}
+                          onClick={() => setCandlestickFilter(f)}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all shrink-0 cursor-pointer ${
+                            candlestickFilter === f
+                              ? 'bg-amber-500 text-zinc-950 shadow-sm'
+                              : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                          }`}
+                        >
+                          {f === 'ALL' ? 'Semua (10+)' : f === 'BULLISH' ? '🟢 Bullish' : f === 'BEARISH' ? '🔴 Bearish' : f === 'REVERSAL' ? '🔄 Reversal' : '⚡ Continuation'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Horizontal Mini-Catalog Picker */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs text-zinc-400 font-mono">
+                      <span>PILIH POLA UNTUK DIBEDAH ({filteredList.length} Ditemukan):</span>
+                      <span className="text-[10px] text-amber-400">Klik untuk melihat diagram visual</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
+                      {filteredList.map((pat) => {
+                        const isSelected = pat.id === currentPattern.id;
+                        return (
+                          <button
+                            key={pat.id}
+                            onClick={() => setSelectedPatternId(pat.id)}
+                            className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
+                              isSelected
+                                ? 'bg-amber-500/20 border-amber-500/80 shadow-md shadow-amber-500/10'
+                                : 'bg-zinc-900/60 border-zinc-800 hover:border-zinc-700'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-1">
+                              <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                                pat.bias === 'BULLISH'
+                                  ? 'bg-emerald-500/20 text-emerald-300'
+                                  : pat.bias === 'BEARISH'
+                                  ? 'bg-red-500/20 text-red-300'
+                                  : 'bg-zinc-800 text-zinc-300'
+                              }`}>
+                                {pat.bias}
+                              </span>
+                              <span className="text-[10px] font-mono font-bold text-amber-400">
+                                {pat.winrate}% WR
+                              </span>
+                            </div>
+                            <span className="text-xs font-bold text-zinc-200 line-clamp-1">
+                              {pat.name.split('(')[0]}
+                            </span>
+                            <span className="text-[10px] text-zinc-500 line-clamp-1">
+                              {pat.type} · {pat.idealTimeframe}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* ACTIVE PATTERN SHOWCASE */}
+                  <div className="bg-zinc-900/90 border border-white/10 rounded-2xl p-4 sm:p-5 space-y-4 shadow-xl">
+                    {/* Header Detail */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-white/10">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-black text-white">{currentPattern.name}</h3>
+                          <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded font-mono font-bold">
+                            {currentPattern.category}
+                          </span>
+                        </div>
+                        <p className="text-xs text-amber-300/90 mt-0.5 font-medium">{currentPattern.indonesianName}</p>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-mono font-bold">
+                          Winrate: {currentPattern.winrate}%
+                        </div>
+                        <div className="px-2.5 py-1 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 text-xs font-mono font-bold">
+                          R:R {currentPattern.recommendedRr}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Interactive SVG Diagram */}
+                    <CandlestickVisualDiagram pattern={currentPattern} />
+
+                    {/* 4-Box SOP Execution Protocol */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 font-mono text-xs">
+                      {/* Entry Trigger */}
+                      <div className="p-3 rounded-xl bg-black/40 border border-cyan-500/20 space-y-1">
+                        <span className="text-cyan-400 font-bold flex items-center gap-1.5">
+                          <Target className="w-3.5 h-3.5" /> ATURAN ENTRY TRIGGER
+                        </span>
+                        <p className="text-zinc-300 text-[11px] leading-relaxed">
+                          {currentPattern.executionRules.entryTrigger}
+                        </p>
+                      </div>
+
+                      {/* Server Stop Loss */}
+                      <div className="p-3 rounded-xl bg-black/40 border border-red-500/20 space-y-1">
+                        <span className="text-red-400 font-bold flex items-center gap-1.5">
+                          <ShieldCheck className="w-3.5 h-3.5" /> STOP LOSS SERVER BINANCE
+                        </span>
+                        <p className="text-zinc-300 text-[11px] leading-relaxed">
+                          {currentPattern.executionRules.serverStopLoss}
+                        </p>
+                      </div>
+
+                      {/* Take Profit Plan */}
+                      <div className="p-3 rounded-xl bg-black/40 border border-emerald-500/20 space-y-1">
+                        <span className="text-emerald-400 font-bold flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> RENCANA TAKE PROFIT (50% BE)
+                        </span>
+                        <p className="text-zinc-300 text-[11px] leading-relaxed">
+                          {currentPattern.executionRules.takeProfitPlan}
+                        </p>
+                      </div>
+
+                      {/* Ideal Market Conditions */}
+                      <div className="p-3 rounded-xl bg-black/40 border border-amber-500/20 space-y-1">
+                        <span className="text-amber-400 font-bold flex items-center gap-1.5">
+                          <Layers className="w-3.5 h-3.5" /> KONDISI PASAR IDEAL
+                        </span>
+                        <p className="text-zinc-300 text-[11px] leading-relaxed">
+                          {currentPattern.executionRules.idealConditions}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Smart Money Rationale */}
+                    <div className="p-3.5 rounded-xl bg-gradient-to-r from-blue-950/20 to-purple-950/20 border border-blue-500/30 text-xs space-y-1">
+                      <span className="text-blue-300 font-bold flex items-center gap-1.5">
+                        <Brain className="w-3.5 h-3.5" /> LOGIKA BANDAR &amp; INSTITUSI (SMART MONEY)
+                      </span>
+                      <p className="text-zinc-300 text-[11px] leading-relaxed font-sans">
+                        {currentPattern.smartMoneyRationale}
+                      </p>
+                    </div>
+
+                    {/* Traps and Fakeouts */}
+                    <div className="p-3.5 rounded-xl bg-red-950/20 border border-red-500/30 text-xs space-y-2">
+                      <span className="text-red-300 font-bold flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 text-red-400" /> 3 JEBAKAN FAKEOUT (HINDARI ENTRY JIKA INI TERJADI)
+                      </span>
+                      <ul className="space-y-1 text-[11px] text-zinc-300 font-sans list-disc pl-4">
+                        {currentPattern.trapsAndFakeouts.map((trap, i) => (
+                          <li key={i} className="leading-relaxed">{trap}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Footer */}

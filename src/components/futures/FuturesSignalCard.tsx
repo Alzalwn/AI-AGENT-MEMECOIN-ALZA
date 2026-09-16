@@ -41,12 +41,16 @@ interface FuturesSignalCardProps {
   signal: BinanceFuturesSignal;
   onOpenChart: (symbol: string, signal?: BinanceFuturesSignal) => void;
   onDismiss?: (id: string) => void;
+  onOpenCandlestickPattern?: (patternName: string) => void;
+  onOpenLiquidationMap?: (symbol: string) => void;
 }
 
 export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
   signal,
   onOpenChart,
   onDismiss,
+  onOpenCandlestickPattern,
+  onOpenLiquidationMap,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -249,22 +253,29 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
               )}
 
               {signal.candlestickPattern && (
-                <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1 shadow-sm ${
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onOpenCandlestickPattern) {
+                      onOpenCandlestickPattern(signal.candlestickPattern!.name);
+                    }
+                  }}
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1 shadow-sm transition-transform hover:scale-105 active:scale-95 cursor-pointer ${
                     signal.candlestickPattern.bias === 'BULLISH'
-                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
+                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/25'
                       : signal.candlestickPattern.bias === 'BEARISH'
-                      ? 'bg-rose-500/15 text-rose-300 border-rose-500/40'
-                      : 'bg-zinc-800 text-zinc-300 border-zinc-700'
+                      ? 'bg-rose-500/15 text-rose-300 border-rose-500/40 hover:bg-rose-500/25'
+                      : 'bg-zinc-800 text-zinc-300 border-zinc-700 hover:bg-zinc-700'
                   }`}
-                  title={`${signal.candlestickPattern.name} (${signal.candlestickPattern.type}) - Akurasi: ${signal.candlestickPattern.reliability}%`}
+                  title={`Klik untuk membuka Kamus Candlestick & melihat diagram visual ${signal.candlestickPattern.name}`}
                 >
                   <span className="text-[11px]">🕯️</span>
                   <span>{signal.candlestickPattern.name}</span>
                   <span className="font-mono text-[9px] px-1 py-0.2 rounded bg-black/40 text-amber-300 border border-amber-500/30">
                     {signal.candlestickPattern.reliability}%
                   </span>
-                </span>
+                </button>
               )}
             </div>
 
@@ -934,6 +945,18 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
           <BarChart2 className="w-4 h-4 text-yellow-400" />
           <span className="text-[11px] font-mono font-bold hidden sm:inline">Chart R:R</span>
         </button>
+
+        {onOpenLiquidationMap && (
+          <button
+            type="button"
+            onClick={() => onOpenLiquidationMap(signal.symbol)}
+            className="p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 hover:border-amber-500/50 text-zinc-300 hover:text-amber-400 transition-all cursor-pointer flex items-center gap-1.5"
+            title="Lihat Peta Likuidasi & Cluster 25x/50x/100x koin ini"
+          >
+            <Flame className="w-4 h-4 text-amber-400" />
+            <span className="text-[11px] font-mono font-bold hidden sm:inline">Peta Liq</span>
+          </button>
+        )}
 
         <button
           onClick={handleCopySignal}
