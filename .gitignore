@@ -9,7 +9,7 @@ id.json
 keypair.json
 phantom.json
 solana-keypair*.json
-data/
+/data/
 .admin_passcode*
 
 # Dependencies
