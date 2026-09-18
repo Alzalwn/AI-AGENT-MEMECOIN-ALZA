@@ -24,6 +24,7 @@ import { BinanceFuturesSignal } from '../../types/futures';
 import { formatFuturesPrice } from '../../engine/futuresSignalEngine';
 import { generateCommunitySignalPost } from '../../utils/signalPostFormatter';
 import { useSettingsStore } from '../../store/useSettingsStore';
+import { isTradFiOrEtfBlacklisted } from '../../lib/tradfiBlacklist';
 
 interface CoinSearchAnalysisSectionProps {
   onOpenChart: (symbol: string, signal?: BinanceFuturesSignal) => void;
@@ -55,6 +56,18 @@ export const CoinSearchAnalysisSection: React.FC<CoinSearchAnalysisSectionProps>
   const handleAnalyze = async (symbolToAnalyze?: string) => {
     const targetSymbol = (symbolToAnalyze || inputQuery).trim().toUpperCase();
     if (!targetSymbol) return;
+
+    // 🛡️ GATEKEEPER HARDEST-STOP: Cegat pencarian aset TradFi, ETF & Pre-Market Blacklist
+    const blacklistCheck = isTradFiOrEtfBlacklisted(targetSymbol);
+    if (blacklistCheck.isBlacklisted) {
+      setIsAnalyzing(false);
+      setAnalyzedSignal(null);
+      setErrorMsg(
+        blacklistCheck.reason ||
+          `⛔ GATEKEEPER VETO: Ticker "${targetSymbol}" masuk dalam daftar hitam TradFi/Pre-Market. Aset ini dilarang dianalisis untuk mencegah Stop Loss akibat spread lebar.`
+      );
+      return;
+    }
 
     setIsAnalyzing(true);
     setErrorMsg(null);

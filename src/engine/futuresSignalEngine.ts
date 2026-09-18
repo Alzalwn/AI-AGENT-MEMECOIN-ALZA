@@ -47,6 +47,7 @@ import { computeRealTechnicalIndicators } from './technicalIndicatorsEngine';
 import { fetchRecentCryptoNews } from './newsFetchEngine';
 import { analyzeSentimentForSymbol, getCachedSentiment } from './newsSentimentEngine';
 import { runSmcAnalysis } from './smcAnalysisEngine';
+import { isTradFiOrEtfBlacklisted } from '../lib/tradfiBlacklist';
 
 /**
  * Format angka presisi dinamis berdasarkan harga koin (misal BTC vs PEPE)
@@ -125,6 +126,23 @@ export function validateFuturesEntryGate(signal: BinanceFuturesSignal): {
   const warnings: string[] = [];
   const notices: string[] = [];
   let isRestricted = false;
+
+  // 0. TradFi / ETF / Pre-Market Static Blacklist Hard-Stop
+  const tradFiCheck = isTradFiOrEtfBlacklisted(signal.symbol);
+  if (tradFiCheck.isBlacklisted) {
+    isRestricted = true;
+    warnings.push(
+      tradFiCheck.reason ||
+        `🚨 GATEKEEPER BLACKLIST: Aset TradFi / Pre-Market (${signal.symbol}) diblokir total dari eksekusi karena spread lebar dan likuiditas minim.`
+    );
+  }
+
+  // 0b. Dynamic Liquidity Filter (Pemisahan Dinamis vs Statis)
+  if (signal.derivativesData && signal.derivativesData.volume24hUsd < 15_000_000) {
+    warnings.push(
+      `⚠️ LIKUIDITAS RENDAH ($${(signal.derivativesData.volume24hUsd / 1e6).toFixed(1)}M < $15M): Waspada spread lebar dan slippage Stop Loss.`
+    );
+  }
 
   // 1. BTC Guard Spillover / Flash Dump Alert
   if (signal.autoHedge?.gatekeeperStatus === 'RESTRICTED') {
@@ -589,8 +607,13 @@ function evaluatePairSignal(
   const fundingRate = fundingInfo ? parseFloat(fundingInfo.lastFundingRate) : 0.0001;
   const fundingRatePct = fundingRate * 100;
 
-  // Filter likuiditas anti-spam: Volume 24 jam minimal $12,000,000 USD agar terhindar dari koin illiquid/noise
-  if (isNaN(currentPrice) || currentPrice <= 0 || quoteVolume < 12_000_000) {
+  // 1. FILTER STATIS GATEKEEPER: TradFi, ETF & Pre-Market Blacklist (KORU, CRCL, dll)
+  if (isTradFiOrEtfBlacklisted(ticker.symbol).isBlacklisted) {
+    return null;
+  }
+
+  // 2. FILTER LIKUIDITAS DINAMIS: Volume 24 jam minimal $15,000,000 USD agar terhindar dari koin illiquid/noise & spread lebar
+  if (isNaN(currentPrice) || currentPrice <= 0 || quoteVolume < 15_000_000) {
     return null;
   }
 
@@ -1108,9 +1131,13 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
     return [];
   }
 
+  // 🛡️ ELIMINASI AWAL RADAR: Hapus instrumen TradFi, ETF, dan Pre-Market Blacklist
+  // agar bot tidak membuang waktu dan kuota API pada aset illiquid berspread lebar
+  const eligibleTickers = tickers.filter((t) => !isTradFiOrEtfBlacklisted(t.symbol).isBlacklisted);
+
   const rawSignals: BinanceFuturesSignal[] = [];
 
-  for (const ticker of tickers) {
+  for (const ticker of eligibleTickers) {
     const funding = fundingMap.get(ticker.symbol);
     const signal = evaluatePairSignal(ticker, funding);
     if (signal) {
@@ -1445,12 +1472,15 @@ export async function computeFuturesMarketStats(signals: BinanceFuturesSignal[])
     if (chg > 0) positiveCount++;
     else negativeCount++;
 
-    validTickers.push({
-      symbol: t.symbol,
-      changePct: chg,
-      price: prc,
-      volume: vol,
-    });
+    // Jangan masukkan koin Blacklist TradFi/ETF atau koin dengan volume sangat mini ke daftar Gainers/Losers
+    if (!isTradFiOrEtfBlacklisted(t.symbol).isBlacklisted && vol >= 10_000_000) {
+      validTickers.push({
+        symbol: t.symbol,
+        changePct: chg,
+        price: prc,
+        volume: vol,
+      });
+    }
   }
 
   fundingMap.forEach((val) => {
@@ -1479,9 +1509,11 @@ export async function computeFuturesMarketStats(signals: BinanceFuturesSignal[])
     volumeUsd: x.volume,
   }));
 
-  // Squeeze candidates
+  // Squeeze candidates (Kecualikan aset yang masuk Blacklist TradFi / ETF)
   const topSqueezeCoins: FuturesMarketStats['topSqueezeCoins'] = [];
   fundingMap.forEach((val, sym) => {
+    if (isTradFiOrEtfBlacklisted(sym).isBlacklisted) return;
+
     const rate = parseFloat(val.lastFundingRate) * 100;
     if (rate <= -0.02) {
       topSqueezeCoins.push({
@@ -1548,6 +1580,15 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
   let symbol = rawSymbol.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (!symbol.endsWith('USDT')) {
     symbol = `${symbol}USDT`;
+  }
+
+  // 🛡️ GATEKEEPER HARDEST-STOP: Cegat analisis koin Blacklist TradFi, ETF, dan Pre-Market
+  const blacklistCheck = isTradFiOrEtfBlacklisted(symbol);
+  if (blacklistCheck.isBlacklisted) {
+    throw new Error(
+      blacklistCheck.reason ||
+        `⛔ GATEKEEPER VETO: Ticker "${symbol}" masuk daftar hitam TradFi/Pre-Market (minim likuiditas & spread lebar). Dilarang dianalisis untuk mencegah Stop Loss beruntun.`
+    );
   }
 
   // Coba ambil ticker langsung, jika gagal coba variasi 1000 (misal 1000PEPEUSDT, 1000BONKUSDT, dll)

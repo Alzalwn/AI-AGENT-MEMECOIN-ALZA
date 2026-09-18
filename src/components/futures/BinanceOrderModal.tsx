@@ -18,6 +18,7 @@ import {
 import { BinanceFuturesSignal } from '@/types/futures';
 import { BINANCE_STORAGE_KEY, SavedBinanceConfig, BinanceConnectModal } from './BinanceConnectModal';
 import { formatFuturesPrice, validateFuturesEntryGate } from '@/engine/futuresSignalEngine';
+import { isTradFiOrEtfBlacklisted } from '@/lib/tradfiBlacklist';
 
 interface BinanceOrderModalProps {
   isOpen: boolean;
@@ -82,8 +83,10 @@ export const BinanceOrderModal: React.FC<BinanceOrderModalProps> = ({
   const sl = signal.stopLoss.price;
   const slDistPct = entry > 0 ? Math.abs((entry - sl) / entry) * 100 : 2.0;
 
-  // Evaluasi Gatekeeper Anomali Pasar (Peringatan Saja)
+  // Evaluasi Gatekeeper Anomali Pasar & Blacklist
   const gateEvaluation = validateFuturesEntryGate(signal);
+  const blacklistCheck = isTradFiOrEtfBlacklisted(signal.symbol);
+  const isExecutionBlocked = gateEvaluation.isRestricted || blacklistCheck.isBlacklisted;
 
   // Perhitungan Risiko (Hard Cap $1 atau SOP 2%)
   const maxDollarRisk = isHardCapActive ? hardCapDollar : (walletBalance * customRiskPct) / 100;
@@ -99,6 +102,14 @@ export const BinanceOrderModal: React.FC<BinanceOrderModalProps> = ({
     : quantityCoins.toFixed(0);
 
   const handleExecuteOrder = async () => {
+    if (isExecutionBlocked) {
+      setResultMsg({
+        type: 'error',
+        text: blacklistCheck.reason || '⛔ EKSEKUSI DIBLOKIR: Simbol terkena Veto Gatekeeper untuk melindungi modal Anda.',
+      });
+      return;
+    }
+
     if (!config || !config.apiKey || !config.apiSecret) {
       setIsConnectOpen(true);
       return;
@@ -207,8 +218,23 @@ export const BinanceOrderModal: React.FC<BinanceOrderModalProps> = ({
             </div>
           </div>
 
+          {/* Banner Veto Gatekeeper TradFi/ETF Blacklist */}
+          {blacklistCheck.isBlacklisted && (
+            <div className="p-3 rounded-xl bg-red-950/70 border border-red-500/70 text-red-200 flex items-start gap-2.5 shadow-lg">
+              <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+              <div>
+                <div className="font-black text-xs text-red-300 flex items-center gap-1.5">
+                  <span>⛔ GATEKEEPER VETO: Ticker TradFi / ETF Terdaftar Blacklist!</span>
+                </div>
+                <div className="text-[11px] text-red-200/90 leading-tight mt-1">
+                  Ticker <strong>{signal.symbol}</strong> dilarang diperdagangkan karena memiliki spread lebar dan likuiditas minim yang berisiko tinggi memicu Stop Loss beruntun. Tombol eksekusi telah dikunci mati.
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Peringatan Gatekeeper & Anomali Pasar (Hanya Peringatan) */}
-          {gateEvaluation.warnings.length > 0 && (
+          {!blacklistCheck.isBlacklisted && gateEvaluation.warnings.length > 0 && (
             <div className="p-2.5 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-300 space-y-1">
               <div className="flex items-center gap-1.5 font-bold text-[11px]">
                 <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
@@ -380,14 +406,21 @@ export const BinanceOrderModal: React.FC<BinanceOrderModalProps> = ({
             </button>
             <button
               onClick={handleExecuteOrder}
-              disabled={isExecuting}
-              className={`flex-1 py-2.5 rounded-xl font-bold font-mono transition-all flex items-center justify-center gap-2 shadow-lg cursor-pointer ${
-                isExecuting
+              disabled={isExecuting || isExecutionBlocked}
+              className={`flex-1 py-2.5 rounded-xl font-bold font-mono transition-all flex items-center justify-center gap-2 shadow-lg ${
+                isExecutionBlocked
+                  ? 'bg-red-950/40 text-red-400 border border-red-500/40 cursor-not-allowed opacity-75'
+                  : isExecuting
                   ? 'bg-cyan-500/30 text-cyan-300 border border-cyan-500/50 cursor-wait'
-                  : 'bg-gradient-to-r from-yellow-500 via-amber-400 to-yellow-500 hover:from-yellow-400 text-zinc-950 active:scale-98 shadow-[0_0_20px_rgba(234,179,8,0.35)]'
+                  : 'bg-gradient-to-r from-yellow-500 via-amber-400 to-yellow-500 hover:from-yellow-400 text-zinc-950 active:scale-98 shadow-[0_0_20px_rgba(234,179,8,0.35)] cursor-pointer'
               }`}
             >
-              {isExecuting ? (
+              {isExecutionBlocked ? (
+                <>
+                  <Lock className="w-4 h-4 text-red-400" />
+                  <span>⛔ EKSEKUSI DIBLOKIR GATEKEEPER</span>
+                </>
+              ) : isExecuting ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
                   <span>MEMPROSES BRACKET ORDER...</span>

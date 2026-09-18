@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { analyzeSpecificFuturesCoin } from '@/engine/futuresSignalEngine';
+import { isTradFiOrEtfBlacklisted } from '@/lib/tradfiBlacklist';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +13,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: 'Parameter simbol koin wajib diisi (contoh: BTC, SOL, ETH, PEPE).' },
         { status: 400 }
+      );
+    }
+
+    // 🛡️ GATEKEEPER HARDEST-STOP: Cegat analisis koin TradFi, ETF, dan Pre-Market Blacklist
+    const blacklistCheck = isTradFiOrEtfBlacklisted(symbol);
+    if (blacklistCheck.isBlacklisted) {
+      return NextResponse.json(
+        {
+          success: false,
+          isRestricted: true,
+          error: blacklistCheck.reason || `⛔ GATEKEEPER VETO: Ticker "${symbol}" diblokir karena masuk dalam Blacklist TradFi/Pre-Market.`,
+        },
+        { status: 403 }
       );
     }
 
@@ -43,6 +57,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: 'Simbol koin wajib diisi (contoh: BTC, SOL, ETH).' },
         { status: 400 }
+      );
+    }
+
+    // 🛡️ GATEKEEPER HARDEST-STOP: Cegat analisis koin TradFi, ETF, dan Pre-Market Blacklist
+    const blacklistCheck = isTradFiOrEtfBlacklisted(symbol);
+    if (blacklistCheck.isBlacklisted) {
+      return NextResponse.json(
+        {
+          success: false,
+          isRestricted: true,
+          error: blacklistCheck.reason || `⛔ GATEKEEPER VETO: Ticker "${symbol}" diblokir karena masuk dalam Blacklist TradFi/Pre-Market.`,
+        },
+        { status: 403 }
       );
     }
 

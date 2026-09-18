@@ -10,6 +10,7 @@ import {
   PlaceOrderParams,
   placeFullBracketOrder,
 } from '@/lib/binanceAuthClient';
+import { isTradFiOrEtfBlacklisted } from '@/lib/tradfiBlacklist';
 
 export const dynamic = 'force-dynamic';
 
@@ -121,6 +122,19 @@ export async function POST(req: NextRequest) {
           return NextResponse.json(
             { success: false, error: 'Field wajib: symbol, side, type.' },
             { status: 400 }
+          );
+        }
+
+        // 🛡️ GATEKEEPER HARDEST-STOP: Cegat eksekusi aset TradFi, ETF, dan Pre-Market Blacklist
+        const blacklistCheck = isTradFiOrEtfBlacklisted(orderParams.symbol);
+        if (blacklistCheck.isBlacklisted) {
+          return NextResponse.json(
+            {
+              success: false,
+              isRestricted: true,
+              error: blacklistCheck.reason || `⛔ GATEKEEPER VETO: Ticker "${orderParams.symbol}" diblokir total dari eksekusi karena terdaftar dalam Blacklist TradFi/Pre-Market.`,
+            },
+            { status: 403 }
           );
         }
 

@@ -9,6 +9,7 @@ import {
   Zap,
   Flame,
   RefreshCw,
+  ShieldCheck,
 } from 'lucide-react';
 import { FuturesMarketStats } from '../../types/futures';
 
@@ -34,6 +35,22 @@ export const FuturesHeroStats: React.FC<FuturesHeroStatsProps> = ({
 
   return (
     <div className="flex flex-col gap-2 font-sans">
+      {/* 🛡️ Gatekeeper TradFi & Pre-Market Blacklist Active Badge */}
+      <div className="bg-emerald-950/40 border border-emerald-500/40 rounded-xl py-1 px-3 flex items-center justify-between gap-2 text-xs font-mono">
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-[11px] shrink-0">
+            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>GATEKEEPER AKTIF:</span>
+          </div>
+          <span className="text-[10.5px] text-emerald-300/90 whitespace-nowrap">
+            TradFi &amp; Pre-Market Blacklist Enforced (KORU, CRCL, ETF Leveraged Diblokir Total)
+          </span>
+        </div>
+        <span className="hidden sm:inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shrink-0">
+          PROTEKSI SL AKTIF
+        </span>
+      </div>
+
       {/* Squeeze Alert Marquee Strip */}
       {stats?.topSqueezeCoins && stats.topSqueezeCoins.length > 0 && (
         <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl py-1.5 px-3 flex items-center justify-between gap-2 text-xs">
