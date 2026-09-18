@@ -629,9 +629,9 @@ function evaluatePairSignal(
   // 2. EARLY ACCUMULATION SCOUT (Masuk di dasar support sebelum koin terbang) - PRIORITAS SUPERNOVA
   else if (
     relativePosition <= 0.35 &&
-    change24h >= -2.0 &&
+    change24h >= -1.5 &&
     change24h <= 4.0 &&
-    currentPrice > low24h * 1.004 &&
+    currentPrice >= low24h * 1.008 &&
     quoteVolume >= 15_000_000
   ) {
     direction = 'LONG';
@@ -1192,6 +1192,32 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
             } else if (realRsi6 <= 55 && realRsi6 >= 25) {
               signal.overallScore = Math.min(signal.overallScore + 10, 99); // Zona Emas Sniper: Akumulasi sehat
             }
+
+            // 🔪 ANTI-FALLING KNIFE: Lindungi dari koin yang sedang amblas/dumping bebas tanpa lantai support
+            const currentP = signal.entryZone.current;
+            const isDumpingBelowMAs =
+              currentP < realIndicators.ma.ma25 * 0.97 &&
+              currentP < realIndicators.ma.ma99 * 0.95 &&
+              realIndicators.ma.alignment === 'BEARISH';
+
+            if (isDumpingBelowMAs) {
+              signal.overallScore = 30; // Gugurkan: ini pisau jatuh bukan akumulasi
+              signal.signalTier = 'MODERATE';
+              if (signal.indicatorExplanation) {
+                signal.indicatorExplanation.directionVerdict = `🔴 DITOLAK SNIPER (FALLING KNIFE): Harga amblas jauh di bawah MA25 ($${formatFuturesPrice(realIndicators.ma.ma25)}) & MA99 ($${formatFuturesPrice(realIndicators.ma.ma99)}) dalam tren bearish. Risiko pisau jatuh!`;
+              }
+            } else if (signal.strategy === 'EARLY_ACCUMULATION') {
+              // Verifikasi apakah harga tertahan di dekat MA25 / MA99 / EMA21
+              const isNearMaSupport =
+                Math.abs(currentP - realIndicators.ma.ma25) / realIndicators.ma.ma25 <= 0.025 ||
+                Math.abs(currentP - realIndicators.ma.ma99) / realIndicators.ma.ma99 <= 0.03 ||
+                (realIndicators.ema && Math.abs(currentP - realIndicators.ema.ema21) / realIndicators.ema.ema21 <= 0.025);
+
+              if (isNearMaSupport) {
+                signal.overallScore = Math.min(signal.overallScore + 5, 99);
+                signal.rationale += ` [TERKONFIRMASI SUPPORT MA] Teruji tertahan stabil di sekitar Moving Average dinamis.`;
+              }
+            }
           } else if (signal.direction === 'SHORT') {
             if (realRsi6 <= 32) {
               signal.overallScore = 30; // Gugurkan total: dilarang short di dasar dump
@@ -1220,22 +1246,13 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
             const smcResult = runSmcAnalysis(signal.symbol, candles4h, candles);
             signal.smcAnalysis = smcResult;
 
-            // Jika SMC Terkonfirmasi Kuat: Demand OB 4H + VPA Institusi + 15m MSS terkonfirmasi
-            if (smcResult.smcScore >= 75 && smcResult.smcBias === 'BULLISH' && smcResult.mssConfirmed) {
-              const prevStrategy = signal.strategy;
+            // Jika SMC Terkonfirmasi Kuat: Demand OB 4H + VPA Institusi + 15m MSS terkonfirmasi (DAN RSI belum overbought)
+            if (smcResult.smcScore >= 75 && smcResult.smcBias === 'BULLISH' && smcResult.mssConfirmed && realRsi6 < 68) {
               signal.strategy = 'SMC_DEMAND_BOUNCE';
               signal.strategyLabel = `🎯 SMC Demand Bounce (4H OB + 15m MSS)`;
               signal.direction = 'LONG';
               signal.signalTier = smcResult.smcScore >= 85 ? 'SUPERNOVA' : 'HIGH';
               signal.overallScore = Math.min(98, Math.max(signal.overallScore, smcResult.smcScore));
-
-              // Tiebreaker Emas: Jika sebelumnya strategi breakout dengan RSI tinggi, SMC menang telak
-              if (
-                (prevStrategy === 'BREAKOUT_MOMENTUM' || prevStrategy === 'VOLATILITY_EXPANSION') &&
-                realIndicators.rsi.rsi6 >= 70
-              ) {
-                signal.overallScore = Math.min(98, Math.max(signal.overallScore, smcResult.smcScore + 5));
-              }
 
               // Kalibrasi SL presisi di bawah batas Demand OB
               if (smcResult.nearestDemandZone) {
@@ -1368,10 +1385,15 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
     if (s.overallScore < 78) return false;
 
     const rsiVal = s.indicators?.rsi?.rsi6;
-    if (s.direction === 'LONG' && rsiVal !== undefined && rsiVal >= 68) {
+    // Sniper wajib memiliki data RSI riil 15m terkonfirmasi
+    if (rsiVal === undefined || isNaN(rsiVal)) return false;
+
+    // 🎯 ATURAN MUTLAK 1: Koin LONG dengan RSI >= 68 DILARANG KERAS LOLOS
+    if (s.direction === 'LONG' && rsiVal >= 68) {
       return false; // REJECT LONG OVERBOUGHT
     }
-    if (s.direction === 'SHORT' && rsiVal !== undefined && rsiVal <= 32) {
+    // 🎯 ATURAN MUTLAK 2: Koin SHORT dengan RSI <= 32 DILARANG KERAS LOLOS
+    if (s.direction === 'SHORT' && rsiVal <= 32) {
       return false; // REJECT SHORT OVERSOLD
     }
 
