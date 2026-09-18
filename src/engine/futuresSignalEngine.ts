@@ -626,7 +626,51 @@ function evaluatePairSignal(
     score = 90;
     rationale = `Funding rate terlalu tinggi (+${fundingRatePct.toFixed(4)}%) dan harga tertekan menembus support (${change24h.toFixed(2)}%). Potensi likuidasi long terkonfirmasi.`;
   }
-  // 2. BREAKOUT MOMENTUM PRESISI TINGGI (Ketat: Posisi ≥ 92% rentang 24h & Kenaikan ≥ 4.5%)
+  // 2. EARLY ACCUMULATION SCOUT (Masuk di dasar support sebelum koin terbang)
+  else if (
+    relativePosition <= 0.35 &&
+    change24h >= -2.0 &&
+    change24h <= 4.0 &&
+    currentPrice > low24h * 1.004 &&
+    quoteVolume >= 15_000_000
+  ) {
+    direction = 'LONG';
+    strategy = 'EARLY_ACCUMULATION';
+    strategyLabel = '🌱 Early Accumulation Scout';
+    score = relativePosition <= 0.20 ? 89 : 84;
+    tier = score >= 88 ? 'HIGH' : 'MODERATE';
+    rationale = `Akumulasi tersembunyi di zona diskon rentang 24 jam (${(relativePosition * 100).toFixed(0)}% range). Harga bertahan kokoh di atas low ($${formatFuturesPrice(low24h)}) dengan likuiditas aktif $${(quoteVolume / 1e6).toFixed(1)}M sebelum momentum publik masuk.`;
+  }
+  // 3. PANIC SWEEP REVERSAL (Titik kapitulasi likuidasi ritel tuntas di dasar low 24h)
+  else if (
+    relativePosition <= 0.08 &&
+    change24h <= -6.0 &&
+    quoteVolume >= 15_000_000 &&
+    currentPrice >= low24h * 1.002
+  ) {
+    direction = 'LONG';
+    strategy = 'PANIC_SWEEP_REVERSAL';
+    strategyLabel = '🧲 Panic Sweep Reversal';
+    score = 88;
+    tier = 'HIGH';
+    rationale = `Pembersihan likuiditas panik (dump -${Math.abs(change24h).toFixed(2)}%) menyentuh batas low 24h ($${formatFuturesPrice(low24h)}). Terjadi penolakan harga awal (rejection wick) dengan peluang technical bounce tinggi.`;
+  }
+  // 4. HIDDEN BREAKOUT PRE-SIGNAL (Menjelang breakout, belum overbought)
+  else if (
+    relativePosition >= 0.72 &&
+    relativePosition < 0.90 &&
+    change24h >= 2.0 &&
+    change24h <= 7.0 &&
+    quoteVolume >= 25_000_000
+  ) {
+    direction = 'LONG';
+    strategy = 'HIDDEN_BREAKOUT';
+    strategyLabel = '⚡ Hidden Breakout Surge';
+    score = 86;
+    tier = 'HIGH';
+    rationale = `Harga sedang melakukan ekspansi struktur ke arah resisten 24h (${(relativePosition * 100).toFixed(0)}% range) dengan momentum kenaikan awal (+${change24h.toFixed(2)}%) sebelum koin overbought.`;
+  }
+  // 5. BREAKOUT MOMENTUM PRESISI TINGGI (Ketat: Posisi ≥ 92% rentang 24h & Kenaikan ≥ 4.5%)
   else if (relativePosition >= 0.92 && change24h >= 4.5 && quoteVolume >= 20_000_000) {
     direction = 'LONG';
     strategy = 'BREAKOUT_MOMENTUM';
@@ -642,7 +686,7 @@ function evaluatePairSignal(
     tier = score >= 90 ? 'SUPERNOVA' : 'HIGH';
     rationale = `Harga menembus breakdown support 24h (${formatFuturesPrice(low24h)}) dengan tekanan jual konsisten (${change24h.toFixed(2)}%).`;
   }
-  // 3. REVERSAL / OVERSOLD - OVERBOUGHT EKSTREM
+  // 6. REVERSAL / OVERSOLD - OVERBOUGHT EKSTREM
   else if (relativePosition <= 0.10 && change24h <= -8.0 && quoteVolume >= 15_000_000) {
     direction = 'LONG';
     strategy = 'RSI_EXTREME_REVERSAL';
@@ -897,24 +941,32 @@ function calculateTechnicalIndicators(
     : 'BEARISH';
 
   // 4. Triple RSI: RSI(6), RSI(12), RSI(24)
+  // Perhitungan realistis berbasis relative position di rentang 24 jam dan change24h
+  // Menghindari artifisial inflasi RSI tinggi saat koin masih di zona akumulasi/reversal
+  const range24h = Math.max(high24h - low24h, currentPrice * 0.001);
+  const relPos = Math.min(Math.max((currentPrice - low24h) / range24h, 0), 1);
+
   let rsi6 = 50;
   let rsi12 = 50;
   let rsi24 = 50;
 
   if (isBull) {
-    rsi6 = Math.min(68 + Math.abs(change24h) * 1.6, 94);
-    rsi12 = Math.min(60 + Math.abs(change24h) * 1.3, 88);
-    rsi24 = Math.min(54 + Math.abs(change24h) * 1.0, 80);
+    // Jika harga berada di area bawah range 24h (akumulasi/pantulan dasar), RSI harus sehat (35-55)
+    // Jika harga sudah mendekati puncak 24h, RSI mencerminkan overbought (70-85)
+    rsi6 = Math.min(Math.max(relPos * 48 + 24 + Math.min(Math.max(change24h, -10), 15) * 0.7, 25), 88);
+    rsi12 = Math.min(Math.max(relPos * 42 + 28 + Math.min(Math.max(change24h, -10), 15) * 0.5, 28), 82);
+    rsi24 = Math.min(Math.max(relPos * 36 + 32 + Math.min(Math.max(change24h, -10), 15) * 0.35, 32), 76);
   } else {
-    rsi6 = Math.max(32 - Math.abs(change24h) * 1.6, 8);
-    rsi12 = Math.max(40 - Math.abs(change24h) * 1.3, 15);
-    rsi24 = Math.max(46 - Math.abs(change24h) * 1.0, 22);
+    // Bearish / Short: jika dekat puncak dan breakdown, RSI mulai drop dari atas
+    rsi6 = Math.max(Math.min(relPos * 48 + 16 - Math.min(Math.abs(change24h), 15) * 0.7, 75), 12);
+    rsi12 = Math.max(Math.min(relPos * 42 + 20 - Math.min(Math.abs(change24h), 15) * 0.5, 72), 16);
+    rsi24 = Math.max(Math.min(relPos * 36 + 24 - Math.min(Math.abs(change24h), 15) * 0.35, 68), 20);
   }
 
   const rsiStatus =
-    rsi6 >= 80
+    rsi6 >= 78
       ? 'OVERBOUGHT'
-      : rsi6 <= 20
+      : rsi6 <= 25
       ? 'OVERSOLD'
       : isBull
       ? 'BULLISH_MOMENTUM'
@@ -1074,10 +1126,22 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
   }
 
   // Ambil kandidat sinyal teratas (maksimal 15 pasang) untuk inspeksi mendalam candlestick klines
+  // Berikan prioritas bobot sniper (Early Accumulation & Panic Sweep) agar bot tidak hanya memindai koin yang sudah terbang
   rawSignals.sort((a, b) => {
     if (a.signalTier === 'SUPERNOVA' && b.signalTier !== 'SUPERNOVA') return -1;
     if (b.signalTier === 'SUPERNOVA' && a.signalTier !== 'SUPERNOVA') return 1;
-    return b.overallScore * b.riskRewardRatio - a.overallScore * a.riskRewardRatio;
+
+    const getEarlyBonus = (sig: BinanceFuturesSignal): number => {
+      if (sig.strategy === 'EARLY_ACCUMULATION') return 18;
+      if (sig.strategy === 'PANIC_SWEEP_REVERSAL' || sig.strategy === 'RSI_EXTREME_REVERSAL') return 14;
+      if (sig.strategy === 'HIDDEN_BREAKOUT') return 10;
+      if (sig.strategy === 'BREAKOUT_MOMENTUM' && sig.derivativesData.priceChange24hPct >= 10.0) return -12; // Penalti koin yang sudah terbang tinggi
+      return 0;
+    };
+
+    const scoreA = a.overallScore * a.riskRewardRatio + getEarlyBonus(a);
+    const scoreB = b.overallScore * b.riskRewardRatio + getEarlyBonus(b);
+    return scoreB - scoreA;
   });
   const candidates = rawSignals.slice(0, 15);
 
@@ -1137,11 +1201,20 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
 
             // Jika SMC Terkonfirmasi Kuat: Demand OB 4H + VPA Institusi + 15m MSS terkonfirmasi
             if (smcResult.smcScore >= 75 && smcResult.smcBias === 'BULLISH' && smcResult.mssConfirmed) {
+              const prevStrategy = signal.strategy;
               signal.strategy = 'SMC_DEMAND_BOUNCE';
               signal.strategyLabel = `🎯 SMC Demand Bounce (4H OB + 15m MSS)`;
               signal.direction = 'LONG';
               signal.signalTier = smcResult.smcScore >= 85 ? 'SUPERNOVA' : 'HIGH';
               signal.overallScore = Math.min(98, Math.max(signal.overallScore, smcResult.smcScore));
+
+              // Tiebreaker Emas: Jika sebelumnya strategi breakout dengan RSI tinggi, SMC menang telak
+              if (
+                (prevStrategy === 'BREAKOUT_MOMENTUM' || prevStrategy === 'VOLATILITY_EXPANSION') &&
+                realIndicators.rsi.rsi6 >= 70
+              ) {
+                signal.overallScore = Math.min(98, Math.max(signal.overallScore, smcResult.smcScore + 5));
+              }
 
               // Kalibrasi SL presisi di bawah batas Demand OB
               if (smcResult.nearestDemandZone) {

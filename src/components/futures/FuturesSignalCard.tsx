@@ -295,6 +295,55 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
                   </span>
                 </button>
               )}
+
+              {signal.strategy === 'EARLY_ACCUMULATION' && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 shadow-sm font-mono">
+                  <span>🌱</span>
+                  ACCUMULATION
+                </span>
+              )}
+
+              {signal.strategy === 'PANIC_SWEEP_REVERSAL' && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center gap-1 shadow-sm font-mono">
+                  <span>🧲</span>
+                  PANIC SWEEP
+                </span>
+              )}
+
+              {signal.strategy === 'HIDDEN_BREAKOUT' && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 flex items-center gap-1 shadow-sm font-mono">
+                  <span>⚡</span>
+                  PRE-BREAKOUT
+                </span>
+              )}
+
+              {signal.indicators?.rsi && (
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1 shadow-sm font-mono ${
+                    signal.indicators.rsi.rsi6 <= 52
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : signal.indicators.rsi.rsi6 <= 68
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                      : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                  }`}
+                  title={`RSI(6) = ${signal.indicators.rsi.rsi6.toFixed(1)}. ${
+                    signal.indicators.rsi.rsi6 <= 52
+                      ? 'Zona Akumulasi Sehat (Belum Overbought)'
+                      : signal.indicators.rsi.rsi6 <= 68
+                      ? 'Momentum Normal'
+                      : 'Overbought / Rawan Retest'
+                  }`}
+                >
+                  <span>RSI {signal.indicators.rsi.rsi6.toFixed(0)}</span>
+                  <span>
+                    {signal.indicators.rsi.rsi6 <= 52
+                      ? '✅ Sehat'
+                      : signal.indicators.rsi.rsi6 <= 68
+                      ? '⚡ Wajar'
+                      : '⚠️ Jenuh'}
+                  </span>
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-2 mt-1">

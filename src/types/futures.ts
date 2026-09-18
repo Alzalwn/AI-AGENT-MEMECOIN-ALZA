@@ -18,7 +18,10 @@ export type FuturesStrategy =
   | 'EMA_TREND_RIDER'
   | 'VOLATILITY_EXPANSION'
   | 'SMC_DEMAND_BOUNCE'
-  | 'SMC_SUPPLY_REJECTION';
+  | 'SMC_SUPPLY_REJECTION'
+  | 'EARLY_ACCUMULATION'
+  | 'HIDDEN_BREAKOUT'
+  | 'PANIC_SWEEP_REVERSAL';
 
 export type FuturesSignalStatus =
   | 'ACTIVE'
