@@ -16,7 +16,9 @@ export type FuturesStrategy =
   | 'RSI_EXTREME_REVERSAL'
   | 'FUNDING_SQUEEZE'
   | 'EMA_TREND_RIDER'
-  | 'VOLATILITY_EXPANSION';
+  | 'VOLATILITY_EXPANSION'
+  | 'SMC_DEMAND_BOUNCE'
+  | 'SMC_SUPPLY_REJECTION';
 
 export type FuturesSignalStatus =
   | 'ACTIVE'
@@ -161,6 +163,7 @@ export interface BinanceFuturesSignal {
   autoHedge?: AutoHedgeRecommendation;
   multiTimeframe?: MultiTimeframeAlignment;
   newsContext?: NewsImpactScore;
+  smcAnalysis?: SmcAnalysisResult;
 }
 
 export type TimeframeTrendBias = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
@@ -422,3 +425,51 @@ export interface MarketSessionInfo {
   description: string;
   recommendedBias: string;
 }
+
+// -------------------------------------------------------------
+// 🏛️ Smart Money Concepts (SMC) & Institutional Price Action
+// -------------------------------------------------------------
+
+export interface SmcOrderBlock {
+  type: 'DEMAND' | 'SUPPLY';
+  zoneLow: number;
+  zoneHigh: number;
+  strength: 'FRESH' | 'MITIGATED';
+  originCandleTime: number;
+  impulseMovePct: number;
+  volumeMultiplier: number;     // Rasio volume impuls vs MA20 Volume (e.g. 1.85x)
+  isVolumeValidated: boolean;   // True jika volume >= 1.5x MA20 Volume
+  isFvgPresent: boolean;
+}
+
+export interface SmcFairValueGap {
+  type: 'BULLISH_FVG' | 'BEARISH_FVG';
+  gapHigh: number;
+  gapLow: number;
+  midpoint: number;             // Consequent Encroachment (50% gap)
+  isFilled: boolean;            // True jika wick telah menyentuh midpoint / batas gap
+  fillRatioPct: number;         // Berapa % gap telah tertutup oleh wick
+}
+
+export interface SmcLiquiditySweep {
+  type: 'BSL_SWEPT' | 'SSL_SWEPT'; // Buy-side vs Sell-side
+  sweptLevel: number;
+  sweepCandleTime: number;
+  rejectionWickPct: number;         // Panjang ekor penolakan (%)
+}
+
+export interface SmcAnalysisResult {
+  timeframe: '4h';
+  nearestDemandZone?: SmcOrderBlock;
+  nearestSupplyZone?: SmcOrderBlock;
+  recentFvg?: SmcFairValueGap;
+  recentSweep?: SmcLiquiditySweep;
+  mssConfirmed: boolean;            // MSS 15m (Higher High lokal terkonfirmasi)
+  candlestickTrigger15m?: string;   // e.g. "Bullish Engulfing di Zona Demand"
+  atrVolatilityPct: number;         // ATR(14) / Current Price * 100
+  isAtrHealthy: boolean;            // False jika koin masuk zona pencacah daging (choppy)
+  smcBias: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  smcScore: number;                 // 0 - 100
+  smcRationale: string;             // Deskripsi rinci untuk kartu UI
+}
+

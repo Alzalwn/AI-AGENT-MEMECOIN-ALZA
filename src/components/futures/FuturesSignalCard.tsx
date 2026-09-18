@@ -69,6 +69,9 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
 
   const isLong = signal.direction === 'LONG';
   const isSupernova = signal.signalTier === 'SUPERNOVA';
+  const isSmcConfirmed =
+    signal.strategy === 'SMC_DEMAND_BOUNCE' ||
+    Boolean(signal.smcAnalysis && signal.smcAnalysis.smcScore >= 75 && signal.smcAnalysis.mssConfirmed);
 
   const handleCopySignal = async () => {
     setIsCopying(true);
@@ -205,27 +208,35 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
 
   return (
     <div
-      className={`rounded-2xl border transition-all duration-300 relative flex flex-col overflow-hidden font-sans ${isSupernova
+      className={`rounded-2xl border transition-all duration-300 relative flex flex-col overflow-hidden font-sans ${
+        isSmcConfirmed
+          ? 'bg-gradient-to-b from-amber-500/[0.08] via-zinc-950 to-zinc-950 border-amber-400/80 shadow-[0_0_28px_rgba(251,191,36,0.22)]'
+          : isSupernova
           ? 'bg-gradient-to-b from-yellow-500/[0.07] via-zinc-950 to-zinc-950 border-yellow-500/40 shadow-[0_0_25px_rgba(234,179,8,0.12)]'
           : isLong
-            ? 'bg-zinc-950/90 border-emerald-500/25 hover:border-emerald-500/40 shadow-lg'
-            : 'bg-zinc-950/90 border-rose-500/25 hover:border-rose-500/40 shadow-lg'
-        }`}
+          ? 'bg-zinc-950/90 border-emerald-500/25 hover:border-emerald-500/40 shadow-lg'
+          : 'bg-zinc-950/90 border-rose-500/25 hover:border-rose-500/40 shadow-lg'
+      }`}
     >
-      {/* Supernova Top Glow Accent */}
-      {isSupernova && (
+      {/* Top Glow Accent Bar */}
+      {isSmcConfirmed ? (
+        <div className="h-1 w-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 shadow-[0_0_14px_rgba(251,191,36,0.9)]" />
+      ) : isSupernova ? (
         <div className="h-1 w-full bg-gradient-to-r from-yellow-400 via-amber-300 to-yellow-500 shadow-[0_0_12px_rgba(234,179,8,0.8)]" />
-      )}
+      ) : null}
 
       {/* Card Header */}
       <div className="p-4 sm:p-5 border-b border-zinc-800/60 flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           {/* Direction Icon Badge */}
           <div
-            className={`w-11 h-11 rounded-xl flex items-center justify-center font-black text-sm border shadow-inner ${isLong
+            className={`w-11 h-11 rounded-xl flex items-center justify-center font-black text-sm border shadow-inner ${
+              isSmcConfirmed
+                ? 'bg-amber-500/20 border-amber-400/60 text-amber-300 shadow-[0_0_15px_rgba(251,191,36,0.3)]'
+                : isLong
                 ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.25)]'
                 : 'bg-rose-500/15 border-rose-500/40 text-rose-400 shadow-[0_0_15px_rgba(244,63,94,0.25)]'
-              }`}
+            }`}
           >
             {isLong ? <TrendingUp className="w-6 h-6" /> : <TrendingDown className="w-6 h-6" />}
           </div>
@@ -244,6 +255,13 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
                 {isLong ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
                 {signal.direction}
               </span>
+
+              {isSmcConfirmed && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-gradient-to-r from-amber-500/25 to-yellow-500/20 text-amber-300 border border-amber-400/60 flex items-center gap-1 shadow-sm">
+                  <span>🎯</span>
+                  SMC CONFIRMED
+                </span>
+              )}
 
               {isSupernova && (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 flex items-center gap-1 shadow-sm">
@@ -413,6 +431,84 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
               >
                 <X className="w-3 h-3" />
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* 🏛️ Smart Money Concepts (SMC) Institutional Zone Panel */}
+        {signal.smcAnalysis && signal.smcAnalysis.smcScore >= 60 && (
+          <div className="p-3 rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-500/[0.08] via-zinc-950 to-zinc-900/80 font-mono text-xs shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] text-amber-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                <span>🎯</span> SMC INSTITUTIONAL ZONE (4H + 15M)
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                Skor SMC: {signal.smcAnalysis.smcScore}/100
+              </span>
+            </div>
+
+            {/* Grid Detail 4 Elemen SMC */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[10px]">
+              {/* 1. Demand/Supply OB */}
+              <div className="p-2 rounded-lg bg-black/40 border border-white/5 flex flex-col">
+                <span className="text-[9px] text-zinc-400 font-bold uppercase">
+                  {signal.smcAnalysis.nearestDemandZone ? '🟢 Demand OB 4H' : '🔴 Supply OB 4H'}
+                </span>
+                <span className="font-bold text-white truncate mt-0.5">
+                  {signal.smcAnalysis.nearestDemandZone
+                    ? `$${formatFuturesPrice(signal.smcAnalysis.nearestDemandZone.zoneLow)} - $${formatFuturesPrice(signal.smcAnalysis.nearestDemandZone.zoneHigh)}`
+                    : signal.smcAnalysis.nearestSupplyZone
+                    ? `$${formatFuturesPrice(signal.smcAnalysis.nearestSupplyZone.zoneLow)}`
+                    : 'N/A'}
+                </span>
+                <span className="text-[9px] text-amber-400/90 font-mono mt-0.5">
+                  {signal.smcAnalysis.nearestDemandZone?.isVolumeValidated
+                    ? `VPA ${signal.smcAnalysis.nearestDemandZone.volumeMultiplier}x MA20`
+                    : 'Vol Normal'}
+                </span>
+              </div>
+
+              {/* 2. Liquidity Sweep */}
+              <div className="p-2 rounded-lg bg-black/40 border border-white/5 flex flex-col">
+                <span className="text-[9px] text-zinc-400 font-bold uppercase">🌊 Liquidity Sweep</span>
+                <span className="font-bold text-white truncate mt-0.5">
+                  {signal.smcAnalysis.recentSweep
+                    ? `${signal.smcAnalysis.recentSweep.type === 'SSL_SWEPT' ? 'SSL Swept' : 'BSL Swept'}`
+                    : 'Belum Ada Sweep'}
+                </span>
+                <span className="text-[9px] text-emerald-400 font-mono mt-0.5">
+                  {signal.smcAnalysis.recentSweep
+                    ? `Wick ${signal.smcAnalysis.recentSweep.rejectionWickPct}%`
+                    : 'Struktur Bersih'}
+                </span>
+              </div>
+
+              {/* 3. MSS 15m Trigger */}
+              <div className="p-2 rounded-lg bg-black/40 border border-white/5 flex flex-col">
+                <span className="text-[9px] text-zinc-400 font-bold uppercase">🔄 MSS 15m Trigger</span>
+                <span className={`font-bold truncate mt-0.5 ${signal.smcAnalysis.mssConfirmed ? 'text-emerald-400' : 'text-zinc-400'}`}>
+                  {signal.smcAnalysis.mssConfirmed ? '✅ Terkonfirmasi' : '⏳ Menunggu Break'}
+                </span>
+                <span className="text-[9px] text-zinc-400 truncate mt-0.5">
+                  {signal.smcAnalysis.candlestickTrigger15m || 'Higher High 15m'}
+                </span>
+              </div>
+
+              {/* 4. ATR Volatilitas Filter */}
+              <div className="p-2 rounded-lg bg-black/40 border border-white/5 flex flex-col">
+                <span className="text-[9px] text-zinc-400 font-bold uppercase">📈 ATR Volatilitas</span>
+                <span className={`font-bold truncate mt-0.5 ${signal.smcAnalysis.isAtrHealthy ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {signal.smcAnalysis.isAtrHealthy ? '✅ Sehat (Sniper)' : '⚠️ Chop (Sideways)'}
+                </span>
+                <span className="text-[9px] text-zinc-400 font-mono mt-0.5">
+                  ATR {signal.smcAnalysis.atrVolatilityPct}%
+                </span>
+              </div>
+            </div>
+
+            {/* Rationale Narasi Singkat */}
+            <div className="mt-2 pt-2 border-t border-amber-500/20 text-[10px] text-amber-200/90 leading-relaxed font-sans">
+              💡 <strong>Sniper Confluence:</strong> {signal.smcAnalysis.smcRationale}
             </div>
           </div>
         )}

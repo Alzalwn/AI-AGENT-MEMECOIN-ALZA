@@ -23,6 +23,7 @@ import {
   AutoHedgeRecommendation,
   MultiTimeframeAlignment,
   TimeframeTrendBias,
+  SmcAnalysisResult,
 } from '../types/futures';
 import {
   getFutures24hTickers,
@@ -45,6 +46,7 @@ import { parseKlinesToCandles, detectCandlestickPatterns } from './candlestickPa
 import { computeRealTechnicalIndicators } from './technicalIndicatorsEngine';
 import { fetchRecentCryptoNews } from './newsFetchEngine';
 import { analyzeSentimentForSymbol, getCachedSentiment } from './newsSentimentEngine';
+import { runSmcAnalysis } from './smcAnalysisEngine';
 
 /**
  * Format angka presisi dinamis berdasarkan harga koin (misal BTC vs PEPE)
@@ -1079,13 +1081,19 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
   });
   const candidates = rawSignals.slice(0, 15);
 
-  // Analisis Pola Candlestick Elit & Kalkulasi Indikator Riil (100 Klines 15m)
+  // Analisis Pola Candlestick Elit, Indikator Riil & SMC 4H Sniper (Top 15 Kandidat)
   await Promise.allSettled(
     candidates.map(async (signal) => {
       try {
-        const rawKlines = await getKlines(signal.symbol, '15m', 100);
+        // Ambil klines 15m (100) dan klines 4h (60) secara paralel untuk efisiensi API
+        const [rawKlines, rawKlines4h] = await Promise.all([
+          getKlines(signal.symbol, '15m', 100),
+          getKlines(signal.symbol, '4h', 60),
+        ]);
+
         if (rawKlines && rawKlines.length >= 5) {
           const candles = parseKlinesToCandles(rawKlines);
+          const candles4h = rawKlines4h && rawKlines4h.length >= 5 ? parseKlinesToCandles(rawKlines4h) : [];
           const closePrices = candles.map((c) => c.close);
 
           // 1. Kalkulasi Indikator Riil dari Close Klines
@@ -1119,6 +1127,40 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
             signal.signalTier = 'MODERATE';
             if (signal.indicatorExplanation) {
               signal.indicatorExplanation.directionVerdict = `⚠️ KEPUTUSAN TEGAS: WAIT & SEE. ${btcContext.warningMessage || 'Bitcoin sedang melemah tajam, risiko tinggi masuk posisi LONG pada Altcoin!'}`;
+            }
+          }
+
+          // 4. Analisis Smart Money Concepts (SMC) & VPA 4H Multi-Timeframe
+          if (candles4h.length >= 20) {
+            const smcResult = runSmcAnalysis(signal.symbol, candles4h, candles);
+            signal.smcAnalysis = smcResult;
+
+            // Jika SMC Terkonfirmasi Kuat: Demand OB 4H + VPA Institusi + 15m MSS terkonfirmasi
+            if (smcResult.smcScore >= 75 && smcResult.smcBias === 'BULLISH' && smcResult.mssConfirmed) {
+              signal.strategy = 'SMC_DEMAND_BOUNCE';
+              signal.strategyLabel = `🎯 SMC Demand Bounce (4H OB + 15m MSS)`;
+              signal.direction = 'LONG';
+              signal.signalTier = smcResult.smcScore >= 85 ? 'SUPERNOVA' : 'HIGH';
+              signal.overallScore = Math.min(98, Math.max(signal.overallScore, smcResult.smcScore));
+
+              // Kalibrasi SL presisi di bawah batas Demand OB
+              if (smcResult.nearestDemandZone) {
+                const fineSl = Math.max(smcResult.nearestDemandZone.zoneLow * 0.992, signal.entryZone.current * 0.96);
+                const slPct = Math.abs((fineSl - signal.entryZone.current) / signal.entryZone.current) * 100;
+                signal.stopLoss = {
+                  price: fineSl,
+                  lossPct: -slPct,
+                  label: `$${formatFuturesPrice(fineSl)} (-${slPct.toFixed(1)}%) [SMC OB]`,
+                  isHit: false,
+                };
+                const tp2Gain = signal.targets.tp2.gainPct;
+                signal.riskRewardRatio = Number((tp2Gain / Math.max(slPct, 0.5)).toFixed(2));
+                signal.positionSizing = calculatePositionSizing(
+                  20,
+                  slPct,
+                  signal.leverage.safe.multiplier
+                );
+              }
             }
           }
 
@@ -1401,6 +1443,7 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
     rawDepth,
     topTraderRatio,
     takerRatio,
+    rawKlines4h,
   ] = await Promise.all([
     getSingleFundingRate(symbol),
     getKlines(symbol, '15m', 100),
@@ -1410,6 +1453,7 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
     getFuturesOrderbookDepth(symbol, 20),
     getTopTraderLongShortRatio(symbol),
     getTakerBuySellRatio(symbol),
+    getKlines(symbol, '4h', 60),
   ]);
 
   const currentPrice = parseFloat(ticker.lastPrice);
@@ -1420,9 +1464,11 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
   const fundingRate = fundingInfo ? parseFloat(fundingInfo.lastFundingRate) : 0.0001;
   const fundingRatePct = fundingRate * 100;
 
-  // Analisa Pola Candlestick dari 100 klines 15m
+  // Analisa Pola Candlestick dari 100 klines 15m & SMC 4H
   const candles = parseKlinesToCandles(rawKlines);
+  const candles4h = rawKlines4h && rawKlines4h.length >= 5 ? parseKlinesToCandles(rawKlines4h) : [];
   const detectedPattern = candles.length >= 5 ? detectCandlestickPatterns(candles) : null;
+  const smcAnalysis = candles4h.length >= 20 ? runSmcAnalysis(symbol, candles4h, candles) : undefined;
 
   // Analisa deret harga penutupan (Close) untuk MA, BOLL, MACD, RSI murni
   const closePrices = candles.length > 0 ? candles.map((c) => c.close) : [currentPrice];
@@ -1476,25 +1522,32 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
     }
   } else if (isMacroBearish) {
     // DALAM TREN TURUN / DUMP:
-    // Dilarang keras membuka posisi LONG melawan arus (menangkap pisau jatuh)!
-    direction = 'SHORT';
-
-    if (detectedPattern && detectedPattern.direction === 'SHORT') {
-      strategy = detectedPattern.type === 'REVERSAL' ? 'RSI_EXTREME_REVERSAL' : 'BREAKOUT_MOMENTUM';
-      strategyLabel = `🕯️ ${detectedPattern.name} (Bearish Continuation)`;
-      score = Math.min(86 + Math.round((detectedPattern.reliability - 50) / 2.5), 98);
-    } else if (detectedPattern && detectedPattern.direction === 'LONG') {
-      strategy = 'BREAKOUT_MOMENTUM';
-      strategyLabel = `🛡️ Rebound Watch (${detectedPattern.name} Diabaikan)`;
-      score = 82;
-    } else if (isMaBearish && !isMacdBull) {
-      strategy = 'BREAKOUT_MOMENTUM';
-      strategyLabel = '📉 Death Stack Bearish Breakdown';
-      score = 88 + (isEmaBearish ? 2 : 0) + (isStochBearish ? 2 : 0);
+    // Pengecualian Emas SMC: Jika harga menguji Demand OB 4H + VPA Institusi + MSS 15m terkonfirmasi
+    if (smcAnalysis && smcAnalysis.smcScore >= 75 && smcAnalysis.smcBias === 'BULLISH' && smcAnalysis.mssConfirmed) {
+      direction = 'LONG';
+      strategy = 'SMC_DEMAND_BOUNCE';
+      strategyLabel = `🎯 SMC Demand Bounce (4H OB + 15m MSS)`;
+      score = Math.max(88, smcAnalysis.smcScore);
     } else {
-      strategy = 'BREAKOUT_MOMENTUM';
-      strategyLabel = '📉 Macro Downtrend Following SHORT';
-      score = 80;
+      direction = 'SHORT';
+
+      if (detectedPattern && detectedPattern.direction === 'SHORT') {
+        strategy = detectedPattern.type === 'REVERSAL' ? 'RSI_EXTREME_REVERSAL' : 'BREAKOUT_MOMENTUM';
+        strategyLabel = `🕯️ ${detectedPattern.name} (Bearish Continuation)`;
+        score = Math.min(86 + Math.round((detectedPattern.reliability - 50) / 2.5), 98);
+      } else if (detectedPattern && detectedPattern.direction === 'LONG') {
+        strategy = 'BREAKOUT_MOMENTUM';
+        strategyLabel = `🛡️ Rebound Watch (${detectedPattern.name} Diabaikan)`;
+        score = 82;
+      } else if (isMaBearish && !isMacdBull) {
+        strategy = 'BREAKOUT_MOMENTUM';
+        strategyLabel = '📉 Death Stack Bearish Breakdown';
+        score = 88 + (isEmaBearish ? 2 : 0) + (isStochBearish ? 2 : 0);
+      } else {
+        strategy = 'BREAKOUT_MOMENTUM';
+        strategyLabel = '📉 Macro Downtrend Following SHORT';
+        score = 80;
+      }
     }
   } else {
     // KONDISI SIDEWAYS / NETRAL TRANSISI:
@@ -1552,7 +1605,10 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
     tp3Price = currentPrice * (1 + tp3Pct / 100);
     slPrice = currentPrice * (1 - slPct / 100);
 
-    if (detectedPattern?.stopLossPrice && detectedPattern.stopLossPrice < currentPrice) {
+    if (strategy === 'SMC_DEMAND_BOUNCE' && smcAnalysis?.nearestDemandZone) {
+      slPrice = Math.max(smcAnalysis.nearestDemandZone.zoneLow * 0.992, currentPrice * 0.96);
+      slPct = Math.abs((slPrice - currentPrice) / currentPrice) * 100;
+    } else if (detectedPattern?.stopLossPrice && detectedPattern.stopLossPrice < currentPrice) {
       slPrice = Math.max(detectedPattern.stopLossPrice, currentPrice * 0.96);
       slPct = Math.abs((slPrice - currentPrice) / currentPrice) * 100;
     }
@@ -1819,6 +1875,7 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
     indicators,
     indicatorExplanation,
     candlestickPattern: detectedPattern || undefined,
+    smcAnalysis,
     btcContext,
     positionSizing,
     orderbookDepth,
