@@ -626,7 +626,7 @@ function evaluatePairSignal(
     score = 90;
     rationale = `Funding rate terlalu tinggi (+${fundingRatePct.toFixed(4)}%) dan harga tertekan menembus support (${change24h.toFixed(2)}%). Potensi likuidasi long terkonfirmasi.`;
   }
-  // 2. EARLY ACCUMULATION SCOUT (Masuk di dasar support sebelum koin terbang)
+  // 2. EARLY ACCUMULATION SCOUT (Masuk di dasar support sebelum koin terbang) - PRIORITAS SUPERNOVA
   else if (
     relativePosition <= 0.35 &&
     change24h >= -2.0 &&
@@ -637,11 +637,11 @@ function evaluatePairSignal(
     direction = 'LONG';
     strategy = 'EARLY_ACCUMULATION';
     strategyLabel = '🌱 Early Accumulation Scout';
-    score = relativePosition <= 0.20 ? 89 : 84;
-    tier = score >= 88 ? 'HIGH' : 'MODERATE';
+    score = relativePosition <= 0.20 ? 95 : 91;
+    tier = 'SUPERNOVA';
     rationale = `Akumulasi tersembunyi di zona diskon rentang 24 jam (${(relativePosition * 100).toFixed(0)}% range). Harga bertahan kokoh di atas low ($${formatFuturesPrice(low24h)}) dengan likuiditas aktif $${(quoteVolume / 1e6).toFixed(1)}M sebelum momentum publik masuk.`;
   }
-  // 3. PANIC SWEEP REVERSAL (Titik kapitulasi likuidasi ritel tuntas di dasar low 24h)
+  // 3. PANIC SWEEP REVERSAL (Titik kapitulasi likuidasi ritel tuntas di dasar low 24h) - PRIORITAS SUPERNOVA
   else if (
     relativePosition <= 0.08 &&
     change24h <= -6.0 &&
@@ -651,16 +651,16 @@ function evaluatePairSignal(
     direction = 'LONG';
     strategy = 'PANIC_SWEEP_REVERSAL';
     strategyLabel = '🧲 Panic Sweep Reversal';
-    score = 88;
-    tier = 'HIGH';
+    score = 93;
+    tier = 'SUPERNOVA';
     rationale = `Pembersihan likuiditas panik (dump -${Math.abs(change24h).toFixed(2)}%) menyentuh batas low 24h ($${formatFuturesPrice(low24h)}). Terjadi penolakan harga awal (rejection wick) dengan peluang technical bounce tinggi.`;
   }
   // 4. HIDDEN BREAKOUT PRE-SIGNAL (Menjelang breakout, belum overbought)
   else if (
-    relativePosition >= 0.72 &&
-    relativePosition < 0.90 &&
+    relativePosition >= 0.70 &&
+    relativePosition <= 0.88 &&
     change24h >= 2.0 &&
-    change24h <= 7.0 &&
+    change24h <= 6.5 &&
     quoteVolume >= 25_000_000
   ) {
     direction = 'LONG';
@@ -670,14 +670,14 @@ function evaluatePairSignal(
     tier = 'HIGH';
     rationale = `Harga sedang melakukan ekspansi struktur ke arah resisten 24h (${(relativePosition * 100).toFixed(0)}% range) dengan momentum kenaikan awal (+${change24h.toFixed(2)}%) sebelum koin overbought.`;
   }
-  // 5. BREAKOUT MOMENTUM PRESISI TINGGI (Ketat: Posisi ≥ 92% rentang 24h & Kenaikan ≥ 4.5%)
-  else if (relativePosition >= 0.92 && change24h >= 4.5 && quoteVolume >= 20_000_000) {
+  // 5. BREAKOUT MOMENTUM (Hanya jika belum terlalu overextended, change24h <= 9.0%)
+  else if (relativePosition >= 0.90 && change24h >= 3.5 && change24h <= 9.0 && quoteVolume >= 20_000_000) {
     direction = 'LONG';
     strategy = 'BREAKOUT_MOMENTUM';
     strategyLabel = '🚀 24h High Breakout';
-    score = relativePosition >= 0.96 ? 94 : 88;
-    tier = score >= 90 ? 'SUPERNOVA' : 'HIGH';
-    rationale = `Harga menembus resistance 24h (${formatFuturesPrice(high24h)}) dengan momentum beli kuat (+${change24h.toFixed(2)}%) dan likuiditas masif $${(quoteVolume / 1e6).toFixed(1)}M.`;
+    score = 83;
+    tier = 'HIGH';
+    rationale = `Harga menguji resistance 24h (${formatFuturesPrice(high24h)}) dengan momentum beli terukur (+${change24h.toFixed(2)}%) dan likuiditas $${(quoteVolume / 1e6).toFixed(1)}M.`;
   } else if (relativePosition <= 0.08 && change24h <= -4.5 && quoteVolume >= 20_000_000) {
     direction = 'SHORT';
     strategy = 'BREAKOUT_MOMENTUM';
@@ -686,7 +686,7 @@ function evaluatePairSignal(
     tier = score >= 90 ? 'SUPERNOVA' : 'HIGH';
     rationale = `Harga menembus breakdown support 24h (${formatFuturesPrice(low24h)}) dengan tekanan jual konsisten (${change24h.toFixed(2)}%).`;
   }
-  // 6. REVERSAL / OVERSOLD - OVERBOUGHT EKSTREM
+  // 6. REVERSAL / OVERSOLD DIP BUYER
   else if (relativePosition <= 0.10 && change24h <= -8.0 && quoteVolume >= 15_000_000) {
     direction = 'LONG';
     strategy = 'RSI_EXTREME_REVERSAL';
@@ -694,15 +694,8 @@ function evaluatePairSignal(
     tier = 'HIGH';
     score = 85;
     rationale = `Koreksi ekstrem mendekati dasar 24 jam dengan diskon dalam (${change24h.toFixed(2)}%). Peluang technical rebound tajam dengan R:R tinggi.`;
-  } else if (relativePosition >= 0.90 && change24h >= 15.0 && quoteVolume >= 25_000_000) {
-    // Parabolic expansion: Jangan pernah counter-trade short koin yang sedang pump liar! Ikuti tren utama (Trend Following).
-    direction = 'LONG';
-    strategy = 'VOLATILITY_EXPANSION';
-    strategyLabel = '🚀 Parabolic Momentum Continuation';
-    tier = 'SUPERNOVA';
-    score = 93;
-    rationale = `Kenaikan parabola super masif (+${change24h.toFixed(2)}%) dengan volume $${(quoteVolume / 1e6).toFixed(1)}M USD. Mengikuti momentum bullish utama (Trend Following) dengan trailing stop terukur. Dilarang counter-trade SHORT demi proteksi modal!`;
   }
+  // Catatan: Volatility Expansion untuk koin yang sudah pump +15% dilarang masuk sniper LONG agar tidak membeli pucuk.
 
   // Jika tidak memenuhi kriteria ketat, tolak (anti-spam)
   if (!direction || score < 82) return null;
@@ -1185,6 +1178,34 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
             signal.leverage.safe.multiplier
           );
 
+          // 2b. 🛡️ SNIPER PROTOCOL: HARD GATEKEEPER PENCEGAH FOMO DI PUCUK (RSI >= 68 DITOLAK)
+          const realRsi6 = realIndicators.rsi.rsi6;
+          if (signal.direction === 'LONG') {
+            if (realRsi6 >= 68) {
+              signal.overallScore = 30; // Gugurkan total dari radar aktif
+              signal.signalTier = 'MODERATE';
+              if (signal.indicatorExplanation) {
+                signal.indicatorExplanation.directionVerdict = `🔴 DITOLAK SNIPER (OVERBOUGHT): RSI(6)=${realRsi6.toFixed(1)} sudah berada di pucuk/jenuh beli. Dilarang FOMO membeli koin yang sudah terbang!`;
+              }
+            } else if (realRsi6 >= 60) {
+              signal.overallScore -= 18; // Penalti zona rawan koreksi
+            } else if (realRsi6 <= 55 && realRsi6 >= 25) {
+              signal.overallScore = Math.min(signal.overallScore + 10, 99); // Zona Emas Sniper: Akumulasi sehat
+            }
+          } else if (signal.direction === 'SHORT') {
+            if (realRsi6 <= 32) {
+              signal.overallScore = 30; // Gugurkan total: dilarang short di dasar dump
+              signal.signalTier = 'MODERATE';
+              if (signal.indicatorExplanation) {
+                signal.indicatorExplanation.directionVerdict = `🔴 DITOLAK SNIPER (OVERSOLD): RSI(6)=${realRsi6.toFixed(1)} sudah berada di dasar jurang. Rawan technical rebound!`;
+              }
+            } else if (realRsi6 <= 38) {
+              signal.overallScore -= 18;
+            } else if (realRsi6 >= 45 && realRsi6 <= 72) {
+              signal.overallScore = Math.min(signal.overallScore + 10, 99);
+            }
+          }
+
           // 3. Perisai Anti-Bull Trap: Jika BTC Sedang Dump, Batalkan / Turunkan Sinyal LONG Altcoin
           if (signal.symbol !== 'BTCUSDT' && !btcContext.isSafeForAltLong && signal.direction === 'LONG') {
             signal.overallScore -= 22;
@@ -1339,8 +1360,23 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
     })
   );
 
-  // Filter sinyal yang skornya jatuh karena konflik arah candlestick atau BTC dump
-  const validSignals = candidates.filter((s) => s.overallScore >= 78);
+  // Filter sinyal yang lolos kriteria ketat Sniper (Anti-FOMO di pucuk):
+  // 1. Skor keseluruhan minimal 78
+  // 2. DILARANG KERAS meloloskan sinyal LONG dengan RSI(6) >= 68 (koin sudah terbang/overbought)
+  // 3. DILARANG KERAS meloloskan sinyal SHORT dengan RSI(6) <= 32 (koin sudah di dasar jurang dump)
+  const validSignals = candidates.filter((s) => {
+    if (s.overallScore < 78) return false;
+
+    const rsiVal = s.indicators?.rsi?.rsi6;
+    if (s.direction === 'LONG' && rsiVal !== undefined && rsiVal >= 68) {
+      return false; // REJECT LONG OVERBOUGHT
+    }
+    if (s.direction === 'SHORT' && rsiVal !== undefined && rsiVal <= 32) {
+      return false; // REJECT SHORT OVERSOLD
+    }
+
+    return true;
+  });
 
   // Urutkan sinyal akhir: SUPERNOVA pertama, lalu berdasarkan skor konfluensi x R:R tertinggi x volume
   validSignals.sort((a, b) => {
@@ -1742,6 +1778,10 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
   }
   if (isBtcDumping && direction === 'LONG') {
     rationale += ` [PERINGATAN BTC GUARD] Bitcoin dalam kondisi tertekan (${btcContext.change15mPct}% 15m), sinyal dibatasi untuk proteksi modal.`;
+  }
+  if (direction === 'LONG' && indicators.rsi.rsi6 >= 68) {
+    score = Math.min(score, 72);
+    rationale += ` [PERINGATAN SNIPER] RSI(6)=${indicators.rsi.rsi6.toFixed(1)} overbought di pucuk. Dilarang FOMO, rawan koreksi!`;
   }
 
   const tier: FuturesSignalTier =
