@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
       : '';
 
     const smcLine = signal.smcAnalysis
-      ? `\n🏦 <b>Smart Money (SMC):</b> Skor ${signal.smcAnalysis.smcScore}/100 [Bias: ${signal.smcAnalysis.smcBias}]`
+      ? `\n🏦 <b>Smart Money (SMC):</b> Skor ${signal.smcAnalysis.smcScore}/100 [Bias: ${signal.smcAnalysis.smcBias}]\n   ↳ <i>${signal.smcAnalysis.smcRationale}</i>`
       : '';
 
     const multiTimeframeLine = signal.multiTimeframe
