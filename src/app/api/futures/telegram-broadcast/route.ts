@@ -44,12 +44,22 @@ export async function POST(request: NextRequest) {
       ? `\n🕯️ <b>Pola Candlestick:</b> ${signal.candlestickPattern.name} (Winrate <b>${signal.candlestickPattern.reliability}%</b> - ${signal.candlestickPattern.type})`
       : '';
 
+    const smcLine = signal.smcAnalysis
+      ? `\n🏦 <b>Smart Money (SMC):</b> Skor ${signal.smcAnalysis.smcScore}/100 [Bias: ${signal.smcAnalysis.smcBias}]`
+      : '';
+
+    const multiTimeframeLine = signal.multiTimeframe
+      ? `\n📊 <b>Multi-Timeframe:</b> ${signal.multiTimeframe.badgeLabel}`
+      : '';
+
     const captionText =
       `⚡ <b>BINANCE FUTURES QUANT SIGNAL // AI ALPHA</b> ⚡\n\n` +
       `${directionEmoji} <b>${signal.direction} · ${cleanPair}</b>\n` +
       `🏷️ <b>Strategi:</b> ${signal.strategyLabel}\n` +
       `⭐ <b>Skor AI:</b> ${signal.overallScore}/100 [${signal.signalTier}]` +
       candleLine +
+      smcLine +
+      multiTimeframeLine +
       `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `🎯 <b>ZONA ENTRY:</b> $${entryLow} – $${entryHigh}\n` +
       `🎯 <b>Target TP1 (+${signal.targets.tp1.gainPct.toFixed(1)}%):</b> $${tp1Price} ⏱️ ${signal.targets.tp1.eta}\n` +

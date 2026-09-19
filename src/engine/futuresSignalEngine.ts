@@ -1,3 +1,4 @@
+
 /**
  * Binance Futures Signal Detection & Quant Consensus Engine
  * Memindai semua koin USDT-M di Binance Futures secara berkala,
@@ -133,7 +134,7 @@ export function validateFuturesEntryGate(signal: BinanceFuturesSignal): {
     isRestricted = true;
     warnings.push(
       tradFiCheck.reason ||
-        `🚨 GATEKEEPER BLACKLIST: Aset TradFi / Pre-Market (${signal.symbol}) diblokir total dari eksekusi karena spread lebar dan likuiditas minim.`
+      `🚨 GATEKEEPER BLACKLIST: Aset TradFi / Pre-Market (${signal.symbol}) diblokir total dari eksekusi karena spread lebar dan likuiditas minim.`
     );
   }
 
@@ -903,8 +904,8 @@ function calculateTechnicalIndicators(
   const macdTrend = dif > dea
     ? 'BULLISH_CROSS'
     : dif < dea
-    ? 'BEARISH_CROSS'
-    : 'BEARISH';
+      ? 'BEARISH_CROSS'
+      : 'BEARISH';
 
   // 4. Triple RSI: RSI(6), RSI(12), RSI(24)
   // Perhitungan realistis berbasis relative position di rentang 24 jam dan change24h
@@ -933,10 +934,10 @@ function calculateTechnicalIndicators(
     rsi6 >= 78
       ? 'OVERBOUGHT'
       : rsi6 <= 25
-      ? 'OVERSOLD'
-      : isBull
-      ? 'BULLISH_MOMENTUM'
-      : 'BEARISH_MOMENTUM';
+        ? 'OVERSOLD'
+        : isBull
+          ? 'BULLISH_MOMENTUM'
+          : 'BEARISH_MOMENTUM';
 
   return {
     ma: { ma7, ma25, ma99, alignment: maAlignment },
@@ -971,16 +972,14 @@ function generateIndicatorExplanation(
     : indicators.ma.ma7 < indicators.ma.ma25 && indicators.ma.ma25 < indicators.ma.ma99;
 
   const maInsight = isLong
-    ? `Angka Aktual: MA(7)=$${formatFuturesPrice(indicators.ma.ma7)}, MA(25)=$${formatFuturesPrice(indicators.ma.ma25)}, MA(99)=$${formatFuturesPrice(indicators.ma.ma99)}. ${
-        maOrderValid
-          ? 'Formasi Golden Stack (MA7 > MA25 > MA99) terverifikasi matematis mengonfirmasi tren naik solid.'
-          : 'Susunan MA berada dalam fase transisi/sideways.'
-      }`
-    : `Angka Aktual: MA(7)=$${formatFuturesPrice(indicators.ma.ma7)}, MA(25)=$${formatFuturesPrice(indicators.ma.ma25)}, MA(99)=$${formatFuturesPrice(indicators.ma.ma99)}. ${
-        maOrderValid
-          ? 'Formasi Death Stack (MA7 < MA25 < MA99) terverifikasi matematis mengonfirmasi tren turun aktif.'
-          : 'Susunan MA belum selaras sempurna.'
-      }`;
+    ? `Angka Aktual: MA(7)=$${formatFuturesPrice(indicators.ma.ma7)}, MA(25)=$${formatFuturesPrice(indicators.ma.ma25)}, MA(99)=$${formatFuturesPrice(indicators.ma.ma99)}. ${maOrderValid
+      ? 'Formasi Golden Stack (MA7 > MA25 > MA99) terverifikasi matematis mengonfirmasi tren naik solid.'
+      : 'Susunan MA berada dalam fase transisi/sideways.'
+    }`
+    : `Angka Aktual: MA(7)=$${formatFuturesPrice(indicators.ma.ma7)}, MA(25)=$${formatFuturesPrice(indicators.ma.ma25)}, MA(99)=$${formatFuturesPrice(indicators.ma.ma99)}. ${maOrderValid
+      ? 'Formasi Death Stack (MA7 < MA25 < MA99) terverifikasi matematis mengonfirmasi tren turun aktif.'
+      : 'Susunan MA belum selaras sempurna.'
+    }`;
 
   // 1b. EMA Insight (EMA 9, 21, 50)
   let emaInsight = '';
@@ -988,7 +987,7 @@ function generateIndicatorExplanation(
     const emaOrderValid = isLong
       ? indicators.ema.ema9 > indicators.ema.ema21 && indicators.ema.ema21 > indicators.ema.ema50
       : indicators.ema.ema9 < indicators.ema.ema21 && indicators.ema.ema21 < indicators.ema.ema50;
-    
+
     emaInsight = isLong
       ? `EMA (9,21,50): ${emaOrderValid ? 'BULLISH ALIGNMENT. Harga terakselerasi naik di atas rata-rata eksponensial jangka pendek.' : 'Transisi/Sideways pada EMA jangka pendek.'}`
       : `EMA (9,21,50): ${emaOrderValid ? 'BEARISH ALIGNMENT. Harga tertekan turun di bawah rata-rata eksponensial jangka pendek.' : 'Transisi/Sideways pada EMA jangka pendek.'}`;
@@ -1170,7 +1169,7 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
             // Aturan 1: RSI 15m di Zona Konsolidasi/Ignisi (40 - 60)
             const rsi15m = realRsi6;
             const rsi1h = realIndicators1h.rsi.rsi6;
-            
+
             if (rsi15m < 40 || rsi15m > 60) {
               passV3 = false;
               rejectReason = `RSI(15m) = ${rsi15m.toFixed(1)} berada di luar Zona Konsolidasi Sehat (40-60).`;
@@ -1203,11 +1202,11 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
               const prevClose1h = closePrices1h.slice(0, -1);
               const prevMa25_1h = calculateSMA(prevClose1h, 25);
               const currMa25_1h = realIndicators1h.ma.ma25;
-              
+
               const lastCandle1h = candles1h[candles1h.length - 1];
-              const isMarubozu = lastCandle1h.open > lastCandle1h.close 
-                  ? (lastCandle1h.close - lastCandle1h.low) / (lastCandle1h.high - lastCandle1h.low) < 0.08
-                  : (lastCandle1h.high - lastCandle1h.close) / (lastCandle1h.high - lastCandle1h.low) < 0.08;
+              const isMarubozu = lastCandle1h.open > lastCandle1h.close
+                ? (lastCandle1h.close - lastCandle1h.low) / (lastCandle1h.high - lastCandle1h.low) < 0.08
+                : (lastCandle1h.high - lastCandle1h.close) / (lastCandle1h.high - lastCandle1h.low) < 0.08;
 
               if (signal.direction === 'LONG') {
                 if (currMa25_1h < prevMa25_1h) {
@@ -1234,10 +1233,10 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
             if (passV3 && candles.length >= 12) {
               const recent10 = candles.slice(-12, -2);
               const avgVol10 = recent10.reduce((acc, c) => acc + (c.volume ?? 0), 0) / 10;
-              
+
               const currentCandle = candles[candles.length - 1];
               const prevCandle = candles[candles.length - 2];
-              
+
               const checkVolume = (c: typeof currentCandle) => {
                 const vol = c.volume ?? 0;
                 if (vol < avgVol10 * 1.5) return false;
@@ -1269,7 +1268,7 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
             // ⚡ SQUEEZE HUNTER (Mesin Ekstrem - Khusus Koin Liar)
             let passSqueeze = true;
             let rejectReason = '';
-            
+
             // 1. Funding Rate Negatif Tajam (Wajib < -0.01%)
             const fr = signal.derivativesData.fundingRatePct;
             if (fr > -0.01) {
@@ -1474,7 +1473,7 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
         return false;
       }
     }
-    
+
     // 🎯 ATURAN MUTLAK 2: Koin SHORT dengan RSI <= 15 DILARANG KERAS LOLOS (Dasar jurang)
     // Untuk strategi non-breakdown, kita tolak jika RSI <= 35
     if (s.direction === 'SHORT') {
@@ -1647,7 +1646,7 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
   if (blacklistCheck.isBlacklisted) {
     throw new Error(
       blacklistCheck.reason ||
-        `⛔ GATEKEEPER VETO: Ticker "${symbol}" masuk daftar hitam TradFi/Pre-Market (minim likuiditas & spread lebar). Dilarang dianalisis untuk mencegah Stop Loss beruntun.`
+      `⛔ GATEKEEPER VETO: Ticker "${symbol}" masuk daftar hitam TradFi/Pre-Market (minim likuiditas & spread lebar). Dilarang dianalisis untuk mencegah Stop Loss beruntun.`
     );
   }
 
@@ -1713,7 +1712,7 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
   const isMaBearish = indicators.ma.alignment === 'BEARISH';
   const isMacdBull = indicators.macd.dif > indicators.macd.dea;
   const isRsiBull = indicators.rsi.rsi6 > 50;
-  
+
   const isEmaBullish = indicators.ema?.alignment === 'BULLISH';
   const isEmaBearish = indicators.ema?.alignment === 'BEARISH';
   const isStochBullish = indicators.stochRsi?.status === 'BULLISH_CROSS' || indicators.stochRsi?.status === 'OVERSOLD';
@@ -1733,7 +1732,7 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
     // DALAM TREN NAIK / PUMP KUAT:
     // Dilarang keras membuka posisi SHORT melawan arus tren utama!
     direction = 'LONG';
-    
+
     if (detectedPattern && detectedPattern.direction === 'LONG') {
       strategy = detectedPattern.type === 'REVERSAL' ? 'RSI_EXTREME_REVERSAL' : 'BREAKOUT_MOMENTUM';
       strategyLabel = `🕯️ ${detectedPattern.name} (Bullish Continuation)`;
@@ -1911,8 +1910,8 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
     score >= 90 && (!isBtcDumping || direction === 'SHORT')
       ? 'SUPERNOVA'
       : score >= 80
-      ? 'HIGH'
-      : 'MODERATE';
+        ? 'HIGH'
+        : 'MODERATE';
 
   // Data Derivatif Riil dari Binance Futures
   const openInterestUsd = rawOi ? rawOi * currentPrice : quoteVolume * 0.45;
@@ -1921,14 +1920,14 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
   // 1. Data Kedalaman Orderbook (Whale Wall Depth)
   const orderbookDepth: OrderbookDepthAnalysis | undefined = rawDepth
     ? {
-        totalBidUsd: rawDepth.totalBidUsd,
-        totalAskUsd: rawDepth.totalAskUsd,
-        imbalanceRatio: rawDepth.imbalanceRatio,
-        status: rawDepth.status,
-        insight: rawDepth.insight,
-        topBidWallPrice: rawDepth.topBidWallPrice,
-        topAskWallPrice: rawDepth.topAskWallPrice,
-      }
+      totalBidUsd: rawDepth.totalBidUsd,
+      totalAskUsd: rawDepth.totalAskUsd,
+      imbalanceRatio: rawDepth.imbalanceRatio,
+      status: rawDepth.status,
+      insight: rawDepth.insight,
+      topBidWallPrice: rawDepth.topBidWallPrice,
+      topAskWallPrice: rawDepth.topAskWallPrice,
+    }
     : undefined;
 
   // 2. Evaluasi Anomali Kuantitatif (Alpha Zoo Core Intelligence)

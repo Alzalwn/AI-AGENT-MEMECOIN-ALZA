@@ -26,6 +26,8 @@ export const TRADFI_STATIC_BLACKLIST: Set<string> = new Set([
   'KORUUSDT',
   'CRCL',
   'CRCLUSDT',
+  'MUU',
+  'MUUUSDT',
 
   // ETF Tradisional & Indeks Pasar Saham
   'SPY',
@@ -202,6 +204,6 @@ export function getTradFiBlacklistSummary(): {
 } {
   return {
     totalStaticBlacklist: TRADFI_STATIC_BLACKLIST.size,
-    featuredBlacklist: ['KORU', 'CRCL', 'SPY', 'QQQ', 'TLT', 'SOXL', 'UP/DOWN Tokens', 'Pre-Market Synthetics'],
+    featuredBlacklist: ['KORU', 'CRCL', 'MUU', 'SPY', 'QQQ', 'TLT', 'SOXL', 'UP/DOWN Tokens', 'Pre-Market Synthetics'],
   };
 }
