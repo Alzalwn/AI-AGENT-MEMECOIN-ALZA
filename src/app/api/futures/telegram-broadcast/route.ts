@@ -189,33 +189,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
-
-export const dynamic = 'force-dynamic';
-
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const signal = body.signal as BinanceFuturesSignal;
-    const botToken = (body.botToken || process.env.TELEGRAM_BOT_TOKEN || process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN || '').trim();
-    const chatId = (body.chatId || process.env.TELEGRAM_CHAT_ID || process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID || '').trim();
-    const imageBase64 = body.imageBlobBase64 as string | undefined;
-    const customNote = body.customNote as string | undefined;
-
-    if (!botToken || !chatId) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Bot Token atau Chat ID belum dikonfigurasi! Silakan atur di pengaturan Telegram atau masukkan Bot Token & Chat ID Anda.',
-        },
-        { status: 400 }
-      );
-    }
-
-    if (!signal || !signal.symbol) {
-      return NextResponse.json(
-        { success: false, error: 'Data sinyal futures tidak valid.' },
-        { status: 400 }
-      );
-    }
-
