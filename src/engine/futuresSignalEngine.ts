@@ -1112,9 +1112,9 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
     const scoreB = b.overallScore * b.riskRewardRatio + getEarlyBonus(b);
     return scoreB - scoreA;
   });
-  const candidates = rawSignals.slice(0, 30);
+  const candidates = rawSignals.slice(0, 50);
 
-  // Analisis Pola Candlestick Elit, Indikator Riil, Sniper v3.0 & Squeeze Hunter (Top 30 Kandidat)
+  // Analisis Pola Candlestick Elit, Indikator Riil, Sniper v3.0 & Squeeze Hunter (Top 50 Kandidat)
   await Promise.allSettled(
     candidates.map(async (signal) => {
       try {
@@ -1170,9 +1170,9 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
             const rsi15m = realRsi6;
             const rsi1h = realIndicators1h.rsi.rsi6;
 
-            if (rsi15m < 40 || rsi15m > 60) {
+            if (rsi15m < 35 || rsi15m > 65) {
               passV3 = false;
-              rejectReason = `RSI(15m) = ${rsi15m.toFixed(1)} berada di luar Zona Konsolidasi Sehat (40-60).`;
+              rejectReason = `RSI(15m) = ${rsi15m.toFixed(1)} berada di luar zona ignisi agresif (35-65).`;
             }
             // Aturan 1H: Hindari ekstrim makro (>70 atau <30)
             if (passV3) {
@@ -1190,11 +1190,11 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
             const ma99 = realIndicators.ma.ma99;
             const dist25 = Math.abs(currentP - ma25) / ma25;
             const dist99 = Math.abs(currentP - ma99) / ma99;
-            const isNearMA = dist25 <= 0.010 || dist99 <= 0.010; // 1.0% buffer zone presisi
+            const isNearMA = dist25 <= 0.018 || dist99 <= 0.018; // 1.8% buffer zone presisi
 
             if (passV3 && !isNearMA) {
               passV3 = false;
-              rejectReason = `Harga ($${currentP}) belum menyentuh zona MA(25)/MA(99) 15m. Jarak: ${(Math.min(dist25, dist99) * 100).toFixed(2)}% (Maks 1.0%).`;
+              rejectReason = `Harga ($${currentP}) belum menyentuh zona MA(25)/MA(99) 15m. Jarak: ${(Math.min(dist25, dist99) * 100).toFixed(2)}% (Maks 1.8%).`;
             }
 
             // Aturan 3: Syarat 1H Komandan Tren
@@ -1239,7 +1239,7 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
 
               const checkVolume = (c: typeof currentCandle) => {
                 const vol = c.volume ?? 0;
-                if (vol < avgVol10 * 1.5) return false;
+                if (vol < avgVol10 * 1.2) return false;
                 if (signal.direction === 'LONG' && c.close <= c.open) return false;
                 if (signal.direction === 'SHORT' && c.close >= c.open) return false;
                 return true;
@@ -1247,7 +1247,7 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
 
               if (!checkVolume(currentCandle) && !checkVolume(prevCandle)) {
                 passV3 = false;
-                rejectReason = `Volume belum mencapai konfirmasi akumulasi 1.5x dari rata-rata (15m).`;
+                rejectReason = `Volume belum mencapai konfirmasi akumulasi 1.2x dari rata-rata (15m).`;
               }
             }
 
@@ -1261,7 +1261,7 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
               signal.overallScore = Math.min(signal.overallScore + 10, 99); // Lolos seleksi mutlak
               signal.signalTier = 'SUPERNOVA'; // Sinyal ini sangat elit jika lolos
               if (signal.indicatorExplanation) {
-                signal.indicatorExplanation.directionVerdict = `🟢 SNIPER v3.0 TERKONFIRMASI: RSI Sehat (40-60), Pullback MA (${(Math.min(dist25, dist99) * 100).toFixed(2)}%), Volume 1.5x+, 1H Tren Mendukung.`;
+                signal.indicatorExplanation.directionVerdict = `🟢 SNIPER v3.0 TERKONFIRMASI: RSI Ignisi (35-65), Pullback MA (${(Math.min(dist25, dist99) * 100).toFixed(2)}%), Volume 1.2x+, 1H Tren Mendukung.`;
               }
             }
           } else if (signal.strategy === 'FUNDING_SQUEEZE') {
