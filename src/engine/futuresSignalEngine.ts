@@ -644,19 +644,30 @@ function evaluatePairSignal(
     return null;
   }
 
-  // Tentukan bias arah awal berdasarkan tren harian
-  if (change24h >= 1.5 && change24h <= 15) {
+  // 1. Prioritas Khusus: Squeeze Hunter (Mesin Ekstrem - Khusus Koin Liar)
+  if (fundingRatePct <= -0.015 && change24h >= 2.0) {
+    direction = 'LONG';
+    strategy = 'FUNDING_SQUEEZE';
+    strategyLabel = '⚡ Squeeze Hunter (Short Squeeze)';
+    score = 90;
+    tier = 'SUPERNOVA';
+    rationale = `Kandidat Squeeze Hunter: Funding Rate negatif tajam (${fundingRatePct.toFixed(4)}%), potensi short squeeze masif saat volume membludak.`;
+  } else if (change24h >= 1.5 && change24h <= 20) {
     // Koin sedang naik hari ini, kita cari pullback LONG
     direction = 'LONG';
+    strategy = 'PULLBACK_RETEST';
+    strategyLabel = '🎯 Sniper v3.0 Pullback';
     score += Math.min(change24h, 10);
     rationale = `Kandidat Sniper v3.0 LONG: Tren harian positif (+${change24h.toFixed(2)}%), menunggu pullback ke Support MA(25)/99 dengan konfirmasi volume.`;
-  } else if (change24h <= -1.5 && change24h >= -15) {
+  } else if (change24h <= -1.5 && change24h >= -20) {
     // Koin sedang turun hari ini, kita cari pullback SHORT
     direction = 'SHORT';
+    strategy = 'PULLBACK_RETEST';
+    strategyLabel = '🎯 Sniper v3.0 Pullback';
     score += Math.min(Math.abs(change24h), 10);
     rationale = `Kandidat Sniper v3.0 SHORT: Tren harian negatif (${change24h.toFixed(2)}%), menunggu pullback ke Resistance MA(25)/99 dengan konfirmasi volume.`;
   } else {
-    // Koin terlalu ekstrim (> 15% atau < -15%), terlalu berisiko untuk pullback biasa
+    // Di luar batas pergerakan wajar
     return null;
   }
 
@@ -1102,9 +1113,9 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
     const scoreB = b.overallScore * b.riskRewardRatio + getEarlyBonus(b);
     return scoreB - scoreA;
   });
-  const candidates = rawSignals.slice(0, 15);
+  const candidates = rawSignals.slice(0, 30);
 
-  // Analisis Pola Candlestick Elit, Indikator Riil & SMC 4H Sniper (Top 15 Kandidat)
+  // Analisis Pola Candlestick Elit, Indikator Riil, Sniper v3.0 & Squeeze Hunter (Top 30 Kandidat)
   await Promise.allSettled(
     candidates.map(async (signal) => {
       try {
@@ -1150,34 +1161,41 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
 
           // 2b. 🛡️ SNIPER v3.0 PROTOCOL: PULLBACK & RE-TEST
           const realRsi6 = realIndicators.rsi.rsi6;
+          const currentP = signal.entryZone.current;
+
           if (signal.strategy === 'PULLBACK_RETEST') {
             let passV3 = true;
             let rejectReason = '';
-            const currentP = signal.entryZone.current;
 
-            // Aturan 1: RSI 15m dan 1H harus berada di "Zona Ignisi" (45 - 55)
+            // Aturan 1: RSI 15m di Zona Konsolidasi/Ignisi (40 - 60)
             const rsi15m = realRsi6;
             const rsi1h = realIndicators1h.rsi.rsi6;
             
-            if (rsi15m < 45 || rsi15m > 55) {
+            if (rsi15m < 40 || rsi15m > 60) {
               passV3 = false;
-              rejectReason = `RSI(15m) = ${rsi15m.toFixed(1)} berada di luar Zona Ignisi (45-55).`;
+              rejectReason = `RSI(15m) = ${rsi15m.toFixed(1)} berada di luar Zona Konsolidasi Sehat (40-60).`;
             }
-            if (passV3 && (rsi1h < 45 || rsi1h > 55)) {
-              passV3 = false;
-              rejectReason = `RSI(1H) = ${rsi1h.toFixed(1)} berada di luar Zona Ignisi (45-55).`;
+            // Aturan 1H: Hindari ekstrim makro (>70 atau <30)
+            if (passV3) {
+              if (signal.direction === 'LONG' && (rsi1h >= 70 || rsi1h < 30)) {
+                passV3 = false;
+                rejectReason = `RSI(1H) = ${rsi1h.toFixed(1)} terlalu ekstrim untuk LONG (>70 overbought atau <30 dumping).`;
+              } else if (signal.direction === 'SHORT' && (rsi1h <= 30 || rsi1h > 70)) {
+                passV3 = false;
+                rejectReason = `RSI(1H) = ${rsi1h.toFixed(1)} terlalu ekstrim untuk SHORT (<30 oversold atau >70 breakout).`;
+              }
             }
 
-            // Aturan 2: Pullback Proximity (Jarak max 0.5% dari MA25 atau MA99 di 15m)
+            // Aturan 2: Pullback Proximity (Jarak max 1.0% dari MA25 atau MA99 di 15m)
             const ma25 = realIndicators.ma.ma25;
             const ma99 = realIndicators.ma.ma99;
             const dist25 = Math.abs(currentP - ma25) / ma25;
             const dist99 = Math.abs(currentP - ma99) / ma99;
-            const isNearMA = dist25 <= 0.005 || dist99 <= 0.005; // Max 0.5% buffer
+            const isNearMA = dist25 <= 0.010 || dist99 <= 0.010; // 1.0% buffer zone presisi
 
             if (passV3 && !isNearMA) {
               passV3 = false;
-              rejectReason = `Harga ($${currentP}) terlalu jauh dari MA(25)/MA(99) 15m. Jarak: ${(Math.min(dist25, dist99) * 100).toFixed(2)}% (Maks 0.5%).`;
+              rejectReason = `Harga ($${currentP}) belum menyentuh zona MA(25)/MA(99) 15m. Jarak: ${(Math.min(dist25, dist99) * 100).toFixed(2)}% (Maks 1.0%).`;
             }
 
             // Aturan 3: Syarat 1H Komandan Tren
@@ -1188,13 +1206,13 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
               
               const lastCandle1h = candles1h[candles1h.length - 1];
               const isMarubozu = lastCandle1h.open > lastCandle1h.close 
-                  ? (lastCandle1h.close - lastCandle1h.low) / (lastCandle1h.high - lastCandle1h.low) < 0.1
-                  : (lastCandle1h.high - lastCandle1h.close) / (lastCandle1h.high - lastCandle1h.low) < 0.1;
+                  ? (lastCandle1h.close - lastCandle1h.low) / (lastCandle1h.high - lastCandle1h.low) < 0.08
+                  : (lastCandle1h.high - lastCandle1h.close) / (lastCandle1h.high - lastCandle1h.low) < 0.08;
 
               if (signal.direction === 'LONG') {
                 if (currMa25_1h < prevMa25_1h) {
                   passV3 = false;
-                  rejectReason = `1H MA(25) sedang menukik ke bawah. Tren tidak mendukung LONG.`;
+                  rejectReason = `1H MA(25) sedang menukik ke bawah. Tren makro tidak mendukung LONG.`;
                 }
                 if (passV3 && lastCandle1h.close < lastCandle1h.open && isMarubozu) {
                   passV3 = false;
@@ -1203,7 +1221,7 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
               } else {
                 if (currMa25_1h > prevMa25_1h) {
                   passV3 = false;
-                  rejectReason = `1H MA(25) sedang menanjak ke atas. Tren tidak mendukung SHORT.`;
+                  rejectReason = `1H MA(25) sedang menanjak ke atas. Tren makro tidak mendukung SHORT.`;
                 }
                 if (passV3 && lastCandle1h.close > lastCandle1h.open && isMarubozu) {
                   passV3 = false;
@@ -1212,7 +1230,7 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
               }
             }
 
-            // Aturan 4: Volume 2x Rata-rata 10 Candle (Pada 15m)
+            // Aturan 4: Volume 1.5x Rata-rata 10 Candle (Pada 15m)
             if (passV3 && candles.length >= 12) {
               const recent10 = candles.slice(-12, -2);
               const avgVol10 = recent10.reduce((acc, c) => acc + (c.volume ?? 0), 0) / 10;
@@ -1222,7 +1240,7 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
               
               const checkVolume = (c: typeof currentCandle) => {
                 const vol = c.volume ?? 0;
-                if (vol < avgVol10 * 2) return false;
+                if (vol < avgVol10 * 1.5) return false;
                 if (signal.direction === 'LONG' && c.close <= c.open) return false;
                 if (signal.direction === 'SHORT' && c.close >= c.open) return false;
                 return true;
@@ -1230,7 +1248,7 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
 
               if (!checkVolume(currentCandle) && !checkVolume(prevCandle)) {
                 passV3 = false;
-                rejectReason = `Tidak ada anomali volume 2x dari rata-rata pada candle konfirmasi searah tren (15m).`;
+                rejectReason = `Volume belum mencapai konfirmasi akumulasi 1.5x dari rata-rata (15m).`;
               }
             }
 
@@ -1244,7 +1262,50 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
               signal.overallScore = Math.min(signal.overallScore + 10, 99); // Lolos seleksi mutlak
               signal.signalTier = 'SUPERNOVA'; // Sinyal ini sangat elit jika lolos
               if (signal.indicatorExplanation) {
-                signal.indicatorExplanation.directionVerdict = `🟢 SNIPER v3.0 TERKONFIRMASI: RSI Netral (45-55), Pullback dekat MA (${(Math.min(dist25, dist99) * 100).toFixed(2)}%), Volume 2x+, 1H Tren Mendukung.`;
+                signal.indicatorExplanation.directionVerdict = `🟢 SNIPER v3.0 TERKONFIRMASI: RSI Sehat (40-60), Pullback MA (${(Math.min(dist25, dist99) * 100).toFixed(2)}%), Volume 1.5x+, 1H Tren Mendukung.`;
+              }
+            }
+          } else if (signal.strategy === 'FUNDING_SQUEEZE') {
+            // ⚡ SQUEEZE HUNTER (Mesin Ekstrem - Khusus Koin Liar)
+            let passSqueeze = true;
+            let rejectReason = '';
+            
+            // 1. Funding Rate Negatif Tajam (Wajib < -0.01%)
+            const fr = signal.derivativesData.fundingRatePct;
+            if (fr > -0.01) {
+              passSqueeze = false;
+              rejectReason = `Funding Rate (${fr.toFixed(4)}%) tidak cukup negatif untuk Short Squeeze (wajib < -0.01%).`;
+            }
+
+            // 2. Volume Ledakan (> 3x Lipat dari rata-rata 10 candle)
+            if (passSqueeze && candles.length >= 12) {
+              const recent10 = candles.slice(-12, -2);
+              const avgVol10 = recent10.reduce((acc, c) => acc + (c.volume ?? 0), 0) / 10;
+              const currentCandle = candles[candles.length - 1];
+              const prevCandle = candles[candles.length - 2];
+
+              const hasExplosiveVol = (c: typeof currentCandle) => (c.volume ?? 0) >= avgVol10 * 3.0;
+
+              if (!hasExplosiveVol(currentCandle) && !hasExplosiveVol(prevCandle)) {
+                passSqueeze = false;
+                rejectReason = `Tidak ada ledakan volume institusi > 3x dari rata-rata 10 candle.`;
+              }
+            }
+
+            if (!passSqueeze) {
+              signal.overallScore = 30;
+              signal.signalTier = 'MODERATE';
+              if (signal.indicatorExplanation) {
+                signal.indicatorExplanation.directionVerdict = `🔴 DITOLAK SQUEEZE HUNTER: ${rejectReason}`;
+              }
+            } else {
+              signal.overallScore = 96;
+              signal.signalTier = 'SUPERNOVA';
+              signal.direction = 'LONG';
+              signal.strategyLabel = '⚡ Squeeze Hunter (Short Squeeze Ignition)';
+              signal.rationale += ' [SQUEEZE HUNTER] Funding Rate negatif tajam & Volume institusi meledak >3x. ⚠️ EKSEKUSI WAJIB: Dilarang Market Buy! Buka grafik 1 Menit (1m) dan pasang Limit Buy di titik micro-pullback terdekat.';
+              if (signal.indicatorExplanation) {
+                signal.indicatorExplanation.directionVerdict = `🔥 SQUEEZE HUNTER TERKONFIRMASI: Funding ${fr.toFixed(4)}% + Volume 3x+. EKSEKUSI: Limit Buy di micro-pullback TF 1m!`;
               }
             }
           }
