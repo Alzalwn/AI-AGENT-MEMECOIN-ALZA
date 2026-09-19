@@ -43,7 +43,7 @@ import {
   RawOrderbookDepth,
 } from '../lib/binanceClient';
 import { parseKlinesToCandles, detectCandlestickPatterns } from './candlestickPatternEngine';
-import { computeRealTechnicalIndicators } from './technicalIndicatorsEngine';
+import { computeRealTechnicalIndicators, calculateSMA } from './technicalIndicatorsEngine';
 import { fetchRecentCryptoNews } from './newsFetchEngine';
 import { analyzeSentimentForSymbol, getCachedSentiment } from './newsSentimentEngine';
 import { runSmcAnalysis } from './smcAnalysisEngine';
@@ -625,103 +625,42 @@ function evaluatePairSignal(
   const relativePosition = (currentPrice - low24h) / priceRange;
 
   let direction: FuturesDirection | null = null;
-  let strategy: FuturesStrategy = 'BREAKOUT_MOMENTUM';
-  let strategyLabel = '🚀 Breakout Momentum';
+  let strategy: FuturesStrategy = 'PULLBACK_RETEST';
+  let strategyLabel = '🎯 Sniper v3.0 Pullback';
   let tier: FuturesSignalTier = 'HIGH';
-  let score = 75;
+  let score = 85;
   let rationale = '';
 
-  // 1. SQUEEZE RADAR (Funding Rate Anomali Tinggi)
-  if (fundingRatePct <= -0.03 && relativePosition > 0.50) {
-    // Negative funding tinggi + harga kuat = potensi SHORT SQUEEZE (Beli / LONG)
-    direction = 'LONG';
-    strategy = 'FUNDING_SQUEEZE';
-    strategyLabel = '⚡ Short Squeeze Surge';
-    tier = fundingRatePct <= -0.06 ? 'SUPERNOVA' : 'HIGH';
-    score = 92;
-    rationale = `Funding rate sangat negatif (${fundingRatePct.toFixed(4)}%), dominasi posisi short terjepit yang rentan terlikuidasi paksa ke atas saat volume pembeli masuk.`;
-  } else if (fundingRatePct >= 0.08 && relativePosition < 0.35 && change24h <= -3.0) {
-    // Positive funding ekstrem HANYA boleh di-short jika harga memang tertekan breakdown support
-    direction = 'SHORT';
-    strategy = 'FUNDING_SQUEEZE';
-    strategyLabel = '💥 Long Squeeze Dump';
-    tier = fundingRatePct >= 0.12 ? 'SUPERNOVA' : 'HIGH';
-    score = 90;
-    rationale = `Funding rate terlalu tinggi (+${fundingRatePct.toFixed(4)}%) dan harga tertekan menembus support (${change24h.toFixed(2)}%). Potensi likuidasi long terkonfirmasi.`;
+  // Sniper v3.0 Pre-Filter:
+  // Karena penentuan entry didasarkan pada MA(25)/99 15m dan volume spesifik,
+  // di sini kita hanya mem-filter koin berdasarkan tren harian (change24h)
+  // dan volume minimal.
+  if (quoteVolume < 25_000_000) {
+    return null; // Kurang likuid untuk sniper v3
   }
-  // 2. EARLY ACCUMULATION SCOUT (Masuk di dasar support sebelum koin terbang) - PRIORITAS SUPERNOVA
-  else if (
-    relativePosition <= 0.35 &&
-    change24h >= -1.5 &&
-    change24h <= 4.0 &&
-    currentPrice >= low24h * 1.008 &&
-    quoteVolume >= 15_000_000
-  ) {
-    direction = 'LONG';
-    strategy = 'EARLY_ACCUMULATION';
-    strategyLabel = '🌱 Early Accumulation Scout';
-    score = relativePosition <= 0.20 ? 95 : 91;
-    tier = 'SUPERNOVA';
-    rationale = `Akumulasi tersembunyi di zona diskon rentang 24 jam (${(relativePosition * 100).toFixed(0)}% range). Harga bertahan kokoh di atas low ($${formatFuturesPrice(low24h)}) dengan likuiditas aktif $${(quoteVolume / 1e6).toFixed(1)}M sebelum momentum publik masuk.`;
-  }
-  // 3. PANIC SWEEP REVERSAL (Titik kapitulasi likuidasi ritel tuntas di dasar low 24h) - PRIORITAS SUPERNOVA
-  else if (
-    relativePosition <= 0.08 &&
-    change24h <= -6.0 &&
-    quoteVolume >= 15_000_000 &&
-    currentPrice >= low24h * 1.002
-  ) {
-    direction = 'LONG';
-    strategy = 'PANIC_SWEEP_REVERSAL';
-    strategyLabel = '🧲 Panic Sweep Reversal';
-    score = 93;
-    tier = 'SUPERNOVA';
-    rationale = `Pembersihan likuiditas panik (dump -${Math.abs(change24h).toFixed(2)}%) menyentuh batas low 24h ($${formatFuturesPrice(low24h)}). Terjadi penolakan harga awal (rejection wick) dengan peluang technical bounce tinggi.`;
-  }
-  // 4. HIDDEN BREAKOUT PRE-SIGNAL (Menjelang breakout, belum overbought)
-  else if (
-    relativePosition >= 0.70 &&
-    relativePosition <= 0.88 &&
-    change24h >= 2.0 &&
-    change24h <= 6.5 &&
-    quoteVolume >= 25_000_000
-  ) {
-    direction = 'LONG';
-    strategy = 'HIDDEN_BREAKOUT';
-    strategyLabel = '⚡ Hidden Breakout Surge';
-    score = 86;
-    tier = 'HIGH';
-    rationale = `Harga sedang melakukan ekspansi struktur ke arah resisten 24h (${(relativePosition * 100).toFixed(0)}% range) dengan momentum kenaikan awal (+${change24h.toFixed(2)}%) sebelum koin overbought.`;
-  }
-  // 5. BREAKOUT MOMENTUM (Hanya jika belum terlalu overextended, change24h <= 9.0%)
-  else if (relativePosition >= 0.90 && change24h >= 3.5 && change24h <= 9.0 && quoteVolume >= 20_000_000) {
-    direction = 'LONG';
-    strategy = 'BREAKOUT_MOMENTUM';
-    strategyLabel = '🚀 24h High Breakout';
-    score = 83;
-    tier = 'HIGH';
-    rationale = `Harga menguji resistance 24h (${formatFuturesPrice(high24h)}) dengan momentum beli terukur (+${change24h.toFixed(2)}%) dan likuiditas $${(quoteVolume / 1e6).toFixed(1)}M.`;
-  } else if (relativePosition <= 0.08 && change24h <= -4.5 && quoteVolume >= 20_000_000) {
-    direction = 'SHORT';
-    strategy = 'BREAKOUT_MOMENTUM';
-    strategyLabel = '📉 Support Breakdown';
-    score = relativePosition <= 0.04 ? 92 : 86;
-    tier = score >= 90 ? 'SUPERNOVA' : 'HIGH';
-    rationale = `Harga menembus breakdown support 24h (${formatFuturesPrice(low24h)}) dengan tekanan jual konsisten (${change24h.toFixed(2)}%).`;
-  }
-  // 6. REVERSAL / OVERSOLD DIP BUYER
-  else if (relativePosition <= 0.10 && change24h <= -8.0 && quoteVolume >= 15_000_000) {
-    direction = 'LONG';
-    strategy = 'RSI_EXTREME_REVERSAL';
-    strategyLabel = '🔄 Dip Buyer Oversold Reversal';
-    tier = 'HIGH';
-    score = 85;
-    rationale = `Koreksi ekstrem mendekati dasar 24 jam dengan diskon dalam (${change24h.toFixed(2)}%). Peluang technical rebound tajam dengan R:R tinggi.`;
-  }
-  // Catatan: Volatility Expansion untuk koin yang sudah pump +15% dilarang masuk sniper LONG agar tidak membeli pucuk.
 
-  // Jika tidak memenuhi kriteria ketat, tolak (anti-spam)
-  if (!direction || score < 82) return null;
+  // Filter volatilitas minimal (jangan koin mati yang sideways < 1.5%)
+  if (Math.abs(change24h) < 1.5) {
+    return null;
+  }
+
+  // Tentukan bias arah awal berdasarkan tren harian
+  if (change24h >= 1.5 && change24h <= 15) {
+    // Koin sedang naik hari ini, kita cari pullback LONG
+    direction = 'LONG';
+    score += Math.min(change24h, 10);
+    rationale = `Kandidat Sniper v3.0 LONG: Tren harian positif (+${change24h.toFixed(2)}%), menunggu pullback ke Support MA(25)/99 dengan konfirmasi volume.`;
+  } else if (change24h <= -1.5 && change24h >= -15) {
+    // Koin sedang turun hari ini, kita cari pullback SHORT
+    direction = 'SHORT';
+    score += Math.min(Math.abs(change24h), 10);
+    rationale = `Kandidat Sniper v3.0 SHORT: Tren harian negatif (${change24h.toFixed(2)}%), menunggu pullback ke Resistance MA(25)/99 dengan konfirmasi volume.`;
+  } else {
+    // Koin terlalu ekstrim (> 15% atau < -15%), terlalu berisiko untuk pullback biasa
+    return null;
+  }
+
+  if (!direction) return null;
 
   // Kalkulasi Target TP1, TP2, TP3 dan Stop Loss
   // Kalibrasi persentase berdasarkan volatilitas koin
@@ -878,7 +817,7 @@ function evaluatePairSignal(
       },
       derivativesAgent: {
         pass: true,
-        score: strategy === 'FUNDING_SQUEEZE' ? 95 : 82,
+        score: (strategy as string) === 'FUNDING_SQUEEZE' ? 95 : 82,
         reason: `Funding rate ${fundingRatePct.toFixed(4)}% mendukung potensi momentum ${direction}.`,
       },
       orderbookAgent: {
@@ -1169,19 +1108,23 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
   await Promise.allSettled(
     candidates.map(async (signal) => {
       try {
-        // Ambil klines 15m (100) dan klines 4h (60) secara paralel untuk efisiensi API
-        const [rawKlines, rawKlines4h] = await Promise.all([
+        // Ambil klines 15m (100), 1h (60), dan 4h (60) secara paralel untuk efisiensi API
+        const [rawKlines, rawKlines1h, rawKlines4h] = await Promise.all([
           getKlines(signal.symbol, '15m', 100),
+          getKlines(signal.symbol, '1h', 60),
           getKlines(signal.symbol, '4h', 60),
         ]);
 
-        if (rawKlines && rawKlines.length >= 5) {
+        if (rawKlines && rawKlines.length >= 10 && rawKlines1h && rawKlines1h.length >= 5) {
           const candles = parseKlinesToCandles(rawKlines);
+          const candles1h = parseKlinesToCandles(rawKlines1h);
           const candles4h = rawKlines4h && rawKlines4h.length >= 5 ? parseKlinesToCandles(rawKlines4h) : [];
           const closePrices = candles.map((c) => c.close);
+          const closePrices1h = candles1h.map((c) => c.close);
 
-          // 1. Kalkulasi Indikator Riil dari Close Klines
+          // 1. Kalkulasi Indikator Riil dari Close Klines 15m & 1h
           const realIndicators = computeRealTechnicalIndicators(closePrices, signal.entryZone.current);
+          const realIndicators1h = computeRealTechnicalIndicators(closePrices1h, signal.entryZone.current);
           signal.indicators = realIndicators;
           signal.indicatorExplanation = generateIndicatorExplanation(
             realIndicators,
@@ -1205,57 +1148,104 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
             signal.leverage.safe.multiplier
           );
 
-          // 2b. 🛡️ SNIPER PROTOCOL: HARD GATEKEEPER PENCEGAH FOMO DI PUCUK (RSI >= 68 DITOLAK)
+          // 2b. 🛡️ SNIPER v3.0 PROTOCOL: PULLBACK & RE-TEST
           const realRsi6 = realIndicators.rsi.rsi6;
-          if (signal.direction === 'LONG') {
-            if (realRsi6 >= 68) {
-              signal.overallScore = 30; // Gugurkan total dari radar aktif
-              signal.signalTier = 'MODERATE';
-              if (signal.indicatorExplanation) {
-                signal.indicatorExplanation.directionVerdict = `🔴 DITOLAK SNIPER (OVERBOUGHT): RSI(6)=${realRsi6.toFixed(1)} sudah berada di pucuk/jenuh beli. Dilarang FOMO membeli koin yang sudah terbang!`;
-              }
-            } else if (realRsi6 >= 60) {
-              signal.overallScore -= 18; // Penalti zona rawan koreksi
-            } else if (realRsi6 <= 55 && realRsi6 >= 25) {
-              signal.overallScore = Math.min(signal.overallScore + 10, 99); // Zona Emas Sniper: Akumulasi sehat
-            }
-
-            // 🔪 ANTI-FALLING KNIFE: Lindungi dari koin yang sedang amblas/dumping bebas tanpa lantai support
+          if (signal.strategy === 'PULLBACK_RETEST') {
+            let passV3 = true;
+            let rejectReason = '';
             const currentP = signal.entryZone.current;
-            const isDumpingBelowMAs =
-              currentP < realIndicators.ma.ma25 * 0.97 &&
-              currentP < realIndicators.ma.ma99 * 0.95 &&
-              realIndicators.ma.alignment === 'BEARISH';
 
-            if (isDumpingBelowMAs) {
-              signal.overallScore = 30; // Gugurkan: ini pisau jatuh bukan akumulasi
-              signal.signalTier = 'MODERATE';
-              if (signal.indicatorExplanation) {
-                signal.indicatorExplanation.directionVerdict = `🔴 DITOLAK SNIPER (FALLING KNIFE): Harga amblas jauh di bawah MA25 ($${formatFuturesPrice(realIndicators.ma.ma25)}) & MA99 ($${formatFuturesPrice(realIndicators.ma.ma99)}) dalam tren bearish. Risiko pisau jatuh!`;
-              }
-            } else if (signal.strategy === 'EARLY_ACCUMULATION') {
-              // Verifikasi apakah harga tertahan di dekat MA25 / MA99 / EMA21
-              const isNearMaSupport =
-                Math.abs(currentP - realIndicators.ma.ma25) / realIndicators.ma.ma25 <= 0.025 ||
-                Math.abs(currentP - realIndicators.ma.ma99) / realIndicators.ma.ma99 <= 0.03 ||
-                (realIndicators.ema && Math.abs(currentP - realIndicators.ema.ema21) / realIndicators.ema.ema21 <= 0.025);
+            // Aturan 1: RSI 15m dan 1H harus berada di "Zona Ignisi" (45 - 55)
+            const rsi15m = realRsi6;
+            const rsi1h = realIndicators1h.rsi.rsi6;
+            
+            if (rsi15m < 45 || rsi15m > 55) {
+              passV3 = false;
+              rejectReason = `RSI(15m) = ${rsi15m.toFixed(1)} berada di luar Zona Ignisi (45-55).`;
+            }
+            if (passV3 && (rsi1h < 45 || rsi1h > 55)) {
+              passV3 = false;
+              rejectReason = `RSI(1H) = ${rsi1h.toFixed(1)} berada di luar Zona Ignisi (45-55).`;
+            }
 
-              if (isNearMaSupport) {
-                signal.overallScore = Math.min(signal.overallScore + 5, 99);
-                signal.rationale += ` [TERKONFIRMASI SUPPORT MA] Teruji tertahan stabil di sekitar Moving Average dinamis.`;
+            // Aturan 2: Pullback Proximity (Jarak max 0.5% dari MA25 atau MA99 di 15m)
+            const ma25 = realIndicators.ma.ma25;
+            const ma99 = realIndicators.ma.ma99;
+            const dist25 = Math.abs(currentP - ma25) / ma25;
+            const dist99 = Math.abs(currentP - ma99) / ma99;
+            const isNearMA = dist25 <= 0.005 || dist99 <= 0.005; // Max 0.5% buffer
+
+            if (passV3 && !isNearMA) {
+              passV3 = false;
+              rejectReason = `Harga ($${currentP}) terlalu jauh dari MA(25)/MA(99) 15m. Jarak: ${(Math.min(dist25, dist99) * 100).toFixed(2)}% (Maks 0.5%).`;
+            }
+
+            // Aturan 3: Syarat 1H Komandan Tren
+            if (passV3 && closePrices1h.length >= 26) {
+              const prevClose1h = closePrices1h.slice(0, -1);
+              const prevMa25_1h = calculateSMA(prevClose1h, 25);
+              const currMa25_1h = realIndicators1h.ma.ma25;
+              
+              const lastCandle1h = candles1h[candles1h.length - 1];
+              const isMarubozu = lastCandle1h.open > lastCandle1h.close 
+                  ? (lastCandle1h.close - lastCandle1h.low) / (lastCandle1h.high - lastCandle1h.low) < 0.1
+                  : (lastCandle1h.high - lastCandle1h.close) / (lastCandle1h.high - lastCandle1h.low) < 0.1;
+
+              if (signal.direction === 'LONG') {
+                if (currMa25_1h < prevMa25_1h) {
+                  passV3 = false;
+                  rejectReason = `1H MA(25) sedang menukik ke bawah. Tren tidak mendukung LONG.`;
+                }
+                if (passV3 && lastCandle1h.close < lastCandle1h.open && isMarubozu) {
+                  passV3 = false;
+                  rejectReason = `Candle 1H terakhir adalah Marubozu merah pekat yang menghujam support.`;
+                }
+              } else {
+                if (currMa25_1h > prevMa25_1h) {
+                  passV3 = false;
+                  rejectReason = `1H MA(25) sedang menanjak ke atas. Tren tidak mendukung SHORT.`;
+                }
+                if (passV3 && lastCandle1h.close > lastCandle1h.open && isMarubozu) {
+                  passV3 = false;
+                  rejectReason = `Candle 1H terakhir adalah Marubozu hijau pekat yang menembus resistance.`;
+                }
               }
             }
-          } else if (signal.direction === 'SHORT') {
-            if (realRsi6 <= 32) {
-              signal.overallScore = 30; // Gugurkan total: dilarang short di dasar dump
+
+            // Aturan 4: Volume 2x Rata-rata 10 Candle (Pada 15m)
+            if (passV3 && candles.length >= 12) {
+              const recent10 = candles.slice(-12, -2);
+              const avgVol10 = recent10.reduce((acc, c) => acc + (c.volume ?? 0), 0) / 10;
+              
+              const currentCandle = candles[candles.length - 1];
+              const prevCandle = candles[candles.length - 2];
+              
+              const checkVolume = (c: typeof currentCandle) => {
+                const vol = c.volume ?? 0;
+                if (vol < avgVol10 * 2) return false;
+                if (signal.direction === 'LONG' && c.close <= c.open) return false;
+                if (signal.direction === 'SHORT' && c.close >= c.open) return false;
+                return true;
+              };
+
+              if (!checkVolume(currentCandle) && !checkVolume(prevCandle)) {
+                passV3 = false;
+                rejectReason = `Tidak ada anomali volume 2x dari rata-rata pada candle konfirmasi searah tren (15m).`;
+              }
+            }
+
+            if (!passV3) {
+              signal.overallScore = 30; // Tolak
               signal.signalTier = 'MODERATE';
               if (signal.indicatorExplanation) {
-                signal.indicatorExplanation.directionVerdict = `🔴 DITOLAK SNIPER (OVERSOLD): RSI(6)=${realRsi6.toFixed(1)} sudah berada di dasar jurang. Rawan technical rebound!`;
+                signal.indicatorExplanation.directionVerdict = `🔴 DITOLAK SNIPER v3.0: ${rejectReason}`;
               }
-            } else if (realRsi6 <= 38) {
-              signal.overallScore -= 18;
-            } else if (realRsi6 >= 45 && realRsi6 <= 72) {
-              signal.overallScore = Math.min(signal.overallScore + 10, 99);
+            } else {
+              signal.overallScore = Math.min(signal.overallScore + 10, 99); // Lolos seleksi mutlak
+              signal.signalTier = 'SUPERNOVA'; // Sinyal ini sangat elit jika lolos
+              if (signal.indicatorExplanation) {
+                signal.indicatorExplanation.directionVerdict = `🟢 SNIPER v3.0 TERKONFIRMASI: RSI Netral (45-55), Pullback dekat MA (${(Math.min(dist25, dist99) * 100).toFixed(2)}%), Volume 2x+, 1H Tren Mendukung.`;
+              }
             }
           }
 
@@ -1415,13 +1405,22 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
     // Sniper wajib memiliki data RSI riil 15m terkonfirmasi
     if (rsiVal === undefined || isNaN(rsiVal)) return false;
 
-    // 🎯 ATURAN MUTLAK 1: Koin LONG dengan RSI >= 68 DILARANG KERAS LOLOS
-    if (s.direction === 'LONG' && rsiVal >= 68) {
-      return false; // REJECT LONG OVERBOUGHT
+    // 🎯 ATURAN MUTLAK 1: Koin LONG dengan RSI >= 85 DILARANG KERAS LOLOS (Terlalu pucuk)
+    // Untuk strategi non-breakout, kita tolak jika RSI >= 65
+    if (s.direction === 'LONG') {
+      if (rsiVal >= 85) return false;
+      if (rsiVal >= 65 && s.strategy !== 'BREAKOUT_MOMENTUM' && s.strategy !== 'HIDDEN_BREAKOUT' && s.strategy !== 'FUNDING_SQUEEZE') {
+        return false;
+      }
     }
-    // 🎯 ATURAN MUTLAK 2: Koin SHORT dengan RSI <= 32 DILARANG KERAS LOLOS
-    if (s.direction === 'SHORT' && rsiVal <= 32) {
-      return false; // REJECT SHORT OVERSOLD
+    
+    // 🎯 ATURAN MUTLAK 2: Koin SHORT dengan RSI <= 15 DILARANG KERAS LOLOS (Dasar jurang)
+    // Untuk strategi non-breakdown, kita tolak jika RSI <= 35
+    if (s.direction === 'SHORT') {
+      if (rsiVal <= 15) return false;
+      if (rsiVal <= 35 && s.strategy !== 'BREAKOUT_MOMENTUM' && s.strategy !== 'FUNDING_SQUEEZE') {
+        return false;
+      }
     }
 
     return true;

@@ -21,7 +21,8 @@ export type FuturesStrategy =
   | 'SMC_SUPPLY_REJECTION'
   | 'EARLY_ACCUMULATION'
   | 'HIDDEN_BREAKOUT'
-  | 'PANIC_SWEEP_REVERSAL';
+  | 'PANIC_SWEEP_REVERSAL'
+  | 'PULLBACK_RETEST';
 
 export type FuturesSignalStatus =
   | 'ACTIVE'
