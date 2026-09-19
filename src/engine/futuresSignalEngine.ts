@@ -48,7 +48,7 @@ import { computeRealTechnicalIndicators, calculateSMA } from './technicalIndicat
 import { fetchRecentCryptoNews } from './newsFetchEngine';
 import { analyzeSentimentForSymbol, getCachedSentiment } from './newsSentimentEngine';
 import { runSmcAnalysis } from './smcAnalysisEngine';
-import { isTradFiOrEtfBlacklisted } from '../lib/tradfiBlacklist';
+import { isTradFiOrEtfBlacklisted, isCryptoPureWhitelisted } from '../lib/tradfiBlacklist';
 
 /**
  * Format angka presisi dinamis berdasarkan harga koin (misal BTC vs PEPE)
@@ -1082,7 +1082,13 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
 
   // 🛡️ ELIMINASI AWAL RADAR: Hapus instrumen TradFi, ETF, dan Pre-Market Blacklist
   // agar bot tidak membuang waktu dan kuota API pada aset illiquid berspread lebar
-  const eligibleTickers = tickers.filter((t) => !isTradFiOrEtfBlacklisted(t.symbol).isBlacklisted);
+  // 🛡️ LAYER-0 WHITELIST + LAYER-1 BLACKLIST (2x protection)
+  // Hanya izinkan koin dari whitelist murni DAN lolos dari TradFi/ETF blacklist
+  const eligibleTickers = tickers.filter((t) => {
+    if (!isCryptoPureWhitelisted(t.symbol)) return false;           // Layer 0: Whitelist gate
+    if (isTradFiOrEtfBlacklisted(t.symbol).isBlacklisted) return false; // Layer 1: Blacklist double-check
+    return true;
+  });
 
   const rawSignals: BinanceFuturesSignal[] = [];
 
@@ -1173,6 +1179,8 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
             if (rsi15m < 35 || rsi15m > 65) {
               passV3 = false;
               rejectReason = `RSI(15m) = ${rsi15m.toFixed(1)} berada di luar zona ignisi agresif (35-65).`;
+              // 🚨 KILL SWITCH MUTLAK: RSI ekstrem langsung veto, tidak bisa di-override SMC/News
+              signal.overallScore = -999;
             }
             // Aturan 1H: Hindari ekstrim makro (>70 atau <30)
             if (passV3) {
@@ -1252,10 +1260,11 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
             }
 
             if (!passV3) {
-              signal.overallScore = 30; // Tolak
+              // 🚨 KILL SWITCH: Skor -999 mencegah semua modul sekunder (SMC, News) membajak sinyal
+              if (signal.overallScore !== -999) signal.overallScore = -999;
               signal.signalTier = 'MODERATE';
               if (signal.indicatorExplanation) {
-                signal.indicatorExplanation.directionVerdict = `🔴 DITOLAK SNIPER v3.0: ${rejectReason}`;
+                signal.indicatorExplanation.directionVerdict = `🔴 VETOED BY SNIPER v3.2: ${rejectReason}`;
               }
             } else {
               signal.overallScore = Math.min(signal.overallScore + 10, 99); // Lolos seleksi mutlak
@@ -1292,19 +1301,37 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
             }
 
             if (!passSqueeze) {
-              signal.overallScore = 30;
+              // 🚨 KILL SWITCH SQUEEZE: Skor -999 mencegah SMC/News override
+              signal.overallScore = -999;
               signal.signalTier = 'MODERATE';
               if (signal.indicatorExplanation) {
-                signal.indicatorExplanation.directionVerdict = `🔴 DITOLAK SQUEEZE HUNTER: ${rejectReason}`;
+                signal.indicatorExplanation.directionVerdict = `🔴 VETOED BY SQUEEZE HUNTER: ${rejectReason}`;
               }
             } else {
               signal.overallScore = 96;
               signal.signalTier = 'SUPERNOVA';
               signal.direction = 'LONG';
               signal.strategyLabel = '⚡ Squeeze Hunter (Short Squeeze Ignition)';
+
+              // 🛡️ PERLINDUNGAN WHIPSAW: Floor Stop Loss minimum 3.0% untuk Squeeze Hunter
+              const currentPriceForSq = signal.entryZone.current;
+              const rawSlPct = Math.abs(signal.stopLoss.lossPct);
+              const effectiveSlPct = rawSlPct < 3.0 ? 3.0 : rawSlPct;
+              if (rawSlPct < 3.0) {
+                const newSlPrice = currentPriceForSq * (1 - effectiveSlPct / 100);
+                signal.stopLoss = {
+                  price: newSlPrice,
+                  lossPct: -effectiveSlPct,
+                  label: `$${formatFuturesPrice(newSlPrice)} (-${effectiveSlPct.toFixed(1)}%) [SQ MIN FLOOR]`,
+                  isHit: false,
+                };
+                // Kalibrasi ulang R:R berdasarkan SL baru
+                signal.riskRewardRatio = Number((signal.targets.tp2.gainPct / effectiveSlPct).toFixed(2));
+              }
+
               signal.rationale += ' [SQUEEZE HUNTER] Funding Rate negatif tajam & Volume institusi meledak >3x. ⚠️ EKSEKUSI WAJIB: Dilarang Market Buy! Buka grafik 1 Menit (1m) dan pasang Limit Buy di titik micro-pullback terdekat.';
               if (signal.indicatorExplanation) {
-                signal.indicatorExplanation.directionVerdict = `🔥 SQUEEZE HUNTER TERKONFIRMASI: Funding ${fr.toFixed(4)}% + Volume 3x+. EKSEKUSI: Limit Buy di micro-pullback TF 1m!`;
+                signal.indicatorExplanation.directionVerdict = `🔥 SQUEEZE HUNTER TERKONFIRMASI: Funding ${fr.toFixed(4)}% + Volume 3x+. SL Floor ${effectiveSlPct.toFixed(1)}%. EKSEKUSI: Limit Buy di micro-pullback TF 1m!`;
               }
             }
           }
@@ -1459,6 +1486,8 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
   // 2. DILARANG KERAS meloloskan sinyal LONG dengan RSI(6) >= 68 (koin sudah terbang/overbought)
   // 3. DILARANG KERAS meloloskan sinyal SHORT dengan RSI(6) <= 32 (koin sudah di dasar jurang dump)
   const validSignals = candidates.filter((s) => {
+    // 🚨 PEMUTUS ARUS MUTLAK: Sinyal yang di-veto (skor < 0) tidak boleh lolos ke output
+    if (s.overallScore < 0) return false;
     if (s.overallScore < 78) return false;
 
     const rsiVal = s.indicators?.rsi?.rsi6;

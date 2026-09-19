@@ -2,11 +2,12 @@
  * TradFi, ETF & Pre-Market Gatekeeper Blacklist
  * Modul terpusat untuk memblokir instrumen derivatif bursa tradisional,
  * ETF sintetis/leveraged, dan aset Pre-Market yang minim likuiditas serta memiliki spread lebar.
- * 
- * Perlindungan khusus:
- * 1. Blacklist statis simbol spesifik (KORU, CRCL, SPY, QQQ, dll).
- * 2. Regex leveraged tokens dengan proteksi ketat (whitelist koin murni seperti JUP / JUPUSDT).
- * 3. Deteksi pola instrumen Pre-Market / Pre-IPO synthetics.
+ *
+ * ARSITEKTUR PERTAHANAN BERLAPIS:
+ * Layer 0: Whitelist murni (50 Top Futures Binance) — tolak semua di luar ini
+ * Layer 1: Blacklist statis simbol spesifik (KORU, CRCL, SPY, QQQ, dll).
+ * Layer 2: Regex leveraged tokens dengan proteksi ketat (whitelist koin murni seperti JUP / JUPUSDT).
+ * Layer 3: Deteksi pola instrumen Pre-Market / Pre-IPO synthetics.
  */
 
 export interface BlacklistCheckResult {
@@ -15,6 +16,96 @@ export interface BlacklistCheckResult {
   reason?: string;
   category?: 'TRADFI_EQUITY' | 'ETF_SYNTHETIC' | 'LEVERAGED_TOKEN' | 'PRE_MARKET';
 }
+
+/**
+ * ============================================================
+ * LAYER 0 — PURE CRYPTO WHITELIST (50 Top Binance Futures)
+ * ============================================================
+ * Hanya koin murni yang terdaftar di sini yang diizinkan masuk
+ * ke mesin kalkulasi sinyal. Semua ticker lain DIBLOKIR di awal.
+ *
+ * Berdasarkan: Binance Futures top 50 by open interest & volume (Q3 2026)
+ * Tidak termasuk: Leveraged tokens, ETF saham, Pre-Market synthetics
+ */
+export const PURE_CRYPTO_WHITELIST: Set<string> = new Set([
+  // ── Layer 1: Blue Chips (BTC, ETH, Layer-1s) ──
+  'BTCUSDT',
+  'ETHUSDT',
+  'SOLUSDT',
+  'BNBUSDT',
+  'XRPUSDT',
+  'ADAUSDT',
+  'AVAXUSDT',
+  'DOTUSDT',
+  'LINKUSDT',
+  'LTCUSDT',
+  'ATOMUSDT',
+  'NEARUSDT',
+  'APTUSDT',
+  'SUIUSDT',
+  'INJUSDT',
+  'SEIUSDT',
+  'ALGOUSDT',
+  'FTMUSDT',
+  'MATICUSDT',
+  // ── Layer 2: DeFi Majors ──
+  'UNIUSDT',
+  'AAVEUSDT',
+  'LDOUSDT',
+  'MKRUSDT',
+  'SNXUSDT',
+  'CRVUSDT',
+  'JUPUSDT',
+  'RAYUSDT',
+  'JITOUSDT',
+  // ── Layer 3: Meme & Culture Coins (High Volume, Liquid) ──
+  'DOGEUSDT',
+  'SHIBUSDT',
+  'PEPEUSDT',
+  'FLOKIUSDT',
+  'BONKUSDT',
+  'WIFUSDT',
+  'MEMEUSDT',
+  'TRUMPUSDT',
+  // ── Layer 4: Infra, Storage & AI ──
+  'FILUSDT',
+  'ARUSDT',
+  'RENDERUSDT',
+  'FETUSDT',
+  'WLDUSDT',
+  'TAIUSDT',
+  // ── Layer 5: Exchange & Utility Tokens ──
+  'OKBUSDT',
+  'GTUSDT',
+  'CAKEUSDT',
+  // ── Layer 6: Gaming & Metaverse ──
+  'SANDUSDT',
+  'MANAUSDT',
+  'AXSUSDT',
+  'IMXUSDT',
+  // ── Layer 7: Others (High Liquidity Altcoins) ──
+  'OPUSDT',
+  'ARBUSDT',
+  'STXUSDT',
+  'EIGENUSDT',
+  'GALAUSDT',
+  'ENSTUSDT',
+  'PENDLEUSDT',
+]);
+
+/**
+ * Mengecek apakah simbol ada dalam Pure Crypto Whitelist.
+ * Gunakan ini sebagai GATE PERTAMA sebelum masuk ke mesin kalkulasi.
+ *
+ * @returns true jika koin diizinkan, false jika ditolak (non-whitelist)
+ */
+export function isCryptoPureWhitelisted(rawSymbol: string): boolean {
+  if (!rawSymbol) return false;
+  const clean = rawSymbol.trim().toUpperCase();
+  return PURE_CRYPTO_WHITELIST.has(clean);
+}
+
+
 
 /**
  * Daftar Ticker Statis TradFi, ETF, Indeks, dan Derivatif Saham Tradisional
