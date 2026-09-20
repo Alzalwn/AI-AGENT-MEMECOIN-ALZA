@@ -4,6 +4,19 @@ import { formatFuturesPrice, assertSignalDirectionIntegrity } from '@/engine/fut
 
 export const dynamic = 'force-dynamic';
 
+// Global in-memory cache to prevent signal spam (Amnesia Broadcast Fix)
+// Key: SYMBOL_DIRECTION (e.g., BTC_LONG), Value: Timestamp (Date.now())
+const broadcastCache = new Map<string, number>();
+const COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2 hours
+
+function escapeTelegramHTML(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -27,6 +40,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: 'Data sinyal futures tidak valid.' },
         { status: 400 }
+      );
+    }
+
+    // ============================================================
+    // 🛡️ AMNESIA BROADCAST FIX: Cek Cache Anti-Spam
+    // ============================================================
+    const cacheKey = `${signal.symbol}_${signal.direction}`;
+    const now = Date.now();
+    const lastBroadcast = broadcastCache.get(cacheKey);
+
+    if (lastBroadcast && now - lastBroadcast < COOLDOWN_MS) {
+      console.log(`[TelegramBroadcast] Sinyal ${cacheKey} di-skip karena masih dalam masa cooldown 2 jam.`);
+      return NextResponse.json(
+        {
+          success: true,
+          message: `[Cache] Sinyal ${cacheKey} sudah dikirim baru-baru ini. Broadcast di-skip.`,
+        },
+        { status: 200 }
       );
     }
 
@@ -86,22 +117,28 @@ export async function POST(request: NextRequest) {
       ? '█████████░░░ ~80%'
       : '███████░░░░░ ~70%';
 
+    const safeCandlestickName = signal.candlestickPattern ? escapeTelegramHTML(signal.candlestickPattern.name) : '';
     const candleLine = signal.candlestickPattern
-      ? `\n🕯️ <b>Pola Candlestick:</b> ${signal.candlestickPattern.name} (Winrate <b>${signal.candlestickPattern.reliability}%</b> - ${signal.candlestickPattern.type})`
+      ? `\n🕯️ <b>Pola Candlestick:</b> ${safeCandlestickName} (Winrate <b>${signal.candlestickPattern.reliability}%</b> - ${signal.candlestickPattern.type})`
       : '';
 
+    const safeSmcRationale = signal.smcAnalysis ? escapeTelegramHTML(signal.smcAnalysis.smcRationale) : '';
     const smcLine = signal.smcAnalysis
-      ? `\n🏦 <b>Smart Money (SMC):</b> Skor ${signal.smcAnalysis.smcScore}/100 [Bias: ${signal.smcAnalysis.smcBias}]\n   ↳ <i>${signal.smcAnalysis.smcRationale}</i>`
+      ? `\n🏦 <b>Smart Money (SMC):</b> Skor ${signal.smcAnalysis.smcScore}/100 [Bias: ${signal.smcAnalysis.smcBias}]\n   ↳ <i>${safeSmcRationale}</i>`
       : '';
 
     const multiTimeframeLine = signal.multiTimeframe
       ? `\n📊 <b>Multi-Timeframe:</b> ${signal.multiTimeframe.badgeLabel}`
       : '';
 
+    const safeStrategyLabel = escapeTelegramHTML(signal.strategyLabel);
+    const safeCustomNote = customNote ? escapeTelegramHTML(customNote) : '';
+    const safeRationale = escapeTelegramHTML(signal.rationale);
+
     const captionText =
       `⚡ <b>BINANCE FUTURES QUANT SIGNAL // AI ALPHA</b> ⚡\n\n` +
       `${directionEmoji} <b>${directionLabel} · ${cleanPair}</b>\n` +
-      `🏷️ <b>Strategi:</b> ${signal.strategyLabel}\n` +
+      `🏷️ <b>Strategi:</b> ${safeStrategyLabel}\n` +
       `⭐ <b>Skor AI:</b> ${signal.overallScore}/100 [${signal.signalTier}]\n` +
       `${confluenceEmoji} <b>Konfluensi:</b> ${scoreBar}` +
       candleLine +
@@ -119,9 +156,9 @@ export async function POST(request: NextRequest) {
       `🛡️ <b>Leverage Aman:</b> ${signal.leverage.safe.range}\n` +
       `⚡ <b>Leverage Scalp:</b> ${signal.leverage.scalp.range}\n` +
       `📊 <b>Funding Rate:</b> ${signal.derivativesData.fundingRatePct > 0 ? '+' : ''}${signal.derivativesData.fundingRatePct.toFixed(4)}%\n` +
-      (customNote ? `\n💬 <b>Catatan Analis:</b>\n${customNote}\n` : '') +
+      (safeCustomNote ? `\n💬 <b>Catatan Analis:</b>\n${safeCustomNote}\n` : '') +
       `\n💡 <b>Analisa Singkat AI (${isLong ? 'BULLISH' : 'BEARISH'}):</b>\n` +
-      `<i>Setup ini mengidentifikasi ${momentumWord} pada ${cleanPair}. ${signal.rationale}</i>`;
+      `<i>Setup ini mengidentifikasi ${momentumWord} pada ${cleanPair}. ${safeRationale}</i>`;
 
     const inlineKeyboard = {
       inline_keyboard: [
@@ -152,6 +189,9 @@ export async function POST(request: NextRequest) {
 
         const photoData = await photoRes.json();
         if (photoRes.ok && photoData.ok) {
+          // 🛡️ AMNESIA BROADCAST FIX: Simpan ke cache jika sukses
+          broadcastCache.set(cacheKey, now);
+
           return NextResponse.json({
             success: true,
             message: 'Sinyal dan gambar grafik berhasil dikirim ke Telegram!',
@@ -178,6 +218,9 @@ export async function POST(request: NextRequest) {
 
     const msgData = await msgRes.json();
     if (msgRes.ok && msgData.ok) {
+      // 🛡️ AMNESIA BROADCAST FIX: Simpan ke cache jika sukses
+      broadcastCache.set(cacheKey, now);
+
       return NextResponse.json({
         success: true,
         message: 'Sinyal berhasil dikirim ke Telegram!',
