@@ -22,7 +22,8 @@ export type FuturesStrategy =
   | 'EARLY_ACCUMULATION'
   | 'HIDDEN_BREAKOUT'
   | 'PANIC_SWEEP_REVERSAL'
-  | 'PULLBACK_RETEST';
+  | 'PULLBACK_RETEST'
+  | 'SNIPER_BOTTOM_REVERSAL';
 
 export type FuturesSignalStatus =
   | 'ACTIVE'

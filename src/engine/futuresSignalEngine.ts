@@ -1837,6 +1837,26 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
       score = 75;
     }
   }
+  // --- SNIPER BOTTOM REVERSAL CHECK (Tidak mengganggu logika makro di atas) ---
+  const isNearMa99 = currentPrice <= indicators.ma.ma99 * 1.02 && currentPrice >= indicators.ma.ma99 * 0.98;
+  const isRsiExtremelyOversold = indicators.rsi.rsi6 <= 30 || indicators.rsi.rsi12 <= 30;
+  const isBollingerLower = indicators.bollingerBands.status === 'LOWER_BOUNCE' || currentPrice <= indicators.bollingerBands.lower * 1.01;
+
+  // Deteksi Wick Rejection Murni (15m TF)
+  const latestCandle15m = candles.length > 0 ? candles[candles.length - 1] : { open: currentPrice, close: currentPrice, low: currentPrice };
+  const prevCandle15m = candles.length >= 2 ? candles[candles.length - 2] : latestCandle15m;
+  const getLowerWick = (c: any) => Math.min(c.open, c.close) - c.low;
+  
+  const isRejecting = 
+    getLowerWick(latestCandle15m) >= (latestCandle15m.low * 0.005) || 
+    getLowerWick(prevCandle15m) >= (prevCandle15m.low * 0.005);
+
+  if (isNearMa99 && isRsiExtremelyOversold && isBollingerLower && isRejecting) {
+    direction = 'LONG';
+    strategy = 'SNIPER_BOTTOM_REVERSAL';
+    strategyLabel = '🔥 SNIPER BOTTOM REVERSAL (MA99 Bounce)';
+    score = Math.max(score, 92); // Upgrade langsung ke tier probabilitas tinggi
+  }
 
   // Perisai Induk Pasar (BTC Guard): Jika BTC sedang dump tajam dan sinyal LONG untuk altcoin
   const isBtcDumping = symbol !== 'BTCUSDT' && !btcContext.isSafeForAltLong;
@@ -1865,7 +1885,13 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
     tp3Price = currentPrice * (1 + tp3Pct / 100);
     slPrice = currentPrice * (1 - slPct / 100);
 
-    if (strategy === 'SMC_DEMAND_BOUNCE' && smcAnalysis?.nearestDemandZone) {
+    if (strategy === 'SNIPER_BOTTOM_REVERSAL') {
+      const latestCandle15m = candles.length > 0 ? candles[candles.length - 1] : { low: currentPrice };
+      const prevCandle15m = candles.length >= 2 ? candles[candles.length - 2] : latestCandle15m;
+      const bunkerLevel = Math.min(indicators.bollingerBands.lower, latestCandle15m.low, prevCandle15m.low);
+      slPrice = bunkerLevel * 0.993; // Auto-Bunker SL 0.7% di bawah titik terendah
+      slPct = Math.abs((slPrice - currentPrice) / currentPrice) * 100;
+    } else if (strategy === 'SMC_DEMAND_BOUNCE' && smcAnalysis?.nearestDemandZone) {
       slPrice = Math.max(smcAnalysis.nearestDemandZone.zoneLow * 0.992, currentPrice * 0.96);
       slPct = Math.abs((slPrice - currentPrice) / currentPrice) * 100;
     } else if (detectedPattern?.stopLossPrice && detectedPattern.stopLossPrice < currentPrice) {
