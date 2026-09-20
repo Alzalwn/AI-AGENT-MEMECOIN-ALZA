@@ -1172,15 +1172,15 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
             let passV3 = true;
             let rejectReason = '';
 
-            // Aturan 1: RSI 15m di Zona Konsolidasi/Ignisi (40 - 60)
+            // Aturan 1: RSI 15m di zona Pullback (30 - 75)
             const rsi15m = realRsi6;
             const rsi1h = realIndicators1h.rsi.rsi6;
 
-            if (rsi15m < 35 || rsi15m > 65) {
+            if (rsi15m < 30 || rsi15m > 75) {
               passV3 = false;
-              rejectReason = `RSI(15m) = ${rsi15m.toFixed(1)} berada di luar zona ignisi agresif (35-65).`;
-              // 🚨 KILL SWITCH MUTLAK: RSI ekstrem langsung veto, tidak bisa di-override SMC/News
-              signal.overallScore = -999;
+              rejectReason = `RSI(15m) = ${rsi15m.toFixed(1)} berada di luar zona pullback wajar (30-75).`;
+              // Turunkan skor, bukan veto mutlak
+              signal.overallScore -= 30;
             }
             // Aturan 1H: Hindari ekstrim makro (>70 atau <30)
             if (passV3) {
@@ -1260,11 +1260,10 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
             }
 
             if (!passV3) {
-              // 🚨 KILL SWITCH: Skor -999 mencegah semua modul sekunder (SMC, News) membajak sinyal
-              if (signal.overallScore !== -999) signal.overallScore = -999;
+              // 🚨 HUKUMAN SKOR, BUKAN KILL SWITCH MUTLAK
               signal.signalTier = 'MODERATE';
               if (signal.indicatorExplanation) {
-                signal.indicatorExplanation.directionVerdict = `🔴 VETOED BY SNIPER v3.2: ${rejectReason}`;
+                signal.indicatorExplanation.directionVerdict = `🔴 DITOLAK SNIPER v3.2: ${rejectReason}`;
               }
             } else {
               signal.overallScore = Math.min(signal.overallScore + 10, 99); // Lolos seleksi mutlak
@@ -1313,25 +1312,25 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
               signal.direction = 'LONG';
               signal.strategyLabel = '⚡ Squeeze Hunter (Short Squeeze Ignition)';
 
-              // 🛡️ PERLINDUNGAN WHIPSAW: Floor Stop Loss minimum 3.0% untuk Squeeze Hunter
+              // 🛡️ Squeeze Hunter Stop Loss Calculation
               const currentPriceForSq = signal.entryZone.current;
               const rawSlPct = Math.abs(signal.stopLoss.lossPct);
-              const effectiveSlPct = rawSlPct < 3.0 ? 3.0 : rawSlPct;
-              if (rawSlPct < 3.0) {
-                const newSlPrice = currentPriceForSq * (1 - effectiveSlPct / 100);
-                signal.stopLoss = {
-                  price: newSlPrice,
-                  lossPct: -effectiveSlPct,
-                  label: `$${formatFuturesPrice(newSlPrice)} (-${effectiveSlPct.toFixed(1)}%) [SQ MIN FLOOR]`,
-                  isHit: false,
-                };
-                // Kalibrasi ulang R:R berdasarkan SL baru
-                signal.riskRewardRatio = Number((signal.targets.tp2.gainPct / effectiveSlPct).toFixed(2));
-              }
+              // Tidak lagi memaksakan floor 3.0% agar RR tetap sehat untuk Sniper
+              
+              const newSlPrice = currentPriceForSq * (1 - rawSlPct / 100);
+              signal.stopLoss = {
+                price: newSlPrice,
+                lossPct: -rawSlPct,
+                label: `$${formatFuturesPrice(newSlPrice)} (-${rawSlPct.toFixed(1)}%) [SQUEEZE SL]`,
+                isHit: false,
+              };
+              // Kalibrasi ulang R:R
+              signal.riskRewardRatio = Number((signal.targets.tp2.gainPct / Math.max(rawSlPct, 0.5)).toFixed(2));
+
 
               signal.rationale += ' [SQUEEZE HUNTER] Funding Rate negatif tajam & Volume institusi meledak >3x. ⚠️ EKSEKUSI WAJIB: Dilarang Market Buy! Buka grafik 1 Menit (1m) dan pasang Limit Buy di titik micro-pullback terdekat.';
               if (signal.indicatorExplanation) {
-                signal.indicatorExplanation.directionVerdict = `🔥 SQUEEZE HUNTER TERKONFIRMASI: Funding ${fr.toFixed(4)}% + Volume 3x+. SL Floor ${effectiveSlPct.toFixed(1)}%. EKSEKUSI: Limit Buy di micro-pullback TF 1m!`;
+                signal.indicatorExplanation.directionVerdict = `🔥 SQUEEZE HUNTER TERKONFIRMASI: Funding ${fr.toFixed(4)}% + Volume 3x+. SL Sniper ${rawSlPct.toFixed(1)}%. EKSEKUSI: Limit Buy di micro-pullback TF 1m!`;
               }
             }
           }
@@ -1483,32 +1482,29 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
 
   // Filter sinyal yang lolos kriteria ketat Sniper (Anti-FOMO di pucuk):
   // 1. Skor keseluruhan minimal 78
-  // 2. DILARANG KERAS meloloskan sinyal LONG dengan RSI(6) >= 68 (koin sudah terbang/overbought)
-  // 3. DILARANG KERAS meloloskan sinyal SHORT dengan RSI(6) <= 32 (koin sudah di dasar jurang dump)
+  // 2. Cegah LONG super overbought (>= 84)
+  // 3. Cegah SHORT super oversold (<= 20)
   const validSignals = candidates.filter((s) => {
     // 🚨 PEMUTUS ARUS MUTLAK: Sinyal yang di-veto (skor < 0) tidak boleh lolos ke output
     if (s.overallScore < 0) return false;
     if (s.overallScore < 78) return false;
 
     const rsiVal = s.indicators?.rsi?.rsi6;
-    // Sniper wajib memiliki data RSI riil 15m terkonfirmasi
-    if (rsiVal === undefined || isNaN(rsiVal)) return false;
-
-    // 🎯 ATURAN MUTLAK 1: Koin LONG dengan RSI >= 85 DILARANG KERAS LOLOS (Terlalu pucuk)
-    // Untuk strategi non-breakout, kita tolak jika RSI >= 65
-    if (s.direction === 'LONG') {
-      if (rsiVal >= 85) return false;
-      if (rsiVal >= 65 && s.strategy !== 'BREAKOUT_MOMENTUM' && s.strategy !== 'HIDDEN_BREAKOUT' && s.strategy !== 'FUNDING_SQUEEZE') {
-        return false;
+    if (rsiVal !== undefined) {
+      if (s.direction === 'LONG') {
+        if (rsiVal >= 85) return false;
+        if (rsiVal >= 65 && s.strategy !== 'BREAKOUT_MOMENTUM' && s.strategy !== 'HIDDEN_BREAKOUT' && s.strategy !== 'FUNDING_SQUEEZE') {
+          return false;
+        }
       }
-    }
 
-    // 🎯 ATURAN MUTLAK 2: Koin SHORT dengan RSI <= 15 DILARANG KERAS LOLOS (Dasar jurang)
-    // Untuk strategi non-breakdown, kita tolak jika RSI <= 35
-    if (s.direction === 'SHORT') {
-      if (rsiVal <= 15) return false;
-      if (rsiVal <= 35 && s.strategy !== 'BREAKOUT_MOMENTUM' && s.strategy !== 'FUNDING_SQUEEZE') {
-        return false;
+      // 🎯 ATURAN MUTLAK 2: Koin SHORT dengan RSI <= 15 DILARANG KERAS LOLOS (Dasar jurang)
+      // Untuk strategi non-breakdown, kita tolak jika RSI <= 35
+      if (s.direction === 'SHORT') {
+        if (rsiVal <= 15) return false;
+        if (rsiVal <= 35 && s.strategy !== 'BREAKOUT_MOMENTUM' && s.strategy !== 'FUNDING_SQUEEZE') {
+          return false;
+        }
       }
     }
 
