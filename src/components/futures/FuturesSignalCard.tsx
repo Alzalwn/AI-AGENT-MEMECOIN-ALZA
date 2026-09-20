@@ -81,7 +81,7 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
       const slPrice = formatFuturesPrice(signal.stopLoss.price);
 
       const technicalContext = signal.indicatorExplanation?.maInsight
-        ? signal.indicatorExplanation.maInsight.replace(/^Angka Aktual:.*?\.\s*/, '')
+        ? signal.indicatorExplanation.maInsight.replace(/^Angka Aktual:.*?\.\s+/, '')
         : 'mayoritas moving average dan indikator teknikal saat ini masih solid mendukung arah tren';
 
       const text = generateCommunitySignalPost({

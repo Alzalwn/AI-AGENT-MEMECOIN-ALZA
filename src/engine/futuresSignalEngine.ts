@@ -623,7 +623,7 @@ export function generateMultiTimeframeAlignment(params: {
   indicators?: FuturesTechnicalIndicators;
   overallScore: number;
 }): MultiTimeframeAlignment {
-  const { direction, change24h, indicators, overallScore } = params;
+  const { direction, change24h, indicators, overallScore, currentPrice } = params;
 
   // 1. Timeframe 15m (Micro Trigger & Entry)
   const is15mBull = indicators?.macd ? indicators.macd.dif > indicators.macd.dea : change24h > 0;
@@ -636,12 +636,14 @@ export function generateMultiTimeframeAlignment(params: {
   const tf1hRsi = Math.round(indicators?.rsi?.rsi12 || 50);
 
   // 3. Timeframe 4h (Intermediate Structure / Swing Bias)
-  const is4hBull = change24h >= 1.5;
+  // Proxy: currentPrice vs MA25 on 15m (mewakili struktur ~6 jam)
+  const is4hBull = indicators?.ma ? (currentPrice > indicators.ma.ma25) : change24h >= 1.5;
   const tf4hTrend: TimeframeTrendBias = is4hBull ? 'BULLISH' : 'BEARISH';
   const tf4hRsi = Math.round(indicators?.rsi?.rsi24 || 50);
 
   // 4. Timeframe 1d / Daily (Macro Trend Institusi)
-  const is1dBull = change24h >= 0;
+  // Proxy: currentPrice vs MA99 on 15m (mewakili struktur ~24.75 jam)
+  const is1dBull = indicators?.ma ? (currentPrice > indicators.ma.ma99) : change24h >= 0;
   const tf1dTrend: TimeframeTrendBias = is1dBull ? 'BULLISH' : 'BEARISH';
   const tf1dRsi = Math.round(change24h >= 0 ? 54 : 46);
 
@@ -757,18 +759,16 @@ function evaluatePairSignal(
   const relativePosition = (currentPrice - low24h) / priceRange;
 
   let direction: FuturesDirection | null = null;
-  let strategy: FuturesStrategy = 'PULLBACK_RETEST';
-  let strategyLabel = '🎯 Sniper v3.0 Pullback';
+  let strategy: FuturesStrategy = 'BREAKOUT_MOMENTUM';
+  let strategyLabel = '🚀 Momentum Breakout';
   let tier: FuturesSignalTier = 'HIGH';
   let score = 85;
   let rationale = '';
 
-  // Sniper v3.0 Pre-Filter:
-  // Karena penentuan entry didasarkan pada MA(25)/99 15m dan volume spesifik,
-  // di sini kita hanya mem-filter koin berdasarkan tren harian (change24h)
-  // dan volume minimal.
+  // Breakout Pre-Filter:
+  // Mem-filter koin berdasarkan tren harian (change24h) dan volume minimal.
   if (quoteVolume < 25_000_000) {
-    return null; // Kurang likuid untuk sniper v3
+    return null; // Kurang likuid
   }
 
   // Filter volatilitas minimal (jangan koin mati yang sideways < 1.5%)
@@ -785,19 +785,19 @@ function evaluatePairSignal(
     tier = 'SUPERNOVA';
     rationale = `Kandidat Squeeze Hunter: Funding Rate negatif tajam (${fundingRatePct.toFixed(4)}%), potensi short squeeze masif saat volume membludak.`;
   } else if (change24h >= 1.5 && change24h <= 20) {
-    // Koin sedang naik hari ini, kita cari pullback LONG
+    // Koin sedang naik hari ini, kita cari breakout LONG
     direction = 'LONG';
-    strategy = 'PULLBACK_RETEST';
-    strategyLabel = '🎯 Sniper v3.0 Pullback';
+    strategy = 'BREAKOUT_MOMENTUM';
+    strategyLabel = '🚀 Momentum Breakout';
     score += Math.min(change24h, 10);
-    rationale = `Kandidat Sniper v3.0 LONG: Tren harian positif (+${change24h.toFixed(2)}%), menunggu pullback ke Support MA(25)/99 dengan konfirmasi volume.`;
+    rationale = `Kandidat Breakout LONG: Tren harian positif (+${change24h.toFixed(2)}%), mendeteksi momentum tembus resistensi dengan konfirmasi volume.`;
   } else if (change24h <= -1.5 && change24h >= -20) {
-    // Koin sedang turun hari ini, kita cari pullback SHORT
+    // Koin sedang turun hari ini, kita cari breakdown SHORT
     direction = 'SHORT';
-    strategy = 'PULLBACK_RETEST';
-    strategyLabel = '🎯 Sniper v3.0 Pullback';
+    strategy = 'BREAKOUT_MOMENTUM';
+    strategyLabel = '🚀 Momentum Breakout';
     score += Math.min(Math.abs(change24h), 10);
-    rationale = `Kandidat Sniper v3.0 SHORT: Tren harian negatif (${change24h.toFixed(2)}%), menunggu pullback ke Resistance MA(25)/99 dengan konfirmasi volume.`;
+    rationale = `Kandidat Breakout SHORT: Tren harian negatif (${change24h.toFixed(2)}%), mendeteksi momentum tembus support dengan konfirmasi volume.`;
   } else {
     // Di luar batas pergerakan wajar
     return null;
@@ -1283,11 +1283,11 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
             signal.leverage.safe.multiplier
           );
 
-          // 2b. 🛡️ SNIPER v3.0 PROTOCOL: PULLBACK & RE-TEST
+          // 2b. 🛡️ BREAKOUT MOMENTUM PROTOCOL
           const realRsi6 = realIndicators.rsi.rsi6;
           const currentP = signal.entryZone.current;
 
-          if (signal.strategy === 'PULLBACK_RETEST') {
+          if (signal.strategy === 'BREAKOUT_MOMENTUM') {
             let passV3 = true;
             let rejectReason = '';
 
@@ -1312,17 +1312,7 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
               }
             }
 
-            // Aturan 2: Pullback Proximity (Jarak max 1.0% dari MA25 atau MA99 di 15m)
-            const ma25 = realIndicators.ma.ma25;
-            const ma99 = realIndicators.ma.ma99;
-            const dist25 = Math.abs(currentP - ma25) / ma25;
-            const dist99 = Math.abs(currentP - ma99) / ma99;
-            const isNearMA = dist25 <= 0.018 || dist99 <= 0.018; // 1.8% buffer zone presisi
-
-            if (passV3 && !isNearMA) {
-              passV3 = false;
-              rejectReason = `Harga ($${currentP}) belum menyentuh zona MA(25)/MA(99) 15m. Jarak: ${(Math.min(dist25, dist99) * 100).toFixed(2)}% (Maks 1.8%).`;
-            }
+            // Aturan 2 dihapus: Tidak perlu pullback proximity (isNearMA) untuk mode breakout agresif
 
             // Aturan 3: Syarat 1H Komandan Tren
             if (passV3 && closePrices1h.length >= 26) {
@@ -1356,25 +1346,25 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
               }
             }
 
-            // Aturan 4: Volume 1.5x Rata-rata 10 Candle (Pada 15m)
-            if (passV3 && candles.length >= 12) {
-              const recent10 = candles.slice(-12, -2);
-              const avgVol10 = recent10.reduce((acc, c) => acc + (c.volume ?? 0), 0) / 10;
+            // Aturan 4 (Baru): Validasi Ledakan Volume Breakout (Min 2.0x Rata-rata 20 Candle 15m)
+            if (passV3 && candles.length >= 22) {
+              const recent20 = candles.slice(-22, -2);
+              const avgVol20 = recent20.reduce((acc, c) => acc + (c.volume ?? 0), 0) / 20;
 
               const currentCandle = candles[candles.length - 1];
               const prevCandle = candles[candles.length - 2];
 
-              const checkVolume = (c: typeof currentCandle) => {
+              const checkAggressiveVolume = (c: typeof currentCandle) => {
                 const vol = c.volume ?? 0;
-                if (vol < avgVol10 * 1.2) return false;
-                if (signal.direction === 'LONG' && c.close <= c.open) return false;
-                if (signal.direction === 'SHORT' && c.close >= c.open) return false;
+                if (vol < avgVol20 * 2.0) return false;
+                if (signal.direction === 'LONG' && c.close <= c.open) return false; // Harus candle hijau untuk breakout LONG
+                if (signal.direction === 'SHORT' && c.close >= c.open) return false; // Harus candle merah untuk breakout SHORT
                 return true;
               };
 
-              if (!checkVolume(currentCandle) && !checkVolume(prevCandle)) {
+              if (!checkAggressiveVolume(currentCandle) && !checkAggressiveVolume(prevCandle)) {
                 passV3 = false;
-                rejectReason = `Volume belum mencapai konfirmasi akumulasi 1.2x dari rata-rata (15m).`;
+                rejectReason = `Breakout palsu: Volume candle penembusan tidak mencapai 2x lipat dari rata-rata 20 candle sebelumnya.`;
               }
             }
 
@@ -1382,13 +1372,13 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
               // 🚨 HUKUMAN SKOR, BUKAN KILL SWITCH MUTLAK
               signal.signalTier = 'MODERATE';
               if (signal.indicatorExplanation) {
-                signal.indicatorExplanation.directionVerdict = `🔴 DITOLAK SNIPER v3.2: ${rejectReason}`;
+                signal.indicatorExplanation.directionVerdict = `🔴 DITOLAK BREAKOUT MOMENTUM: ${rejectReason}`;
               }
             } else {
               signal.overallScore = Math.min(signal.overallScore + 10, 99); // Lolos seleksi mutlak
               signal.signalTier = 'SUPERNOVA'; // Sinyal ini sangat elit jika lolos
               if (signal.indicatorExplanation) {
-                signal.indicatorExplanation.directionVerdict = `🟢 SNIPER v3.0 TERKONFIRMASI: RSI Ignisi (35-65), Pullback MA (${(Math.min(dist25, dist99) * 100).toFixed(2)}%), Volume 1.2x+, 1H Tren Mendukung.`;
+                signal.indicatorExplanation.directionVerdict = `🟢 BREAKOUT MOMENTUM TERKONFIRMASI: Ledakan volume >= 2x rata-rata 20 candle terdeteksi, siap hajar tanpa pullback!`;
               }
             }
           } else if (signal.strategy === 'FUNDING_SQUEEZE') {
@@ -1665,7 +1655,7 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
       // Untuk strategi non-breakdown, kita tolak jika RSI <= 35
       if (s.direction === 'SHORT') {
         if (rsiVal <= 15) return false;
-        if (rsiVal <= 35 && s.strategy !== 'BREAKOUT_MOMENTUM' && s.strategy !== 'PULLBACK_RETEST') {
+        if (rsiVal <= 35 && s.strategy !== 'BREAKOUT_MOMENTUM') {
           return false;
         }
       }
