@@ -8,14 +8,40 @@ on:
 
 jobs:
   deploy:
-    name: Deploy to VPS via SSH
+    name: Build and Deploy to VPS
     runs-on: ubuntu-latest
     environment: Production
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Execute Remote Deployment via SSH
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build Next.js App
+        run: npm run build
+
+      - name: Compress Build Output
+        run: tar -czf next-build.tar.gz .next
+
+      - name: Copy Build to VPS via SCP
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.VPS_HOST || '103.30.194.148' }}
+          username: ${{ secrets.VPS_USERNAME || 'AlzaSniped' }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          source: "next-build.tar.gz"
+          target: "~/AI-AGENT-MEMECOIN-ALZA"
+          overwrite: true
+
+      - name: Execute Remote Sync and PM2 Reload
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST || '103.30.194.148' }}
@@ -25,30 +51,28 @@ jobs:
           port: ${{ secrets.VPS_PORT || 22 }}
           script_stop: true
           script: |
-            echo "🚀 [CI/CD] Memulai deployment otomatis di VPS..."
+            echo "🚀 [CI/CD] Sinkronisasi VPS..."
+            cd ~/AI-AGENT-MEMECOIN-ALZA
 
-            # 1. Masuk ke direktori repository
-            if [ -d "$HOME/AI-AGENT-MEMECOIN-ALZA" ]; then
-              cd "$HOME/AI-AGENT-MEMECOIN-ALZA"
-            elif [ -d "/var/www/AI-AGENT-MEMECOIN-ALZA" ]; then
-              cd "/var/www/AI-AGENT-MEMECOIN-ALZA"
-            else
-              cd ~/AI-AGENT-MEMECOIN-ALZA
-            fi
-
-            echo "📥 [1/4] Mengambil kode terbaru dari GitHub..."
+            echo "📥 Mengambil kode terbaru dari GitHub..."
             git fetch origin main
             git reset --hard origin/main
 
-            echo "📦 [2/4] Memeriksa dependencies..."
+            echo "📦 Memeriksa dependencies (hanya module ringan)..."
             npm install --production=false
 
-            echo "🔨 [3/4] Melakukan build Next.js (npm run build)..."
-            npm run build
+            echo "🗜️ Mengekstrak build dari GitHub Actions..."
+            tar -xzf next-build.tar.gz
+            rm next-build.tar.gz
 
-            echo "⚡ [4/4] Memuat ulang proses di PM2..."
-            pm2 restart grok-trencher || pm2 restart all
+            echo "⚡ Memuat ulang proses di PM2..."
+            if pm2 list | grep -q "grok-trencher"; then
+              pm2 restart grok-trencher
+            else
+              pm2 restart all
+            fi
+            pm2 save
 
             echo "=========================================================="
-            echo "🎉 AUTO-DEPLOY BERHASIL! Terminal aktif dengan kode terbaru."
+            echo "🎉 AUTO-DEPLOY BERHASIL! (Build dilakukan di GitHub Actions)"
             echo "=========================================================="
