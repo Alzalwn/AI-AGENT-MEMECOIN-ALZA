@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { BinanceFuturesSignal } from '@/types/futures';
-import { formatFuturesPrice } from '@/engine/futuresSignalEngine';
+import { formatFuturesPrice, assertSignalDirectionIntegrity } from '@/engine/futuresSignalEngine';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,7 +31,21 @@ export async function POST(request: NextRequest) {
     }
 
     // ============================================================
-    // 🚨 PEMUTUS ARUS (CIRCUIT BREAKER) — Early Exit Guard
+    // 🚨 PEMUTUS ARUS 1: Integritas Arah & Target TP/SL
+    // Mencegah anomali arah LONG tapi TP di bawah entry (atau SHORT tapi TP di atas entry).
+    // ============================================================
+    if (!assertSignalDirectionIntegrity(signal)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `🚨 INTEGRITAS SINYAL RUSAK: Arah ${signal.direction} bertentangan secara matematis dengan TP1 ($${signal.targets?.tp1?.price}) vs Entry ($${signal.entryZone?.current}). Broadcast dibatalkan demi keamanan modal!`,
+        },
+        { status: 422 }
+      );
+    }
+
+    // ============================================================
+    // 🚨 PEMUTUS ARUS 2 (CIRCUIT BREAKER) — Early Exit Guard
     // Sinyal yang di-veto oleh Sniper v3.2 / Squeeze Hunter
     // dengan skor < 0 DILARANG KERAS dikirim ke Telegram.
     // ============================================================

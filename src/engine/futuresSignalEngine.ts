@@ -115,6 +115,129 @@ export function calculatePositionSizingWithHardCap(
 }
 
 /**
+ * Kalkulasi Target Profit (TP1, TP2, TP3) dan Stop Loss yang dienkapsulasi ketat.
+ * Menjamin 100% invarian matematis:
+ * - LONG: TP1/TP2/TP3 > Entry, SL < Entry
+ * - SHORT: TP1/TP2/TP3 < Entry, SL > Entry
+ */
+export function calculateFuturesTargetsAndStopLoss(params: {
+  currentPrice: number;
+  direction: FuturesDirection;
+  change24h: number;
+  customSlPrice?: number;
+  tpMultiplier?: number;
+}): {
+  entryLow: number;
+  entryHigh: number;
+  tp1Price: number;
+  tp2Price: number;
+  tp3Price: number;
+  tp1Pct: number;
+  tp2Pct: number;
+  tp3Pct: number;
+  slPrice: number;
+  slPct: number;
+  riskRewardRatio: number;
+  volMultiplier: number;
+} {
+  const { currentPrice, direction, change24h, customSlPrice, tpMultiplier } = params;
+  const volMultiplier = Math.min(Math.max(Math.abs(change24h) / 10, 0.8), 2.5);
+  const baseMultiplier = tpMultiplier ?? 1.0;
+
+  const tp1Pct = 2.0 * volMultiplier * baseMultiplier;
+  const tp2Pct = 4.5 * volMultiplier * baseMultiplier;
+  const tp3Pct = 10.0 * volMultiplier * baseMultiplier;
+  let slPct = 1.4 * volMultiplier;
+
+  const entryLow = currentPrice * 0.996;
+  const entryHigh = currentPrice * 1.004;
+  let tp1Price: number;
+  let tp2Price: number;
+  let tp3Price: number;
+  let slPrice: number;
+
+  if (direction === 'LONG') {
+    tp1Price = currentPrice * (1 + tp1Pct / 100);
+    tp2Price = currentPrice * (1 + tp2Pct / 100);
+    tp3Price = currentPrice * (1 + tp3Pct / 100);
+    slPrice = currentPrice * (1 - slPct / 100);
+
+    if (customSlPrice !== undefined && customSlPrice > 0) {
+      // Pastikan custom SL untuk LONG selalu berada di bawah harga entry
+      const safeCustomSl = Math.min(customSlPrice, currentPrice * 0.995);
+      slPrice = Math.max(safeCustomSl, currentPrice * 0.96);
+      slPct = Math.abs((slPrice - currentPrice) / currentPrice) * 100;
+    }
+  } else {
+    // SHORT: TP selalu di bawah harga saat ini, SL selalu di atas harga saat ini
+    tp1Price = currentPrice * (1 - tp1Pct / 100);
+    tp2Price = currentPrice * (1 - tp2Pct / 100);
+    tp3Price = currentPrice * (1 - tp3Pct / 100);
+    slPrice = currentPrice * (1 + slPct / 100);
+
+    if (customSlPrice !== undefined && customSlPrice > 0) {
+      // Pastikan custom SL untuk SHORT selalu berada di atas harga entry
+      const safeCustomSl = Math.max(customSlPrice, currentPrice * 1.005);
+      slPrice = Math.min(safeCustomSl, currentPrice * 1.04);
+      slPct = Math.abs((slPrice - currentPrice) / currentPrice) * 100;
+    }
+  }
+
+  const riskRewardRatio = Number((tp2Pct / Math.max(slPct, 0.5)).toFixed(2));
+
+  return {
+    entryLow,
+    entryHigh,
+    tp1Price,
+    tp2Price,
+    tp3Price,
+    tp1Pct,
+    tp2Pct,
+    tp3Pct,
+    slPrice,
+    slPct,
+    riskRewardRatio,
+    volMultiplier,
+  };
+}
+
+/**
+ * Circuit Breaker / Fail-Safe Assertion: Integritas Matematis Sinyal Futures
+ * Memastikan tidak ada kontradiksi fatal antara direction dan perhitungan harga TP/SL.
+ */
+export function assertSignalDirectionIntegrity(signal: BinanceFuturesSignal): boolean {
+  if (!signal || !signal.direction || !signal.targets || !signal.entryZone || !signal.stopLoss) {
+    return false;
+  }
+
+  const current = signal.entryZone.current;
+  if (isNaN(current) || current <= 0) return false;
+
+  const tp1 = signal.targets.tp1?.price;
+  const tp2 = signal.targets.tp2?.price;
+  const tp3 = signal.targets.tp3?.price;
+  const sl = signal.stopLoss?.price;
+
+  if (!tp1 || !tp2 || !tp3 || !sl || isNaN(tp1) || isNaN(tp2) || isNaN(tp3) || isNaN(sl)) {
+    return false;
+  }
+
+  if (signal.direction === 'LONG') {
+    // Posisi LONG: TP1, TP2, TP3 harus lebih tinggi dari entry, Stop Loss harus lebih rendah dari entry
+    const isTpAscending = tp1 > current && tp2 > tp1 && tp3 > tp2;
+    const isSlBelow = sl < current;
+    return isTpAscending && isSlBelow;
+  } else if (signal.direction === 'SHORT') {
+    // Posisi SHORT: TP1, TP2, TP3 harus lebih rendah dari entry, Stop Loss harus lebih tinggi dari entry
+    const isTpDescending = tp1 < current && tp2 < tp1 && tp3 < tp2;
+    const isSlAbove = sl > current;
+    return isTpDescending && isSlAbove;
+  }
+
+  return false;
+}
+
+/**
  * Gatekeeper Evaluasi Risiko Sebelum Eksekusi Order Futures
  * Mengecek anomali pasar (BTC Guard, Funding Rate Drag, Volatilitas Ekstrem).
  * Sesuai instruksi: menghasilkan peringatan yang jelas dan transparan.
@@ -127,6 +250,14 @@ export function validateFuturesEntryGate(signal: BinanceFuturesSignal): {
   const warnings: string[] = [];
   const notices: string[] = [];
   let isRestricted = false;
+
+  // 0a. Validasi Integritas Matematis Arah & Target TP/SL
+  if (!assertSignalDirectionIntegrity(signal)) {
+    isRestricted = true;
+    warnings.push(
+      `🚨 ANOMALI INTEGRITAS ARAH: Terdeteksi kontradiksi fatal antara arah sinyal (${signal.direction}) dengan kalkulasi target profit (Entry: $${formatFuturesPrice(signal.entryZone.current)}, TP1: $${formatFuturesPrice(signal.targets.tp1.price)}). Order diblokir total.`
+    );
+  }
 
   // 0. TradFi / ETF / Pre-Market Static Blacklist Hard-Stop
   const tradFiCheck = isTradFiOrEtfBlacklisted(signal.symbol);
@@ -674,39 +805,27 @@ function evaluatePairSignal(
 
   if (!direction) return null;
 
-  // Kalkulasi Target TP1, TP2, TP3 dan Stop Loss
-  // Kalibrasi persentase berdasarkan volatilitas koin
-  const volMultiplier = Math.min(Math.max(Math.abs(change24h) / 10, 0.8), 2.5);
-  const tp1Pct = 2.0 * volMultiplier;
-  const tp2Pct = 4.5 * volMultiplier;
-  const tp3Pct = 10.0 * volMultiplier;
-  const slPct = 1.4 * volMultiplier;
+  // Kalkulasi Target TP1, TP2, TP3 dan Stop Loss via fungsi enkapsulasi ketat
+  const targetsAndSl = calculateFuturesTargetsAndStopLoss({
+    currentPrice,
+    direction,
+    change24h,
+  });
 
-  let entryLow: number;
-  let entryHigh: number;
-  let tp1Price: number;
-  let tp2Price: number;
-  let tp3Price: number;
-  let slPrice: number;
-
-  if (direction === 'LONG') {
-    entryLow = currentPrice * 0.996;
-    entryHigh = currentPrice * 1.004;
-    tp1Price = currentPrice * (1 + tp1Pct / 100);
-    tp2Price = currentPrice * (1 + tp2Pct / 100);
-    tp3Price = currentPrice * (1 + tp3Pct / 100);
-    slPrice = currentPrice * (1 - slPct / 100);
-  } else {
-    // SHORT
-    entryLow = currentPrice * 0.996;
-    entryHigh = currentPrice * 1.004;
-    tp1Price = currentPrice * (1 - tp1Pct / 100);
-    tp2Price = currentPrice * (1 - tp2Pct / 100);
-    tp3Price = currentPrice * (1 - tp3Pct / 100);
-    slPrice = currentPrice * (1 + slPct / 100);
-  }
-
-  const rrRatio = Number((tp2Pct / slPct).toFixed(2));
+  const {
+    entryLow,
+    entryHigh,
+    tp1Price,
+    tp2Price,
+    tp3Price,
+    tp1Pct,
+    tp2Pct,
+    tp3Pct,
+    slPrice,
+    slPct,
+    riskRewardRatio: rrRatio,
+    volMultiplier,
+  } = targetsAndSl;
   const baseAsset = ticker.symbol.replace('USDT', '');
 
   // Kalkulasi estimasi waktu tempuh TP (Menit, Jam, Hari)
@@ -1349,17 +1468,17 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
             const smcResult = runSmcAnalysis(signal.symbol, candles4h, candles);
             signal.smcAnalysis = smcResult;
 
-            // Jika SMC Terkonfirmasi Kuat: Demand OB 4H + VPA Institusi + 15m MSS terkonfirmasi (DAN RSI belum overbought)
-            if (smcResult.smcScore >= 75 && smcResult.smcBias === 'BULLISH' && smcResult.mssConfirmed && realRsi6 < 68) {
+            // SMC Konfluensi Searah (DILARANG membalikkan sinyal SHORT menjadi LONG):
+            // Kasus A: Sinyal awal LONG terkonfirmasi Demand OB 4H + MSS 15m (DAN RSI belum overbought)
+            if (signal.direction === 'LONG' && smcResult.smcScore >= 75 && smcResult.smcBias === 'BULLISH' && smcResult.mssConfirmed && realRsi6 < 68) {
               signal.strategy = 'SMC_DEMAND_BOUNCE';
               signal.strategyLabel = `🎯 SMC Demand Bounce (4H OB + 15m MSS)`;
-              signal.direction = 'LONG';
               signal.signalTier = smcResult.smcScore >= 85 ? 'SUPERNOVA' : 'HIGH';
               signal.overallScore = Math.min(98, Math.max(signal.overallScore, smcResult.smcScore));
 
-              // Kalibrasi SL presisi di bawah batas Demand OB
+              // Kalibrasi SL presisi di bawah batas Demand OB (selalu di bawah entry)
               if (smcResult.nearestDemandZone) {
-                const fineSl = Math.max(smcResult.nearestDemandZone.zoneLow * 0.992, signal.entryZone.current * 0.96);
+                const fineSl = Math.min(Math.max(smcResult.nearestDemandZone.zoneLow * 0.992, signal.entryZone.current * 0.96), signal.entryZone.current * 0.995);
                 const slPct = Math.abs((fineSl - signal.entryZone.current) / signal.entryZone.current) * 100;
                 signal.stopLoss = {
                   price: fineSl,
@@ -1375,6 +1494,43 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
                   signal.leverage.safe.multiplier
                 );
               }
+            } else if (signal.direction === 'SHORT' && smcResult.smcScore >= 75 && smcResult.smcBias === 'BEARISH' && smcResult.nearestSupplyZone) {
+              // Kasus B: Sinyal awal SHORT terkonfirmasi Supply OB 4H (Rejection)
+              signal.strategy = 'SMC_SUPPLY_REJECTION';
+              signal.strategyLabel = `🎯 SMC Supply Rejection (4H OB)`;
+              signal.signalTier = smcResult.smcScore >= 85 ? 'SUPERNOVA' : 'HIGH';
+              signal.overallScore = Math.min(98, Math.max(signal.overallScore, smcResult.smcScore));
+
+              // Kalibrasi SL presisi di atas batas Supply OB (selalu di atas entry)
+              const fineSl = Math.max(Math.min(smcResult.nearestSupplyZone.zoneHigh * 1.008, signal.entryZone.current * 1.04), signal.entryZone.current * 1.005);
+              const slPct = Math.abs((fineSl - signal.entryZone.current) / signal.entryZone.current) * 100;
+              signal.stopLoss = {
+                price: fineSl,
+                lossPct: -slPct,
+                label: `$${formatFuturesPrice(fineSl)} (-${slPct.toFixed(1)}%) [SMC OB]`,
+                isHit: false,
+              };
+              const tp2Gain = signal.targets.tp2.gainPct;
+              signal.riskRewardRatio = Number((tp2Gain / Math.max(slPct, 0.5)).toFixed(2));
+              signal.positionSizing = calculatePositionSizing(
+                20,
+                slPct,
+                signal.leverage.safe.multiplier
+              );
+            } else if (signal.direction === 'SHORT' && smcResult.smcBias === 'BULLISH' && smcResult.smcScore >= 75) {
+              // Kasus C: Sinyal SHORT berhadapan dengan Demand OB 4H (Counter-trend conflict)
+              signal.overallScore = -999;
+              if (signal.indicatorExplanation) {
+                signal.indicatorExplanation.directionVerdict = `⚠️ VETO: Sinyal SHORT menabrak area Demand OB 4H (Risiko Pantulan Ekstrem)`;
+              }
+              return; // Blokir total dari eksekusi lebih lanjut untuk koin ini
+            } else if (signal.direction === 'LONG' && smcResult.smcBias === 'BEARISH' && smcResult.smcScore >= 75) {
+              // Kasus D: Sinyal LONG berhadapan dengan Supply OB 4H (Counter-trend conflict)
+              signal.overallScore = -999;
+              if (signal.indicatorExplanation) {
+                signal.indicatorExplanation.directionVerdict = `⚠️ VETO: Sinyal LONG menabrak area Supply OB 4H (Risiko Rejection Ekstrem)`;
+              }
+              return; // Blokir total dari eksekusi lebih lanjut untuk koin ini
             }
           }
 
@@ -1403,8 +1559,8 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
               if (pattern.stopLossPrice && pattern.stopLossPrice > 0) {
                 const isLong = signal.direction === 'LONG';
                 const fineSl = isLong
-                  ? Math.max(pattern.stopLossPrice, signal.entryZone.current * 0.96)
-                  : Math.min(pattern.stopLossPrice, signal.entryZone.current * 1.04);
+                  ? Math.min(Math.max(pattern.stopLossPrice, signal.entryZone.current * 0.96), signal.entryZone.current * 0.995)
+                  : Math.max(Math.min(pattern.stopLossPrice, signal.entryZone.current * 1.04), signal.entryZone.current * 1.005);
                 const slPct = Math.abs((fineSl - signal.entryZone.current) / signal.entryZone.current) * 100;
                 signal.stopLoss = {
                   price: fineSl,
@@ -1485,7 +1641,14 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
   // 2. Cegah LONG super overbought (>= 84)
   // 3. Cegah SHORT super oversold (<= 20)
   const validSignals = candidates.filter((s) => {
-    // 🚨 PEMUTUS ARUS MUTLAK: Sinyal yang di-veto (skor < 0) tidak boleh lolos ke output
+    // 🚨 PEMUTUS ARUS MUTLAK 1: Integritas Matematis Arah vs Target Profit & Stop Loss
+    // Jika arah LONG tapi TP di bawah entry (atau sebaliknya), sinyal RUSAK & DILARANG LOLOS!
+    if (!assertSignalDirectionIntegrity(s)) {
+      console.error(`[Direction Integrity Breach] Sinyal ${s.symbol} memiliki mismatch arah ${s.direction} vs TP/SL! Sinyal dibuang.`);
+      return false;
+    }
+
+    // 🚨 PEMUTUS ARUS MUTLAK 2: Sinyal yang di-veto (skor < 0) tidak boleh lolos ke output
     if (s.overallScore < 0) return false;
     if (s.overallScore < 78) return false;
 
@@ -1502,9 +1665,44 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
       // Untuk strategi non-breakdown, kita tolak jika RSI <= 35
       if (s.direction === 'SHORT') {
         if (rsiVal <= 15) return false;
-        if (rsiVal <= 35 && s.strategy !== 'BREAKOUT_MOMENTUM' && s.strategy !== 'FUNDING_SQUEEZE') {
+        if (rsiVal <= 35 && s.strategy !== 'BREAKOUT_MOMENTUM' && s.strategy !== 'PULLBACK_RETEST') {
           return false;
         }
+      }
+    }
+
+    // 🚨 GATEKEEPER 1: MA Spread Filter (Anti-Whipsaw di Zona Gergaji)
+    const ma7 = s.indicators?.ma?.ma7;
+    const ma25 = s.indicators?.ma?.ma25;
+    if (ma7 && ma25) {
+      const maSpreadPct = (Math.abs(ma7 - ma25) / s.entryZone.current) * 100;
+      if (maSpreadPct < 0.15) {
+        console.warn(`⛔ VETO: ${s.symbol} MA Spread terlalu sempit (${maSpreadPct.toFixed(2)}%). (Sideways/Chop Zone)`);
+        return false;
+      }
+    }
+
+    // 🚨 GATEKEEPER 2: Candlestick Trigger Gatekeeper (Anti-Rejection Fatal)
+    const pattern = s.candlestickPattern;
+    const lethalPatterns = ['Engulfing', 'Star', 'Marubozu', 'Dark Cloud', 'Piercing', 'Three Outside']; 
+    if (pattern && pattern.direction !== 'NEUTRAL' && pattern.direction !== s.direction) {
+      const isLethal = lethalPatterns.some(name => pattern.name.includes(name));
+      if (isLethal) {
+        console.warn(`⛔ VETO: ${s.symbol} Arah ${s.direction} menabrak pola lilin fatal: ${pattern.name} (Anti-Rejection)`);
+        return false;
+      }
+    }
+
+    // 🚨 GATEKEEPER 3: MTF Alignment (Multi-Timeframe Dominance)
+    const trend4h = s.multiTimeframe?.tf4h?.trend;
+    if (trend4h) {
+      if (s.direction === 'LONG' && trend4h === 'BEARISH') {
+        console.warn(`⛔ VETO: ${s.symbol} Sinyal LONG menabrak tren raksasa 4H (Downtrend 4H)`);
+        return false;
+      }
+      if (s.direction === 'SHORT' && trend4h === 'BULLISH') {
+        console.warn(`⛔ VETO: ${s.symbol} Sinyal SHORT menabrak tren raksasa 4H (Uptrend 4H)`);
+        return false;
       }
     }
 
@@ -1778,32 +1976,24 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
     }
   } else if (isMacroBearish) {
     // DALAM TREN TURUN / DUMP:
-    // Pengecualian Emas SMC: Jika harga menguji Demand OB 4H + VPA Institusi + MSS 15m terkonfirmasi
-    if (smcAnalysis && smcAnalysis.smcScore >= 75 && smcAnalysis.smcBias === 'BULLISH' && smcAnalysis.mssConfirmed) {
-      direction = 'LONG';
-      strategy = 'SMC_DEMAND_BOUNCE';
-      strategyLabel = `🎯 SMC Demand Bounce (4H OB + 15m MSS)`;
-      score = Math.max(88, smcAnalysis.smcScore);
-    } else {
-      direction = 'SHORT';
+    direction = 'SHORT';
 
-      if (detectedPattern && detectedPattern.direction === 'SHORT') {
-        strategy = detectedPattern.type === 'REVERSAL' ? 'RSI_EXTREME_REVERSAL' : 'BREAKOUT_MOMENTUM';
-        strategyLabel = `🕯️ ${detectedPattern.name} (Bearish Continuation)`;
-        score = Math.min(86 + Math.round((detectedPattern.reliability - 50) / 2.5), 98);
-      } else if (detectedPattern && detectedPattern.direction === 'LONG') {
-        strategy = 'BREAKOUT_MOMENTUM';
-        strategyLabel = `🛡️ Rebound Watch (${detectedPattern.name} Diabaikan)`;
-        score = 82;
-      } else if (isMaBearish && !isMacdBull) {
-        strategy = 'BREAKOUT_MOMENTUM';
-        strategyLabel = '📉 Death Stack Bearish Breakdown';
-        score = 88 + (isEmaBearish ? 2 : 0) + (isStochBearish ? 2 : 0);
-      } else {
-        strategy = 'BREAKOUT_MOMENTUM';
-        strategyLabel = '📉 Macro Downtrend Following SHORT';
-        score = 80;
-      }
+    if (detectedPattern && detectedPattern.direction === 'SHORT') {
+      strategy = detectedPattern.type === 'REVERSAL' ? 'RSI_EXTREME_REVERSAL' : 'BREAKOUT_MOMENTUM';
+      strategyLabel = `🕯️ ${detectedPattern.name} (Bearish Continuation)`;
+      score = Math.min(86 + Math.round((detectedPattern.reliability - 50) / 2.5), 98);
+    } else if (detectedPattern && detectedPattern.direction === 'LONG') {
+      strategy = 'BREAKOUT_MOMENTUM';
+      strategyLabel = `🛡️ Rebound Watch (${detectedPattern.name} Diabaikan)`;
+      score = 82;
+    } else if (isMaBearish && !isMacdBull) {
+      strategy = 'BREAKOUT_MOMENTUM';
+      strategyLabel = '📉 Death Stack Bearish Breakdown';
+      score = 88 + (isEmaBearish ? 2 : 0) + (isStochBearish ? 2 : 0);
+    } else {
+      strategy = 'BREAKOUT_MOMENTUM';
+      strategyLabel = '📉 Macro Downtrend Following SHORT';
+      score = 80;
     }
   } else {
     // KONDISI SIDEWAYS / NETRAL TRANSISI:
@@ -1861,52 +2051,51 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
     strategyLabel = '⚠️ Bull Trap Warning (BTC Dump)';
   }
 
-  // Hitung target TP dan SL
-  const volMultiplier = Math.min(Math.max(Math.abs(change24h) / 10, 0.8), 2.5);
-  const tp1Pct = 2.2 * volMultiplier;
-  const tp2Pct = 4.8 * volMultiplier;
-  const tp3Pct = 10.5 * volMultiplier;
-  let slPct = 1.5 * volMultiplier;
-
-  let entryLow = currentPrice * 0.996;
-  let entryHigh = currentPrice * 1.004;
-  let tp1Price: number;
-  let tp2Price: number;
-  let tp3Price: number;
-  let slPrice: number;
+  // Hitung target TP dan SL dengan enkapsulasi ketat
+  let customSlPrice: number | undefined;
 
   if (direction === 'LONG') {
-    tp1Price = currentPrice * (1 + tp1Pct / 100);
-    tp2Price = currentPrice * (1 + tp2Pct / 100);
-    tp3Price = currentPrice * (1 + tp3Pct / 100);
-    slPrice = currentPrice * (1 - slPct / 100);
-
     if (strategy === 'SNIPER_BOTTOM_REVERSAL') {
       const latestCandle15m = candles.length > 0 ? candles[candles.length - 1] : { low: currentPrice };
       const prevCandle15m = candles.length >= 2 ? candles[candles.length - 2] : latestCandle15m;
       const bunkerLevel = Math.min(indicators.bollingerBands.lower, latestCandle15m.low, prevCandle15m.low);
-      slPrice = bunkerLevel * 0.993; // Auto-Bunker SL 0.7% di bawah titik terendah
-      slPct = Math.abs((slPrice - currentPrice) / currentPrice) * 100;
-    } else if (strategy === 'SMC_DEMAND_BOUNCE' && smcAnalysis?.nearestDemandZone) {
-      slPrice = Math.max(smcAnalysis.nearestDemandZone.zoneLow * 0.992, currentPrice * 0.96);
-      slPct = Math.abs((slPrice - currentPrice) / currentPrice) * 100;
+      customSlPrice = bunkerLevel * 0.993; // Auto-Bunker SL 0.7% di bawah titik terendah
+    } else if ((strategy as FuturesStrategy) === 'SMC_DEMAND_BOUNCE' && smcAnalysis?.nearestDemandZone) {
+      customSlPrice = Math.max(smcAnalysis.nearestDemandZone.zoneLow * 0.992, currentPrice * 0.96);
     } else if (detectedPattern?.stopLossPrice && detectedPattern.stopLossPrice < currentPrice) {
-      slPrice = Math.max(detectedPattern.stopLossPrice, currentPrice * 0.96);
-      slPct = Math.abs((slPrice - currentPrice) / currentPrice) * 100;
+      customSlPrice = Math.max(detectedPattern.stopLossPrice, currentPrice * 0.96);
     }
   } else {
-    tp1Price = currentPrice * (1 - tp1Pct / 100);
-    tp2Price = currentPrice * (1 - tp2Pct / 100);
-    tp3Price = currentPrice * (1 - tp3Pct / 100);
-    slPrice = currentPrice * (1 + slPct / 100);
-
     if (detectedPattern?.stopLossPrice && detectedPattern.stopLossPrice > currentPrice) {
-      slPrice = Math.min(detectedPattern.stopLossPrice, currentPrice * 1.04);
-      slPct = Math.abs((slPrice - currentPrice) / currentPrice) * 100;
+      customSlPrice = Math.min(detectedPattern.stopLossPrice, currentPrice * 1.04);
+    } else if (smcAnalysis?.nearestSupplyZone) {
+      customSlPrice = Math.min(smcAnalysis.nearestSupplyZone.zoneHigh * 1.008, currentPrice * 1.04);
     }
   }
 
-  const rrRatio = Number((tp2Pct / Math.max(slPct, 0.5)).toFixed(2));
+  const targetsAndSl = calculateFuturesTargetsAndStopLoss({
+    currentPrice,
+    direction,
+    change24h,
+    customSlPrice,
+    tpMultiplier: 1.1,
+  });
+
+  const {
+    entryLow,
+    entryHigh,
+    tp1Price,
+    tp2Price,
+    tp3Price,
+    tp1Pct,
+    tp2Pct,
+    tp3Pct,
+    slPrice,
+    slPct,
+    riskRewardRatio: rrRatio,
+    volMultiplier,
+  } = targetsAndSl;
+
   const baseAsset = symbol.replace('USDT', '');
 
   const absVol = Math.abs(change24h);
@@ -2081,7 +2270,7 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
     slPct,
   });
 
-  return {
+  const finalSignal: BinanceFuturesSignal = {
     id: `custom-${symbol}-${Date.now().toString(36)}`,
     symbol,
     baseAsset,
@@ -2177,4 +2366,10 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
       overallScore: Math.max(score, quantScore),
     }),
   };
+
+  if (!assertSignalDirectionIntegrity(finalSignal)) {
+    console.error(`[Integritas Sinyal GAGAL] ${symbol} memiliki mismatch arah ${direction} vs kalkulasi TP/SL!`);
+  }
+
+  return finalSignal;
 }
