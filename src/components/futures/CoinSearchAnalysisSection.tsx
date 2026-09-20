@@ -207,6 +207,14 @@ export const CoinSearchAnalysisSection: React.FC<CoinSearchAnalysisSectionProps>
             tf1dTrend: analyzedSignal.multiTimeframe.tf1d.trend,
           }
         : undefined,
+      volumeMultiplier: analyzedSignal.direction === 'LONG'
+        ? analyzedSignal.smcAnalysis?.nearestDemandZone?.volumeMultiplier
+        : analyzedSignal.smcAnalysis?.nearestSupplyZone?.volumeMultiplier,
+      maValues: analyzedSignal.indicators?.ma ? {
+        ma7: analyzedSignal.indicators.ma.ma7,
+        ma25: analyzedSignal.indicators.ma.ma25,
+        ma99: analyzedSignal.indicators.ma.ma99,
+      } : undefined,
     });
 
     try {
@@ -1357,6 +1365,14 @@ export const CoinSearchAnalysisSection: React.FC<CoinSearchAnalysisSectionProps>
                         gatekeeperStatus: analyzedSignal.autoHedge.gatekeeperStatus,
                       }
                     : undefined,
+                  volumeMultiplier: analyzedSignal.direction === 'LONG'
+                    ? analyzedSignal.smcAnalysis?.nearestDemandZone?.volumeMultiplier
+                    : analyzedSignal.smcAnalysis?.nearestSupplyZone?.volumeMultiplier,
+                  maValues: analyzedSignal.indicators?.ma ? {
+                    ma7: analyzedSignal.indicators.ma.ma7,
+                    ma25: analyzedSignal.indicators.ma.ma25,
+                    ma99: analyzedSignal.indicators.ma.ma99,
+                  } : undefined,
                 })
               )}`}
               className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 hover:border-sky-500/50 text-sky-300 font-bold transition-all cursor-pointer"

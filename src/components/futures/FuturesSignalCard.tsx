@@ -151,6 +151,14 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
               tf1dTrend: signal.multiTimeframe.tf1d.trend,
             }
           : undefined,
+        volumeMultiplier: signal.direction === 'LONG' 
+          ? signal.smcAnalysis?.nearestDemandZone?.volumeMultiplier
+          : signal.smcAnalysis?.nearestSupplyZone?.volumeMultiplier,
+        maValues: signal.indicators?.ma ? {
+          ma7: signal.indicators.ma.ma7,
+          ma25: signal.indicators.ma.ma25,
+          ma99: signal.indicators.ma.ma99,
+        } : undefined,
       });
 
       // Bangkitkan gambar grafik analisis berkualitas tinggi

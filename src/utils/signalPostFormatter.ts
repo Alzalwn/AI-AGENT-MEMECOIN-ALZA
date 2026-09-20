@@ -58,6 +58,9 @@ export interface SignalPostParams {
     tf4hTrend: string;
     tf1dTrend: string;
   };
+  // V3.0 Specific Additions
+  volumeMultiplier?: number;
+  maValues?: { ma7: number; ma25: number; ma99: number; };
 }
 
 /**
@@ -72,16 +75,35 @@ export function generateCommunitySignalPost(params: SignalPostParams): string {
   const entryStr = typeof params.entry === 'number' ? params.entry.toString() : params.entry;
   const slStr = typeof params.stopLoss === 'number' ? params.stopLoss.toString() : params.stopLoss;
 
-  // 1. Paragraf 1: Narasi teknikal 1 kalimat
+  let header = `${params.position} ${cleanPair}`;
+  
+  // Rule 2: HEADER LEDAKAN VOLUME V3.0
+  if (params.volumeMultiplier && params.volumeMultiplier >= 2.0) {
+    header = `🚀 [BREAKOUT DETECTED - AGGRESSIVE ENTRY]\n💡 STRATEGI: VOLUME EXPANSION ${params.volumeMultiplier.toFixed(1)}x\n\n${params.position} ${cleanPair}`;
+  }
+
+  // 1. Paragraf 1: Narasi teknikal 1 kalimat (Rule 3: FORMAT MOVING AVERAGE EKSPLISIT)
   let paragraph1 = '';
+  const maString = params.maValues 
+    ? `MA(7)=$${params.maValues.ma7}, MA(25)=$${params.maValues.ma25}, MA(99)=$${params.maValues.ma99}`
+    : '';
+
   if (params.technicalContext && params.technicalContext.trim() !== '') {
+    let contextStr = params.technicalContext.trim().replace(/\.$/, '');
+    // V3.0 Rule 1: Breakout Momentum, No "Pullback" reference
+    contextStr = contextStr.replace(/pullback/gi, 'breakout momentum');
+    
     paragraph1 = isLong
-      ? `${baseAsset} mempercepat pergerakan naik dan mendekati area resistance penting di sekitar ${entryStr}, sementara ${params.technicalContext.trim().replace(/\.$/, '')}.`
-      : `${baseAsset} mempercepat pergerakan turun dan mendekati area breakdown penting di sekitar ${entryStr}, sementara ${params.technicalContext.trim().replace(/\.$/, '')}.`;
+      ? `${baseAsset} menembus arah tren (breakout momentum) dan mendekati area resistance penting di sekitar ${entryStr}, sementara ${contextStr}.`
+      : `${baseAsset} menembus arah tren (breakout momentum) dan mendekati area breakdown penting di sekitar ${entryStr}, sementara ${contextStr}.`;
+    
+    if (maString) {
+       paragraph1 += `\nKondisi MA: ${maString}`;
+    }
   } else {
     paragraph1 = isLong
-      ? `${baseAsset} mempercepat pergerakan naik dan mendekati area resistance penting di sekitar ${entryStr}, sementara mayoritas moving average saat ini masih solid mendukung skenario bullish.`
-      : `${baseAsset} mempercepat pergerakan turun dan mendekati area support krusial di sekitar ${entryStr}, sementara tekanan jual dan formasi moving average saat ini menegaskan dominasi tren bearish.`;
+      ? `${baseAsset} menembus arah tren (breakout momentum) dan mendekati area resistance penting di sekitar ${entryStr}.\nKondisi MA: ${maString}`
+      : `${baseAsset} menembus arah tren (breakout momentum) dan mendekati area support krusial di sekitar ${entryStr}.\nKondisi MA: ${maString}`;
   }
 
   // 2. Format Target TP: Mendukung berjenjang TP1, TP2, TP3
@@ -102,12 +124,12 @@ export function generateCommunitySignalPost(params: SignalPostParams): string {
     const tp2Price = params.targets.tp2.price;
     const tp3Price = params.targets.tp3.price;
     paragraph2 = isLong
-      ? `Jika harga mampu bertahan kuat di area ${entryStr} setelah momentum ini, peluang reli menuju TP1 ($${tp1Price}) dan TP2 ($${tp2Price}) hingga ekstensi TP3 ($${tp3Price}) akan semakin terbuka, sedangkan penurunan kembali di bawah ${slStr} akan menandakan hilangnya area breakout terdekat dan melemahnya skenario Long.`
-      : `Jika harga mampu bertahan di bawah area ${entryStr} setelah penolakan ini, peluang penurunan berjenjang menuju TP1 ($${tp1Price}) dan TP2 ($${tp2Price}) hingga ekstensi TP3 ($${tp3Price}) akan terbuka lebar, sedangkan kenaikan kembali di atas ${slStr} akan menandakan kegagalan breakdown dan membatalkan skenario Short.`;
+      ? `Jika harga mampu bertahan kuat di area ${entryStr} setelah momentum ini, peluang reli menuju TP1 ($${tp1Price}) dan TP2 ($${tp2Price}) hingga ekstensi TP3 ($${tp3Price}) akan semakin terbuka, sedangkan penurunan kembali di bawah ${slStr} akan menandakan hilangnya momentum terdekat dan melemahnya skenario Long.`
+      : `Jika harga mampu bertahan di bawah area ${entryStr} setelah penolakan ini, peluang penurunan berjenjang menuju TP1 ($${tp1Price}) dan TP2 ($${tp2Price}) hingga ekstensi TP3 ($${tp3Price}) akan terbuka lebar, sedangkan kenaikan kembali di atas ${slStr} akan menandakan kegagalan momentum dan membatalkan skenario Short.`;
   } else {
     paragraph2 = isLong
-      ? `Jika harga mampu bertahan kuat di area ${entryStr} setelah momentum ini, peluang untuk melanjutkan kenaikan akan semakin terbuka, sedangkan penurunan kembali di bawah ${slStr} akan menandakan hilangnya area breakout terdekat dan melemahnya skenario Long.`
-      : `Jika harga mampu bertahan di bawah area ${entryStr} setelah penolakan ini, peluang untuk melanjutkan penurunan ke target terbuka lebar, sedangkan kenaikan kembali di atas ${slStr} akan menandakan kegagalan breakdown dan membatalkan skenario Short.`;
+      ? `Jika harga mampu bertahan kuat di area ${entryStr} setelah momentum ini, peluang untuk melanjutkan kenaikan akan semakin terbuka, sedangkan penurunan kembali di bawah ${slStr} akan menandakan hilangnya momentum terdekat dan melemahnya skenario Long.`
+      : `Jika harga mampu bertahan di bawah area ${entryStr} setelah penolakan ini, peluang untuk melanjutkan penurunan ke target terbuka lebar, sedangkan kenaikan kembali di atas ${slStr} akan menandakan kegagalan momentum dan membatalkan skenario Short.`;
   }
 
   // 4. Metadata Tambahan (Risk/Reward, Leverage, Funding, Binance Link)
@@ -138,8 +160,30 @@ export function generateCommunitySignalPost(params: SignalPostParams): string {
       extraLines.push(`🛡️ Auto-Hedge Delta-Neutral: Buka ${params.autoHedge.hedgeDirection} ${params.autoHedge.hedgePair} (${params.autoHedge.hedgeRatioPct}% Notional)`);
     }
   }
+  // Rule 4: ANTI-HALUSINASI MTF 
   if (params.multiTimeframe) {
-    extraLines.push(`📊 Konfluensi 4-Timeframe: [15m: ${params.multiTimeframe.tf15mTrend === 'BULLISH' ? '🟢' : '🔴'}] [1h: ${params.multiTimeframe.tf1hTrend === 'BULLISH' ? '🟢' : '🔴'}] [4h: ${params.multiTimeframe.tf4hTrend === 'BULLISH' ? '🟢' : '🔴'}] [Daily: ${params.multiTimeframe.tf1dTrend === 'BULLISH' ? '🟢' : '🔴'}] (${params.multiTimeframe.badgeLabel})`);
+    // Determine strict verdict based on 🟢 and 🔴 counts
+    let greenCount = 0;
+    let redCount = 0;
+    const trends = [
+      params.multiTimeframe.tf15mTrend,
+      params.multiTimeframe.tf1hTrend,
+      params.multiTimeframe.tf4hTrend,
+      params.multiTimeframe.tf1dTrend,
+    ];
+    trends.forEach(t => {
+      if (t === 'BULLISH') greenCount++;
+      else if (t === 'BEARISH') redCount++;
+    });
+
+    let mtfVerdict = params.multiTimeframe.badgeLabel;
+    if (greenCount > redCount) {
+      mtfVerdict = '🟢 Bullish (Super Kuat)';
+    } else if (redCount > greenCount) {
+      mtfVerdict = '🔴 Bearish (Super Kuat)';
+    }
+
+    extraLines.push(`📊 Konfluensi 4-Timeframe: [15m: ${params.multiTimeframe.tf15mTrend === 'BULLISH' ? '🟢' : '🔴'}] [1h: ${params.multiTimeframe.tf1hTrend === 'BULLISH' ? '🟢' : '🔴'}] [4h: ${params.multiTimeframe.tf4hTrend === 'BULLISH' ? '🟢' : '🔴'}] [Daily: ${params.multiTimeframe.tf1dTrend === 'BULLISH' ? '🟢' : '🔴'}] (${mtfVerdict})`);
   }
   if (params.binanceUrl) {
     extraLines.push(`🔗 Eksekusi di Binance: ${params.binanceUrl}`);
@@ -147,7 +191,7 @@ export function generateCommunitySignalPost(params: SignalPostParams): string {
 
   const extraSection = extraLines.length > 0 ? `\n\n${extraLines.join('\n')}` : '';
 
-  return `${params.position} ${cleanPair}
+  return `${header}
 
 ${paragraph1}
 

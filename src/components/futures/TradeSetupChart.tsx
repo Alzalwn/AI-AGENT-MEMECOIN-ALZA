@@ -221,6 +221,14 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
               reliability: (liveProtocol?.candlestickPattern || signal?.candlestickPattern)!.reliability,
             }
           : undefined,
+        volumeMultiplier: direction === 'LONG'
+          ? signal?.smcAnalysis?.nearestDemandZone?.volumeMultiplier
+          : signal?.smcAnalysis?.nearestSupplyZone?.volumeMultiplier,
+        maValues: signal?.indicators?.ma ? {
+          ma7: signal.indicators.ma.ma7,
+          ma25: signal.indicators.ma.ma25,
+          ma99: signal.indicators.ma.ma99,
+        } : undefined,
       });
 
       canvas.toBlob(async (blob) => {

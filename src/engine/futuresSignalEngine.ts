@@ -1425,7 +1425,7 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
               const currentPriceForSq = signal.entryZone.current;
               const rawSlPct = Math.abs(signal.stopLoss.lossPct);
               // Tidak lagi memaksakan floor 3.0% agar RR tetap sehat untuk Sniper
-              
+
               const newSlPrice = currentPriceForSq * (1 - rawSlPct / 100);
               signal.stopLoss = {
                 price: newSlPrice,
@@ -1674,7 +1674,7 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
 
     // 🚨 GATEKEEPER 2: Candlestick Trigger Gatekeeper (Anti-Rejection Fatal)
     const pattern = s.candlestickPattern;
-    const lethalPatterns = ['Engulfing', 'Star', 'Marubozu', 'Dark Cloud', 'Piercing', 'Three Outside']; 
+    const lethalPatterns = ['Engulfing', 'Star', 'Marubozu', 'Dark Cloud', 'Piercing', 'Three Outside'];
     if (pattern && pattern.direction !== 'NEUTRAL' && pattern.direction !== s.direction) {
       const isLethal = lethalPatterns.some(name => pattern.name.includes(name));
       if (isLethal) {
@@ -2022,9 +2022,9 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
   const latestCandle15m = candles.length > 0 ? candles[candles.length - 1] : { open: currentPrice, close: currentPrice, low: currentPrice };
   const prevCandle15m = candles.length >= 2 ? candles[candles.length - 2] : latestCandle15m;
   const getLowerWick = (c: any) => Math.min(c.open, c.close) - c.low;
-  
-  const isRejecting = 
-    getLowerWick(latestCandle15m) >= (latestCandle15m.low * 0.005) || 
+
+  const isRejecting =
+    getLowerWick(latestCandle15m) >= (latestCandle15m.low * 0.005) ||
     getLowerWick(prevCandle15m) >= (prevCandle15m.low * 0.005);
 
   if (isNearMa99 && isRsiExtremelyOversold && isBollingerLower && isRejecting) {
