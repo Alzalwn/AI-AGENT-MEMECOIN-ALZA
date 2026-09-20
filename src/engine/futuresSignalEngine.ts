@@ -626,24 +626,24 @@ export function generateMultiTimeframeAlignment(params: {
   const { direction, change24h, indicators, overallScore } = params;
 
   // 1. Timeframe 15m (Micro Trigger & Entry)
-  const is15mBull = indicators?.macd ? indicators.macd.dif > indicators.macd.dea : direction === 'LONG';
+  const is15mBull = indicators?.macd ? indicators.macd.dif > indicators.macd.dea : change24h > 0;
   const tf15mTrend: TimeframeTrendBias = is15mBull ? 'BULLISH' : 'BEARISH';
-  const tf15mRsi = Math.round(indicators?.rsi?.rsi6 || (direction === 'LONG' ? 58 : 42));
+  const tf15mRsi = Math.round(indicators?.rsi?.rsi6 || 50);
 
   // 2. Timeframe 1h (Intraday Momentum)
-  const is1hBull = indicators?.ma?.alignment === 'BULLISH' || (direction === 'LONG' && overallScore >= 70);
+  const is1hBull = indicators?.ma ? (indicators.ma.ma25 > indicators.ma.ma99) : change24h > 1.0;
   const tf1hTrend: TimeframeTrendBias = is1hBull ? 'BULLISH' : 'BEARISH';
-  const tf1hRsi = Math.round(indicators?.rsi?.rsi12 || (direction === 'LONG' ? 55 : 45));
+  const tf1hRsi = Math.round(indicators?.rsi?.rsi12 || 50);
 
   // 3. Timeframe 4h (Intermediate Structure / Swing Bias)
-  const is4hBull = change24h >= 0.5 || (direction === 'LONG' && overallScore >= 75);
+  const is4hBull = change24h >= 1.5;
   const tf4hTrend: TimeframeTrendBias = is4hBull ? 'BULLISH' : 'BEARISH';
-  const tf4hRsi = Math.round(indicators?.rsi?.rsi24 || (direction === 'LONG' ? 52 : 47));
+  const tf4hRsi = Math.round(indicators?.rsi?.rsi24 || 50);
 
   // 4. Timeframe 1d / Daily (Macro Trend Institusi)
-  const is1dBull = change24h >= 0 || (direction === 'LONG' && overallScore >= 80);
+  const is1dBull = change24h >= 0;
   const tf1dTrend: TimeframeTrendBias = is1dBull ? 'BULLISH' : 'BEARISH';
-  const tf1dRsi = Math.round(direction === 'LONG' ? 54 : 46);
+  const tf1dRsi = Math.round(change24h >= 0 ? 54 : 46);
 
   // Kalkulasi Skor Keselarasan (Alignment Score 0 to 4)
   const targetTrend: TimeframeTrendBias = direction === 'LONG' ? 'BULLISH' : 'BEARISH';
