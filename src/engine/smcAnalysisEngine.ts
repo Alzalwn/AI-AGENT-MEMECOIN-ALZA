@@ -14,6 +14,12 @@ import {
   SmcFairValueGap,
   SmcLiquiditySweep,
   SmcAnalysisResult,
+  SmcInversionFvg,
+  SmcCisd,
+  IctLiquidityRange,
+  SmtDivergenceResult,
+  IctKeyLevelZone,
+  IctPoiType,
 } from '../types/futures';
 import { Candle, getCandleMetrics } from './candlestickPatternEngine';
 
@@ -361,18 +367,461 @@ export function detectMtfMssAndTrigger(
 }
 
 /**
- * 6. FUNGSI UTAMA: Run SMC Analysis Multi-Timeframe
- * Menggabungkan seluruh logika SMC, VPA, ATR, FVG, dan MTF 15m Confirmation.
+ * 6. Deteksi Inversion Fair Value Gap (IFVG) - Trigger Agresif 1
+ * Gap yang tertembus dan berbalik fungsi (Support menjadi Resistance atau sebaliknya).
+ */
+export function detectInversionFvg(candles: Candle[]): SmcInversionFvg | undefined {
+  if (!candles || candles.length < 6) return undefined;
+  const len = candles.length;
+  const currentPrice = candles[len - 1].close;
+
+  // Cari dari candle ke (len - 12) sampai (len - 3)
+  for (let i = Math.max(2, len - 12); i < len - 2; i++) {
+    const prev = candles[i - 1];
+    const current = candles[i];
+    const next = candles[i + 1];
+
+    // Bullish FVG awal: next.low > prev.high
+    if (next.low > prev.high) {
+      const gapLow = prev.high;
+      const gapHigh = next.low;
+      const gapSize = gapHigh - gapLow;
+      if (gapSize / gapLow < 0.002) continue;
+
+      // Cek apakah ada candle setelahnya yang close di bawah gapLow (Inversion ke Bearish IFVG)
+      for (let j = i + 2; j < len; j++) {
+        if (candles[j].close < gapLow) {
+          return {
+            type: 'BEARISH_IFVG',
+            originalGapLow: gapLow,
+            originalGapHigh: gapHigh,
+            inversionPrice: gapLow,
+            brokenTime: candles[j].time || 0,
+            status: currentPrice <= gapHigh ? 'ACTIVE' : 'MITIGATED',
+          };
+        }
+      }
+    }
+
+    // Bearish FVG awal: next.high < prev.low
+    if (next.high < prev.low) {
+      const gapHigh = prev.low;
+      const gapLow = next.high;
+      const gapSize = gapHigh - gapLow;
+      if (gapSize / gapLow < 0.002) continue;
+
+      // Cek apakah ada candle setelahnya yang close di atas gapHigh (Inversion ke Bullish IFVG)
+      for (let j = i + 2; j < len; j++) {
+        if (candles[j].close > gapHigh) {
+          return {
+            type: 'BULLISH_IFVG',
+            originalGapLow: gapLow,
+            originalGapHigh: gapHigh,
+            inversionPrice: gapHigh,
+            brokenTime: candles[j].time || 0,
+            status: currentPrice >= gapLow ? 'ACTIVE' : 'MITIGATED',
+          };
+        }
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * 7. Deteksi Change in State of Delivery (CISD) - Trigger Agresif 2
+ * Perubahan sifat pengiriman harga saat candle berbalik menembus body candle pembuka pergerakan sebelumnya.
+ */
+export function detectCisd(candles15m: Candle[]): SmcCisd | undefined {
+  if (!candles15m || candles15m.length < 8) return undefined;
+  const len = candles15m.length;
+  const lastCandle = candles15m[len - 1];
+
+  const recentSlice = candles15m.slice(Math.max(0, len - 6), len - 1);
+  const minLow = Math.min(...recentSlice.map((c) => c.low));
+  const maxHigh = Math.max(...recentSlice.map((c) => c.high));
+
+  // Bullish CISD: Candle hijau terakhir menembus dan close di atas open candle merah yang memulai dump terakhir
+  for (let i = len - 5; i < len - 1; i++) {
+    const c = candles15m[i];
+    if (c.close < c.open && c.low <= minLow * 1.002) {
+      if (lastCandle.close > c.open && lastCandle.close > lastCandle.open) {
+        return {
+          type: 'BULLISH_CISD',
+          breakoutPrice: c.open,
+          baseCandleTime: c.time || 0,
+          confirmed: true,
+        };
+      }
+    }
+  }
+
+  // Bearish CISD: Candle merah terakhir menembus dan close di bawah open candle hijau yang memulai rally terakhir
+  for (let i = len - 5; i < len - 1; i++) {
+    const c = candles15m[i];
+    if (c.close > c.open && c.high >= maxHigh * 0.998) {
+      if (lastCandle.close < c.open && lastCandle.close < lastCandle.open) {
+        return {
+          type: 'BEARISH_CISD',
+          breakoutPrice: c.open,
+          baseCandleTime: c.time || 0,
+          confirmed: true,
+        };
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * 8. Pemetaan Liquidity Trading Range (PDH, PDL, Asian High/Low, Premium/Discount)
+ */
+export function calculateLiquidityRange(candles: Candle[]): IctLiquidityRange {
+  if (!candles || candles.length < 10) return {};
+  const len = candles.length;
+  const currentPrice = candles[len - 1].close;
+
+  const dailySlice = candles.slice(Math.max(0, len - 24));
+  const pdh = Math.max(...dailySlice.map((c) => c.high));
+  const pdl = Math.min(...dailySlice.map((c) => c.low));
+  const midpoint = (pdh + pdl) / 2;
+
+  let pricePosition: 'PREMIUM' | 'DISCOUNT' | 'EQUILIBRIUM' = 'EQUILIBRIUM';
+  const margin = (pdh - pdl) * 0.05;
+  if (currentPrice > midpoint + margin) {
+    pricePosition = 'PREMIUM';
+  } else if (currentPrice < midpoint - margin) {
+    pricePosition = 'DISCOUNT';
+  }
+
+  // Asian session: 07:00 - 14:00 WIB (00:00 - 07:00 UTC)
+  let asianHigh: number | undefined;
+  let asianLow: number | undefined;
+
+  const asianCandles = candles.filter((c) => {
+    if (!c.time) return false;
+    const date = new Date(c.time);
+    const utcHours = date.getUTCHours();
+    const wibHours = (utcHours + 7) % 24;
+    return wibHours >= 7 && wibHours < 14;
+  });
+
+  if (asianCandles.length > 0) {
+    const recentAsian = asianCandles.slice(-16);
+    asianHigh = Math.max(...recentAsian.map((c) => c.high));
+    asianLow = Math.min(...recentAsian.map((c) => c.low));
+  }
+
+  return {
+    pdh,
+    pdl,
+    midpoint,
+    asianHigh,
+    asianLow,
+    pricePosition,
+  };
+}
+
+/**
+ * 9. Pengecekan Kill Zone Waktu Indonesia Barat (WIB)
+ */
+export function checkWibKillZone(timestampMs?: number): {
+  inKillZone: boolean;
+  killZoneName?: string;
+  sessionName: 'ASIAN' | 'LONDON' | 'NEW_YORK' | 'OFF_HOURS';
+} {
+  const time = timestampMs || Date.now();
+  const date = new Date(time);
+  const utcMillis = time + date.getTimezoneOffset() * 60000;
+  const wibTime = new Date(utcMillis + 3600000 * 7);
+  const hours = wibTime.getHours();
+  const minutes = wibTime.getMinutes();
+  const timeDecimal = hours + minutes / 60;
+
+  // Kill Zone Long: London Open 14:00 - 15:30 WIB
+  const isLondonKillZone = timeDecimal >= 14.0 && timeDecimal <= 15.5;
+  // Kill Zone Short: NY Open 20:30 - 22:00 WIB
+  const isNyKillZone = timeDecimal >= 20.5 && timeDecimal <= 22.0;
+
+  let sessionName: 'ASIAN' | 'LONDON' | 'NEW_YORK' | 'OFF_HOURS' = 'OFF_HOURS';
+  if (timeDecimal >= 7.0 && timeDecimal < 14.0) {
+    sessionName = 'ASIAN';
+  } else if (timeDecimal >= 14.0 && timeDecimal < 20.5) {
+    sessionName = 'LONDON';
+  } else if (timeDecimal >= 20.5 || timeDecimal < 3.0) {
+    sessionName = 'NEW_YORK';
+  }
+
+  if (isLondonKillZone) {
+    return { inKillZone: true, killZoneName: 'London Kill Zone (14:00-15:30 WIB)', sessionName };
+  }
+  if (isNyKillZone) {
+    return { inKillZone: true, killZoneName: 'New York Kill Zone (20:30-22:00 WIB)', sessionName };
+  }
+
+  return { inKillZone: false, sessionName };
+}
+
+/**
+ * 10. Deteksi Smart Money Technique (SMT) Divergence Lintas Aset
+ */
+export function detectSmtDivergence(
+  primaryCandles: Candle[],
+  correlatedCandles: Candle[],
+  primarySymbol: string = 'PRIMARY',
+  correlatedSymbol: string = 'CORRELATED'
+): SmtDivergenceResult | undefined {
+  if (!primaryCandles || !correlatedCandles || primaryCandles.length < 10 || correlatedCandles.length < 10) {
+    return undefined;
+  }
+
+  const pLen = primaryCandles.length;
+  const cLen = correlatedCandles.length;
+
+  const pCurr = primaryCandles[pLen - 1];
+  const pPrevSlice = primaryCandles.slice(Math.max(0, pLen - 8), pLen - 2);
+  const pMinLow = Math.min(...pPrevSlice.map((c) => c.low));
+  const pMaxHigh = Math.max(...pPrevSlice.map((c) => c.high));
+
+  const cCurr = correlatedCandles[cLen - 1];
+  const cPrevSlice = correlatedCandles.slice(Math.max(0, cLen - 8), cLen - 2);
+  const cMinLow = Math.min(...cPrevSlice.map((c) => c.low));
+  const cMaxHigh = Math.max(...cPrevSlice.map((c) => c.high));
+
+  // Bullish SMT: Primary menyapu low (Lower Low), Correlated menahan low (Higher Low)
+  if (pCurr.low < pMinLow && cCurr.low >= cMinLow) {
+    return {
+      detected: true,
+      type: 'BULLISH_SMT',
+      primarySymbol,
+      correlatedSymbol,
+      rationale: `Bullish SMT Divergence: ${primarySymbol} membuat Lower Low (SSL Swept), namun ${correlatedSymbol} menolak turun (Higher Low). Konfirmasi akumulasi Smart Money.`,
+    };
+  }
+
+  // Bearish SMT: Primary menyapu high (Higher High), Correlated menolak naik (Lower High)
+  if (pCurr.high > pMaxHigh && cCurr.high <= cMaxHigh) {
+    return {
+      detected: true,
+      type: 'BEARISH_SMT',
+      primarySymbol,
+      correlatedSymbol,
+      rationale: `Bearish SMT Divergence: ${primarySymbol} membuat Higher High (BSL Swept), namun ${correlatedSymbol} gagal breakout (Lower High). Konfirmasi distribusi Smart Money.`,
+    };
+  }
+
+  return undefined;
+}
+
+/**
+ * 11. Deteksi Key Level Zone / Point of Interest (POI) — Filter Lokasi HTF (v2.1)
+ *
+ * Alur: Harga hanya dianggap "layak" untuk di-hunting jika berada di dalam atau
+ * menyentuh satu dari zona-zona ini. Jika tidak, semua sinyal diabaikan (gate tertutup).
+ *
+ * Zona yang diidentifikasi (dari prioritas tertinggi ke terendah):
+ * 1. HTF Demand / Supply Order Block (4H)
+ * 2. HTF Bullish / Bearish Fair Value Gap (4H)
+ * 3. Key Support / Resistance historis (swing low/high signifikan 4H)
+ * 4. CRT Boundary — batas rendah/tinggi candle terbesar dalam 12 candle terakhir
+ */
+export function detectKeyLevelZone(
+  candles4h: Candle[],
+  currentPrice: number
+): { zone: IctKeyLevelZone | undefined; isAtKeyLevel: boolean; gateOpen: boolean } {
+  if (!candles4h || candles4h.length < 20) {
+    return { zone: undefined, isAtKeyLevel: false, gateOpen: false };
+  }
+
+  const PROXIMITY_RADIUS = 0.008; // 0.8% toleransi "menyentuh" zona
+
+  const candidates: IctKeyLevelZone[] = [];
+
+  // ─── 1. HTF Demand / Supply Order Block ───────────────────────────────────
+  const { demandZone, supplyZone } = findOrderBlocks(candles4h);
+
+  if (demandZone) {
+    const dist = Math.min(
+      Math.abs(currentPrice - demandZone.zoneLow) / currentPrice,
+      Math.abs(currentPrice - demandZone.zoneHigh) / currentPrice
+    );
+    const isInside = currentPrice >= demandZone.zoneLow && currentPrice <= demandZone.zoneHigh * 1.01;
+    const isTouching = !isInside && dist <= PROXIMITY_RADIUS;
+    candidates.push({
+      type: 'HTF_DEMAND_OB' as IctPoiType,
+      zoneLow: demandZone.zoneLow,
+      zoneHigh: demandZone.zoneHigh,
+      strength: demandZone.isVolumeValidated ? 'MAJOR' : 'MINOR',
+      description: `HTF Demand OB 4H ($${demandZone.zoneLow.toFixed(4)} – $${demandZone.zoneHigh.toFixed(4)}) | VPA ${demandZone.volumeMultiplier}x`,
+      distancePct: Number((dist * 100).toFixed(2)),
+      isInsideZone: isInside,
+      isTouching,
+    });
+  }
+
+  if (supplyZone) {
+    const dist = Math.min(
+      Math.abs(currentPrice - supplyZone.zoneLow) / currentPrice,
+      Math.abs(currentPrice - supplyZone.zoneHigh) / currentPrice
+    );
+    const isInside = currentPrice >= supplyZone.zoneLow * 0.99 && currentPrice <= supplyZone.zoneHigh;
+    const isTouching = !isInside && dist <= PROXIMITY_RADIUS;
+    candidates.push({
+      type: 'HTF_SUPPLY_OB' as IctPoiType,
+      zoneLow: supplyZone.zoneLow,
+      zoneHigh: supplyZone.zoneHigh,
+      strength: supplyZone.isVolumeValidated ? 'MAJOR' : 'MINOR',
+      description: `HTF Supply OB 4H ($${supplyZone.zoneLow.toFixed(4)} – $${supplyZone.zoneHigh.toFixed(4)}) | VPA ${supplyZone.volumeMultiplier}x`,
+      distancePct: Number((dist * 100).toFixed(2)),
+      isInsideZone: isInside,
+      isTouching,
+    });
+  }
+
+  // ─── 2. HTF Fair Value Gap (Bullish / Bearish) ────────────────────────────
+  const htfFvg = findFairValueGaps(candles4h);
+  if (htfFvg && !htfFvg.isFilled) {
+    const dist = Math.min(
+      Math.abs(currentPrice - htfFvg.gapLow) / currentPrice,
+      Math.abs(currentPrice - htfFvg.gapHigh) / currentPrice
+    );
+    const isInside = currentPrice >= htfFvg.gapLow && currentPrice <= htfFvg.gapHigh;
+    const isTouching = !isInside && dist <= PROXIMITY_RADIUS;
+    const poiType: IctPoiType = htfFvg.type === 'BULLISH_FVG' ? 'HTF_BULLISH_FVG' : 'HTF_BEARISH_FVG';
+    candidates.push({
+      type: poiType,
+      zoneLow: htfFvg.gapLow,
+      zoneHigh: htfFvg.gapHigh,
+      strength: htfFvg.fillRatioPct < 20 ? 'MAJOR' : 'MINOR',
+      description: `HTF ${htfFvg.type === 'BULLISH_FVG' ? 'Bullish' : 'Bearish'} FVG 4H ($${htfFvg.gapLow.toFixed(4)} – $${htfFvg.gapHigh.toFixed(4)}) | Terisi ${htfFvg.fillRatioPct}%`,
+      distancePct: Number((dist * 100).toFixed(2)),
+      isInsideZone: isInside,
+      isTouching,
+    });
+  }
+
+  // ─── 3. Key Support / Resistance Historis ─────────────────────────────────
+  // Cari swing high/low dari 30–60 candle historis (hindari 5 candle terakhir)
+  const lookback = candles4h.slice(Math.max(0, candles4h.length - 60), candles4h.length - 5);
+  if (lookback.length >= 10) {
+    const hisHigh = Math.max(...lookback.map((c) => c.high));
+    const hisLow = Math.min(...lookback.map((c) => c.low));
+    const ZONE_BUFFER = currentPrice * 0.003; // ±0.3% membentuk zona
+
+    // Key Resistance
+    if (Math.abs(currentPrice - hisHigh) / currentPrice <= PROXIMITY_RADIUS * 2) {
+      const dist = Math.abs(currentPrice - hisHigh) / currentPrice;
+      candidates.push({
+        type: 'KEY_RESISTANCE' as IctPoiType,
+        zoneLow: hisHigh - ZONE_BUFFER,
+        zoneHigh: hisHigh + ZONE_BUFFER,
+        strength: 'MINOR',
+        description: `Key Resistance Historis 4H di $${hisHigh.toFixed(4)} (Swing High ${lookback.length} candle)`,
+        distancePct: Number((dist * 100).toFixed(2)),
+        isInsideZone: Math.abs(currentPrice - hisHigh) <= ZONE_BUFFER,
+        isTouching: dist <= PROXIMITY_RADIUS,
+      });
+    }
+
+    // Key Support
+    if (Math.abs(currentPrice - hisLow) / currentPrice <= PROXIMITY_RADIUS * 2) {
+      const dist = Math.abs(currentPrice - hisLow) / currentPrice;
+      candidates.push({
+        type: 'KEY_SUPPORT' as IctPoiType,
+        zoneLow: hisLow - ZONE_BUFFER,
+        zoneHigh: hisLow + ZONE_BUFFER,
+        strength: 'MINOR',
+        description: `Key Support Historis 4H di $${hisLow.toFixed(4)} (Swing Low ${lookback.length} candle)`,
+        distancePct: Number((dist * 100).toFixed(2)),
+        isInsideZone: Math.abs(currentPrice - hisLow) <= ZONE_BUFFER,
+        isTouching: dist <= PROXIMITY_RADIUS,
+      });
+    }
+  }
+
+  // ─── 4. CRT Boundary ──────────────────────────────────────────────────────
+  // Candle Range Theory: Batas tertinggi/terendah candle makro terbesar 12 candle terakhir
+  const crtSlice = candles4h.slice(Math.max(0, candles4h.length - 12));
+  if (crtSlice.length >= 6) {
+    const crtHigh = Math.max(...crtSlice.map((c) => c.high));
+    const crtLow = Math.min(...crtSlice.map((c) => c.low));
+    const CRT_BUFFER = currentPrice * 0.002;
+
+    if (Math.abs(currentPrice - crtHigh) / currentPrice <= PROXIMITY_RADIUS * 1.5) {
+      const dist = Math.abs(currentPrice - crtHigh) / currentPrice;
+      candidates.push({
+        type: 'CRT_BOUNDARY_HIGH' as IctPoiType,
+        zoneLow: crtHigh - CRT_BUFFER,
+        zoneHigh: crtHigh + CRT_BUFFER,
+        strength: 'MINOR',
+        description: `CRT Boundary High ($${crtHigh.toFixed(4)}) — batas atas 12 candle makro`,
+        distancePct: Number((dist * 100).toFixed(2)),
+        isInsideZone: Math.abs(currentPrice - crtHigh) <= CRT_BUFFER,
+        isTouching: dist <= PROXIMITY_RADIUS,
+      });
+    }
+
+    if (Math.abs(currentPrice - crtLow) / currentPrice <= PROXIMITY_RADIUS * 1.5) {
+      const dist = Math.abs(currentPrice - crtLow) / currentPrice;
+      candidates.push({
+        type: 'CRT_BOUNDARY_LOW' as IctPoiType,
+        zoneLow: crtLow - CRT_BUFFER,
+        zoneHigh: crtLow + CRT_BUFFER,
+        strength: 'MINOR',
+        description: `CRT Boundary Low ($${crtLow.toFixed(4)}) — batas bawah 12 candle makro`,
+        distancePct: Number((dist * 100).toFixed(2)),
+        isInsideZone: Math.abs(currentPrice - crtLow) <= CRT_BUFFER,
+        isTouching: dist <= PROXIMITY_RADIUS,
+      });
+    }
+  }
+
+  // ─── Pilih Kandidat Terbaik ────────────────────────────────────────────────
+  // Prioritas: isInsideZone > isTouching, kemudian MAJOR > MINOR, lalu distancePct terkecil
+  const activeZones = candidates.filter((z) => z.isInsideZone || z.isTouching);
+  if (activeZones.length === 0) {
+    return { zone: undefined, isAtKeyLevel: false, gateOpen: false };
+  }
+
+  activeZones.sort((a, b) => {
+    if (a.isInsideZone && !b.isInsideZone) return -1;
+    if (!a.isInsideZone && b.isInsideZone) return 1;
+    if (a.strength === 'MAJOR' && b.strength !== 'MAJOR') return -1;
+    if (a.strength !== 'MAJOR' && b.strength === 'MAJOR') return 1;
+    return a.distancePct - b.distancePct;
+  });
+
+  const best = activeZones[0];
+  return {
+    zone: best,
+    isAtKeyLevel: true,
+    gateOpen: best.isInsideZone || best.isTouching,
+  };
+}
+
+/**
+ * 12. FUNGSI UTAMA: Run SMC & ICT Analysis Multi-Timeframe (v2.1 — POI Gate)
+ * Menggabungkan ATR Filter, POI Gate, Sweep, IFVG, CISD, SMT Divergence, Kill Zone WIB.
  */
 export function runSmcAnalysis(
   symbol: string,
   candles4h: Candle[],
-  candles15m: Candle[]
+  candles15m: Candle[],
+  correlatedCandles15m?: Candle[],
+  correlatedSymbol?: string
 ): SmcAnalysisResult {
   const currentPrice =
     candles15m && candles15m.length > 0
       ? candles15m[candles15m.length - 1].close
       : candles4h[candles4h.length - 1]?.close || 1;
+
+  // Step 0: POI / Key Level Gate — Filter Lokasi HTF (v2.1)
+  // Bot hanya aktif mencari setup JIKA harga berada di dalam/dekat zona institusional.
+  const poiResult = detectKeyLevelZone(candles4h, currentPrice);
+  const isAtKeyLevel = poiResult.isAtKeyLevel;
+  const keyLevelGateOpen = poiResult.gateOpen;
 
   // Step 1: ATR Filter (Anti-Sideways)
   const atrResult = calculateAtr(candles15m, 14);
@@ -380,19 +829,41 @@ export function runSmcAnalysis(
   // Step 2: Deteksi Order Block 4H
   const { demandZone, supplyZone } = findOrderBlocks(candles4h);
 
-  // Step 3: Deteksi FVG
+  // Step 3: Deteksi FVG & Inversion FVG
   const recentFvg = findFairValueGaps(candles4h);
   if (demandZone && recentFvg && recentFvg.type === 'BULLISH_FVG') {
     demandZone.isFvgPresent = true;
   }
+  const ifvg = detectInversionFvg(candles15m);
 
-  // Step 4: Deteksi Liquidity Sweep
+  // Step 4: Deteksi Liquidity Sweep & Range
   const recentSweep = detectLiquiditySweep(candles4h);
+  const liquidityRange = calculateLiquidityRange(candles4h.length >= 15 ? candles4h : candles15m);
 
-  // Step 5: Deteksi Konfirmasi MTF 15m (MSS & Candlestick Trigger)
+  // Step 5: Deteksi Konfirmasi MTF 15m (MSS, CISD, dan Candlestick Trigger)
   const mtfTrigger = detectMtfMssAndTrigger(candles15m, demandZone);
+  const cisd = detectCisd(candles15m);
 
-  // Step 6: Kalkulasi Skor & Bias SMC
+  // Step 6: Evaluasi Kill Zone Sesi WIB
+  const killZoneInfo = checkWibKillZone();
+
+  // Step 7: Evaluasi SMT Divergence (jika data korelasi tersedia)
+  const smtDivergence =
+    correlatedCandles15m && correlatedSymbol
+      ? detectSmtDivergence(candles15m, correlatedCandles15m, symbol, correlatedSymbol)
+      : undefined;
+
+  // Step 8: Tentukan Entry Model Trigger Utama
+  let entryModelTrigger: 'IFVG' | 'CISD' | 'MSS' | undefined;
+  if (mtfTrigger.mssConfirmed) {
+    entryModelTrigger = 'MSS';
+  } else if (cisd?.confirmed) {
+    entryModelTrigger = 'CISD';
+  } else if (ifvg && ifvg.status === 'ACTIVE') {
+    entryModelTrigger = 'IFVG';
+  }
+
+  // Step 9: Kalkulasi Skor & Bias SMC Berjenjang
   let smcScore = 50;
   let smcBias: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = 'NEUTRAL';
   const rationaleParts: string[] = [];
@@ -451,6 +922,35 @@ export function runSmcAnalysis(
     }
   }
 
+  // --- BONUS TAMBAHAN ICT & SMC v2.0 ---
+  if (killZoneInfo.inKillZone) {
+    smcScore += 5;
+    rationaleParts.push(`🎯 Aktif di ${killZoneInfo.killZoneName}`);
+  }
+
+  if (ifvg && ifvg.status === 'ACTIVE') {
+    smcScore += 10;
+    rationaleParts.push(`Inversion FVG (${ifvg.type === 'BULLISH_IFVG' ? 'Bullish' : 'Bearish'} IFVG di $${ifvg.inversionPrice.toFixed(4)})`);
+  }
+
+  if (cisd?.confirmed) {
+    smcScore += 15;
+    rationaleParts.push(`CISD Terkonfirmasi (${cisd.type === 'BULLISH_CISD' ? 'Bullish' : 'Bearish'} Breakout)`);
+  }
+
+  if (smtDivergence?.detected) {
+    smcScore += 15;
+    rationaleParts.push(`⚡ SMT Divergence vs ${smtDivergence.correlatedSymbol} (${smtDivergence.type})`);
+  }
+
+  if (liquidityRange.pricePosition === 'DISCOUNT' && smcBias === 'BULLISH') {
+    smcScore += 5;
+    rationaleParts.push(`Zona Diskon (Di bawah Midpoint Range)`);
+  } else if (liquidityRange.pricePosition === 'PREMIUM' && smcBias === 'BEARISH') {
+    smcScore += 5;
+    rationaleParts.push(`Zona Premium (Di atas Midpoint Range)`);
+  }
+
   // Penalti ATR (Pasar Choppy / Sideways Mati)
   if (!atrResult.isAtrHealthy) {
     smcScore = Math.max(35, smcScore - 30);
@@ -476,5 +976,18 @@ export function runSmcAnalysis(
     smcBias,
     smcScore: finalScore,
     smcRationale,
+    // Ekstensi ICT v2.0
+    ifvg,
+    cisd,
+    liquidityRange,
+    smtDivergence,
+    entryModelTrigger,
+    killZoneActive: killZoneInfo.inKillZone,
+    killZoneName: killZoneInfo.killZoneName,
+    // Ekstensi ICT v2.1 — POI Gate
+    keyLevelZone: poiResult.zone,
+    isAtKeyLevel,
+    keyLevelGateOpen,
   };
 }
+

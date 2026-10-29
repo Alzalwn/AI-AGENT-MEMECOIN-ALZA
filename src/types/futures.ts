@@ -463,6 +463,67 @@ export interface SmcLiquiditySweep {
   rejectionWickPct: number;         // Panjang ekor penolakan (%)
 }
 
+export interface SmcInversionFvg {
+  type: 'BULLISH_IFVG' | 'BEARISH_IFVG';
+  originalGapLow: number;
+  originalGapHigh: number;
+  inversionPrice: number;
+  brokenTime: number;
+  status: 'ACTIVE' | 'MITIGATED';
+}
+
+export interface SmcCisd {
+  type: 'BULLISH_CISD' | 'BEARISH_CISD';
+  breakoutPrice: number;
+  baseCandleTime: number;
+  confirmed: boolean;
+}
+
+export interface IctLiquidityRange {
+  pdh?: number;
+  pdl?: number;
+  pwh?: number;
+  pwl?: number;
+  asianHigh?: number;
+  asianLow?: number;
+  midpoint?: number;
+  pricePosition?: 'PREMIUM' | 'DISCOUNT' | 'EQUILIBRIUM';
+}
+
+export interface SmtDivergenceResult {
+  detected: boolean;
+  type?: 'BULLISH_SMT' | 'BEARISH_SMT';
+  primarySymbol: string;
+  correlatedSymbol: string;
+  rationale: string;
+}
+
+// ---------------------------------------------------------------
+// 🗺️ ICT Key Level Zone / Point of Interest (POI) — v2.1
+// Lapisan filter lokasi HTF: Bot hanya aktif saat harga berada
+// di dalam satu dari zona kritikal ini (OB, FVG, S/R, CRT Boundary).
+// ---------------------------------------------------------------
+export type IctPoiType =
+  | 'HTF_DEMAND_OB'      // Higher-Timeframe Demand Order Block
+  | 'HTF_SUPPLY_OB'      // Higher-Timeframe Supply Order Block
+  | 'HTF_BULLISH_FVG'    // Fair Value Gap bullish HTF (magnet harga)
+  | 'HTF_BEARISH_FVG'    // Fair Value Gap bearish HTF (zona tekanan)
+  | 'KEY_SUPPORT'        // Key Support Level (swing low historis signifikan)
+  | 'KEY_RESISTANCE'     // Key Resistance Level (swing high historis signifikan)
+  | 'CRT_BOUNDARY_LOW'   // Candle Range Theory — batas bawah candle makro
+  | 'CRT_BOUNDARY_HIGH'; // Candle Range Theory — batas atas candle makro
+
+export interface IctKeyLevelZone {
+  type: IctPoiType;
+  zoneLow: number;
+  zoneHigh: number;
+  strength: 'MAJOR' | 'MINOR';      // MAJOR: level yang belum pernah diuji ulang; MINOR: pernah diuji 1x
+  description: string;              // Narasi singkat untuk kartu UI
+  distancePct: number;              // % jarak harga saat ini dari tepi terdekat zona
+  isInsideZone: boolean;            // true jika current_price sudah masuk ke dalam zona
+  isTouching: boolean;              // true jika harga sedang mendekat dalam radius 0.8%
+}
+
 export interface SmcAnalysisResult {
   timeframe: '4h';
   nearestDemandZone?: SmcOrderBlock;
@@ -476,5 +537,16 @@ export interface SmcAnalysisResult {
   smcBias: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
   smcScore: number;                 // 0 - 100
   smcRationale: string;             // Deskripsi rinci untuk kartu UI
+  // ICT & SMC Enhancements (v2.0)
+  ifvg?: SmcInversionFvg;
+  cisd?: SmcCisd;
+  liquidityRange?: IctLiquidityRange;
+  smtDivergence?: SmtDivergenceResult;
+  entryModelTrigger?: 'IFVG' | 'CISD' | 'MSS';
+  killZoneActive?: boolean;
+  killZoneName?: string;
+  // ICT Key Level Zone / POI Filter (v2.1)
+  keyLevelZone?: IctKeyLevelZone;   // Zona POI HTF yang paling relevan saat ini
+  isAtKeyLevel: boolean;            // TRUE = Harga berada di POI → Aktifkan mode hunting
+  keyLevelGateOpen: boolean;        // TRUE = Gate terbuka → Sweep & Entry boleh dieksekusi
 }
-

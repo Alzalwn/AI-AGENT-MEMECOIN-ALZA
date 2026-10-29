@@ -563,6 +563,65 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
               </div>
             </div>
 
+            {/* ICT v2.1 — POI Key Level Gate Banner */}
+            {signal.smcAnalysis.keyLevelZone && (
+              <div className={`mt-2 px-2.5 py-1.5 rounded-lg border text-[10px] font-mono flex items-start gap-1.5 ${
+                signal.smcAnalysis.keyLevelGateOpen
+                  ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300'
+                  : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+              }`}>
+                <span className="mt-0.5 shrink-0">
+                  {signal.smcAnalysis.keyLevelGateOpen ? '🟢' : '🟡'}
+                </span>
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-bold">
+                    {signal.smcAnalysis.keyLevelGateOpen ? 'POI GATE TERBUKA' : 'MENDEKATI POI ZONE'}
+                  </span>
+                  <span className="text-[9px] opacity-80">{signal.smcAnalysis.keyLevelZone.description}</span>
+                  <span className="text-[9px] opacity-60">
+                    Jarak: {signal.smcAnalysis.keyLevelZone.distancePct}% | Kekuatan: {signal.smcAnalysis.keyLevelZone.strength}
+                  </span>
+                </div>
+              </div>
+            )}
+            {!signal.smcAnalysis.isAtKeyLevel && (
+              <div className="mt-2 px-2.5 py-1 rounded-lg border border-zinc-700/50 bg-zinc-900/50 text-[10px] font-mono text-zinc-500 flex items-center gap-1.5">
+                <span>🔴</span>
+                <span>POI Gate Tertutup — Harga tidak di zona institusional</span>
+              </div>
+            )}
+
+            {/* ICT v2.0 Confluence Badges */}
+            {(signal.smcAnalysis.killZoneActive || signal.smcAnalysis.ifvg || signal.smcAnalysis.cisd || signal.smcAnalysis.smtDivergence || (signal.smcAnalysis.liquidityRange?.pricePosition && signal.smcAnalysis.liquidityRange.pricePosition !== 'EQUILIBRIUM')) && (
+              <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-amber-500/20 text-[9px] font-mono">
+                {signal.smcAnalysis.killZoneActive && (
+                  <span className="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300">
+                    🎯 {signal.smcAnalysis.killZoneName || 'Kill Zone Aktif'}
+                  </span>
+                )}
+                {signal.smcAnalysis.ifvg && signal.smcAnalysis.ifvg.status === 'ACTIVE' && (
+                  <span className="px-1.5 py-0.5 rounded bg-blue-500/10 border border-blue-500/30 text-blue-300">
+                    🔄 {signal.smcAnalysis.ifvg.type === 'BULLISH_IFVG' ? 'Bullish' : 'Bearish'} IFVG
+                  </span>
+                )}
+                {signal.smcAnalysis.cisd?.confirmed && (
+                  <span className="px-1.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/30 text-purple-300">
+                    ⚡ {signal.smcAnalysis.cisd.type === 'BULLISH_CISD' ? 'Bullish' : 'Bearish'} CISD
+                  </span>
+                )}
+                {signal.smcAnalysis.smtDivergence?.detected && (
+                  <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300">
+                    ✨ SMT vs {signal.smcAnalysis.smtDivergence.correlatedSymbol}
+                  </span>
+                )}
+                {signal.smcAnalysis.liquidityRange?.pricePosition && signal.smcAnalysis.liquidityRange.pricePosition !== 'EQUILIBRIUM' && (
+                  <span className="px-1.5 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-300">
+                    📊 Zona {signal.smcAnalysis.liquidityRange.pricePosition}
+                  </span>
+                )}
+              </div>
+            )}
+
             {/* Rationale Narasi Singkat */}
             <div className="mt-2 pt-2 border-t border-amber-500/20 text-[10px] text-amber-200/90 leading-relaxed font-sans">
               💡 <strong>Sniper Confluence:</strong> {signal.smcAnalysis.smcRationale}
