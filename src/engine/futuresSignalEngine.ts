@@ -141,13 +141,17 @@ export function calculateFuturesTargetsAndStopLoss(params: {
   volMultiplier: number;
 } {
   const { currentPrice, direction, change24h, customSlPrice, tpMultiplier } = params;
-  const volMultiplier = Math.min(Math.max(Math.abs(change24h) / 10, 0.8), 2.5);
+  const volMultiplier = Math.min(Math.max(Math.abs(change24h) / 10, 1.2), 2.5);
   const baseMultiplier = tpMultiplier ?? 1.0;
 
   const tp1Pct = 2.0 * volMultiplier * baseMultiplier;
   const tp2Pct = 4.5 * volMultiplier * baseMultiplier;
   const tp3Pct = 10.0 * volMultiplier * baseMultiplier;
-  let slPct = 1.4 * volMultiplier;
+  let slPct = 2.0 * volMultiplier;
+
+  // Floor berbasis tier harga aset agar altcoin/memecoin tidak terlalu tipis
+  const priceBasedSlFloor = currentPrice < 1 ? 2.5 : currentPrice < 10 ? 2.0 : 1.8;
+  slPct = Math.max(slPct, priceBasedSlFloor);
 
   const entryLow = currentPrice * 0.996;
   const entryHigh = currentPrice * 1.004;
@@ -163,9 +167,10 @@ export function calculateFuturesTargetsAndStopLoss(params: {
     slPrice = currentPrice * (1 - slPct / 100);
 
     if (customSlPrice !== undefined && customSlPrice > 0) {
-      // Pastikan custom SL untuk LONG selalu berada di bawah harga entry
-      const safeCustomSl = Math.min(customSlPrice, currentPrice * 0.995);
-      slPrice = Math.max(safeCustomSl, currentPrice * 0.96);
+      // Pastikan custom SL untuk LONG selalu berada di bawah entry dengan jarak minimal priceBasedSlFloor
+      const maxAllowedCustomSl = currentPrice * (1 - priceBasedSlFloor / 100);
+      const minAllowedCustomSl = currentPrice * 0.94; // Maksimal batas risiko 6%
+      slPrice = Math.max(Math.min(customSlPrice, maxAllowedCustomSl), minAllowedCustomSl);
       slPct = Math.abs((slPrice - currentPrice) / currentPrice) * 100;
     }
   } else {
@@ -176,9 +181,10 @@ export function calculateFuturesTargetsAndStopLoss(params: {
     slPrice = currentPrice * (1 + slPct / 100);
 
     if (customSlPrice !== undefined && customSlPrice > 0) {
-      // Pastikan custom SL untuk SHORT selalu berada di atas harga entry
-      const safeCustomSl = Math.max(customSlPrice, currentPrice * 1.005);
-      slPrice = Math.min(safeCustomSl, currentPrice * 1.04);
+      // Pastikan custom SL untuk SHORT selalu berada di atas entry dengan jarak minimal priceBasedSlFloor
+      const minAllowedCustomSl = currentPrice * (1 + priceBasedSlFloor / 100);
+      const maxAllowedCustomSl = currentPrice * 1.06; // Maksimal batas risiko 6%
+      slPrice = Math.min(Math.max(customSlPrice, minAllowedCustomSl), maxAllowedCustomSl);
       slPct = Math.abs((slPrice - currentPrice) / currentPrice) * 100;
     }
   }
@@ -916,7 +922,7 @@ function evaluatePairSignal(
     stopLoss: {
       price: slPrice,
       lossPct: -slPct,
-      label: `$${formatFuturesPrice(slPrice)} (-${slPct.toFixed(1)}%)`,
+      label: `$${formatFuturesPrice(slPrice)} (-${slPct.toFixed(1)}%) [Base Vol]`,
       isHit: false,
     },
     riskRewardRatio: rrRatio,
@@ -1423,8 +1429,8 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
 
               // 🛡️ Squeeze Hunter Stop Loss Calculation
               const currentPriceForSq = signal.entryZone.current;
-              const rawSlPct = Math.abs(signal.stopLoss.lossPct);
-              // Tidak lagi memaksakan floor 3.0% agar RR tetap sehat untuk Sniper
+              const priceFloorPct = currentPriceForSq < 1 ? 2.5 : currentPriceForSq < 10 ? 2.0 : 1.8;
+              const rawSlPct = Math.max(Math.abs(signal.stopLoss.lossPct), priceFloorPct);
 
               const newSlPrice = currentPriceForSq * (1 - rawSlPct / 100);
               signal.stopLoss = {
@@ -1466,9 +1472,16 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
               signal.signalTier = smcResult.smcScore >= 85 ? 'SUPERNOVA' : 'HIGH';
               signal.overallScore = Math.min(98, Math.max(signal.overallScore, smcResult.smcScore));
 
-              // Kalibrasi SL presisi di bawah batas Demand OB (selalu di bawah entry)
+              // Kalibrasi SL presisi di bawah batas Demand OB (selalu di bawah entry dengan buffer aman)
               if (smcResult.nearestDemandZone) {
-                const fineSl = Math.min(Math.max(smcResult.nearestDemandZone.zoneLow * 0.992, signal.entryZone.current * 0.96), signal.entryZone.current * 0.995);
+                const priceFloorPct = signal.entryZone.current < 1 ? 2.5 : signal.entryZone.current < 10 ? 2.0 : 1.8;
+                const atrFloorPct = (smcResult.atrVolatilityPct && smcResult.atrVolatilityPct > 0) ? smcResult.atrVolatilityPct * 1.5 : 0;
+                const safeSlFloorPct = Math.max(priceFloorPct, atrFloorPct);
+
+                const targetSl = smcResult.nearestDemandZone.zoneLow * 0.992;
+                const maxSlPriceLong = signal.entryZone.current * (1 - safeSlFloorPct / 100);
+                const minSlPriceLong = signal.entryZone.current * 0.94; // Batas max risiko 6%
+                const fineSl = Math.max(Math.min(targetSl, maxSlPriceLong), minSlPriceLong);
                 const slPct = Math.abs((fineSl - signal.entryZone.current) / signal.entryZone.current) * 100;
                 signal.stopLoss = {
                   price: fineSl,
@@ -1491,8 +1504,15 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
               signal.signalTier = smcResult.smcScore >= 85 ? 'SUPERNOVA' : 'HIGH';
               signal.overallScore = Math.min(98, Math.max(signal.overallScore, smcResult.smcScore));
 
-              // Kalibrasi SL presisi di atas batas Supply OB (selalu di atas entry)
-              const fineSl = Math.max(Math.min(smcResult.nearestSupplyZone.zoneHigh * 1.008, signal.entryZone.current * 1.04), signal.entryZone.current * 1.005);
+              // Kalibrasi SL presisi di atas batas Supply OB (selalu di atas entry dengan buffer aman)
+              const priceFloorPct = signal.entryZone.current < 1 ? 2.5 : signal.entryZone.current < 10 ? 2.0 : 1.8;
+              const atrFloorPct = (smcResult.atrVolatilityPct && smcResult.atrVolatilityPct > 0) ? smcResult.atrVolatilityPct * 1.5 : 0;
+              const safeSlFloorPct = Math.max(priceFloorPct, atrFloorPct);
+
+              const targetSl = smcResult.nearestSupplyZone.zoneHigh * 1.008;
+              const minSlPriceShort = signal.entryZone.current * (1 + safeSlFloorPct / 100);
+              const maxSlPriceShort = signal.entryZone.current * 1.06; // Batas max risiko 6%
+              const fineSl = Math.min(Math.max(targetSl, minSlPriceShort), maxSlPriceShort);
               const slPct = Math.abs((fineSl - signal.entryZone.current) / signal.entryZone.current) * 100;
               signal.stopLoss = {
                 price: fineSl,
@@ -1548,14 +1568,18 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
               // Kalibrasi Stop Loss presisi berbasis shadow ekstrim pola candlestick
               if (pattern.stopLossPrice && pattern.stopLossPrice > 0) {
                 const isLong = signal.direction === 'LONG';
+                const priceFloorPct = signal.entryZone.current < 1 ? 2.5 : signal.entryZone.current < 10 ? 2.0 : 1.8;
+                const atrFloorPct = (signal.smcAnalysis?.atrVolatilityPct && signal.smcAnalysis.atrVolatilityPct > 0) ? signal.smcAnalysis.atrVolatilityPct * 1.5 : 0;
+                const safeSlFloorPct = Math.max(priceFloorPct, atrFloorPct);
+
                 const fineSl = isLong
-                  ? Math.min(Math.max(pattern.stopLossPrice, signal.entryZone.current * 0.96), signal.entryZone.current * 0.995)
-                  : Math.max(Math.min(pattern.stopLossPrice, signal.entryZone.current * 1.04), signal.entryZone.current * 1.005);
+                  ? Math.max(Math.min(pattern.stopLossPrice, signal.entryZone.current * (1 - safeSlFloorPct / 100)), signal.entryZone.current * 0.94)
+                  : Math.min(Math.max(pattern.stopLossPrice, signal.entryZone.current * (1 + safeSlFloorPct / 100)), signal.entryZone.current * 1.06);
                 const slPct = Math.abs((fineSl - signal.entryZone.current) / signal.entryZone.current) * 100;
                 signal.stopLoss = {
                   price: fineSl,
                   lossPct: -slPct,
-                  label: `$${formatFuturesPrice(fineSl)} (-${slPct.toFixed(1)}%)`,
+                  label: `$${formatFuturesPrice(fineSl)} (-${slPct.toFixed(1)}%) [Candlestick]`,
                   isHit: false,
                 };
                 // Kalibrasi ulang R:R
@@ -1577,6 +1601,29 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
               if (signal.indicatorExplanation) {
                 signal.indicatorExplanation.directionVerdict = `🟡 KEPUTUSAN TEGAS: WAIT & SEE / NEUTRAL. Terdapat formasi pola candlestick ${pattern.name} yang berlawanan dengan arah indikator, meningkatkan risiko pembalikan harga mendadak.`;
               }
+            }
+          }
+
+          // 🛡️ Modul 2: Global ATR Floor Validation (Memastikan SL tidak lebih sempit dari 1.5x ATR)
+          if (signal.smcAnalysis?.atrVolatilityPct && signal.smcAnalysis.atrVolatilityPct > 0) {
+            const minAtrSlPct = Number((signal.smcAnalysis.atrVolatilityPct * 1.5).toFixed(2));
+            const currentSlPct = Math.abs(signal.stopLoss.lossPct);
+            if (currentSlPct < minAtrSlPct) {
+              const newSlPrice = signal.direction === 'LONG'
+                ? signal.entryZone.current * (1 - minAtrSlPct / 100)
+                : signal.entryZone.current * (1 + minAtrSlPct / 100);
+              signal.stopLoss = {
+                price: newSlPrice,
+                lossPct: -minAtrSlPct,
+                label: `$${formatFuturesPrice(newSlPrice)} (-${minAtrSlPct.toFixed(1)}%) [ATR Floor]`,
+                isHit: false,
+              };
+              signal.riskRewardRatio = Number((signal.targets.tp2.gainPct / Math.max(minAtrSlPct, 0.5)).toFixed(2));
+              signal.positionSizing = calculatePositionSizing(
+                20,
+                minAtrSlPct,
+                signal.leverage.safe.multiplier
+              );
             }
           }
 
@@ -1694,6 +1741,17 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
         console.warn(`⛔ VETO: ${s.symbol} Sinyal SHORT menabrak tren raksasa 4H (Uptrend 4H)`);
         return false;
       }
+    }
+
+    // 🚨 GATEKEEPER 4: Risk / Reward Ratio Guard (Anti-Unfavorable Risk)
+    if (s.riskRewardRatio < 1.0) {
+      console.warn(`⛔ VETO: ${s.symbol} R:R tidak menguntungkan (${s.riskRewardRatio} < 1.0). Sinyal dibuang.`);
+      return false;
+    }
+    if (s.riskRewardRatio < 1.5) {
+      s.signalTier = 'MODERATE';
+      s.overallScore = Math.min(s.overallScore, 72);
+      s.rationale += ' ⚠️ R:R Terkompresi: Stop loss diperlebar untuk keamanan dari perburuan wick, rasio risk-reward berada di kisaran 1.0 - 1.5x.';
     }
 
     return true;
@@ -2043,23 +2101,26 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
 
   // Hitung target TP dan SL dengan enkapsulasi ketat
   let customSlPrice: number | undefined;
+  const priceFloorPct = currentPrice < 1 ? 2.5 : currentPrice < 10 ? 2.0 : 1.8;
+  const atrFloorPct = (smcAnalysis?.atrVolatilityPct && smcAnalysis.atrVolatilityPct > 0) ? smcAnalysis.atrVolatilityPct * 1.5 : 0;
+  const safeSlFloorPct = Math.max(priceFloorPct, atrFloorPct);
 
   if (direction === 'LONG') {
     if (strategy === 'SNIPER_BOTTOM_REVERSAL') {
       const latestCandle15m = candles.length > 0 ? candles[candles.length - 1] : { low: currentPrice };
       const prevCandle15m = candles.length >= 2 ? candles[candles.length - 2] : latestCandle15m;
       const bunkerLevel = Math.min(indicators.bollingerBands.lower, latestCandle15m.low, prevCandle15m.low);
-      customSlPrice = bunkerLevel * 0.993; // Auto-Bunker SL 0.7% di bawah titik terendah
+      customSlPrice = Math.max(Math.min(bunkerLevel * 0.993, currentPrice * (1 - safeSlFloorPct / 100)), currentPrice * 0.94);
     } else if ((strategy as FuturesStrategy) === 'SMC_DEMAND_BOUNCE' && smcAnalysis?.nearestDemandZone) {
-      customSlPrice = Math.max(smcAnalysis.nearestDemandZone.zoneLow * 0.992, currentPrice * 0.96);
+      customSlPrice = Math.max(Math.min(smcAnalysis.nearestDemandZone.zoneLow * 0.992, currentPrice * (1 - safeSlFloorPct / 100)), currentPrice * 0.94);
     } else if (detectedPattern?.stopLossPrice && detectedPattern.stopLossPrice < currentPrice) {
-      customSlPrice = Math.max(detectedPattern.stopLossPrice, currentPrice * 0.96);
+      customSlPrice = Math.max(Math.min(detectedPattern.stopLossPrice, currentPrice * (1 - safeSlFloorPct / 100)), currentPrice * 0.94);
     }
   } else {
     if (detectedPattern?.stopLossPrice && detectedPattern.stopLossPrice > currentPrice) {
-      customSlPrice = Math.min(detectedPattern.stopLossPrice, currentPrice * 1.04);
+      customSlPrice = Math.min(Math.max(detectedPattern.stopLossPrice, currentPrice * (1 + safeSlFloorPct / 100)), currentPrice * 1.06);
     } else if (smcAnalysis?.nearestSupplyZone) {
-      customSlPrice = Math.min(smcAnalysis.nearestSupplyZone.zoneHigh * 1.008, currentPrice * 1.04);
+      customSlPrice = Math.min(Math.max(smcAnalysis.nearestSupplyZone.zoneHigh * 1.008, currentPrice * (1 + safeSlFloorPct / 100)), currentPrice * 1.06);
     }
   }
 
@@ -2134,6 +2195,11 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
   if (direction === 'LONG' && indicators.rsi.rsi6 >= 68) {
     score = Math.min(score, 72);
     rationale += ` [PERINGATAN SNIPER] RSI(6)=${indicators.rsi.rsi6.toFixed(1)} overbought di pucuk. Dilarang FOMO, rawan koreksi!`;
+  }
+
+  if (rrRatio < 1.5) {
+    score = Math.min(score, 74);
+    rationale += ' ⚠️ [R:R TERKOMPRESI] Stop loss diperlebar untuk keamanan dari perburuan wick, rasio risk/reward berada di kisaran 1.0 - 1.5x.';
   }
 
   const tier: FuturesSignalTier =
@@ -2283,7 +2349,11 @@ export async function analyzeSpecificFuturesCoin(rawSymbol: string): Promise<Bin
     stopLoss: {
       price: slPrice,
       lossPct: -slPct,
-      label: `$${formatFuturesPrice(slPrice)} (-${slPct.toFixed(1)}%)`,
+      label: `$${formatFuturesPrice(slPrice)} (-${slPct.toFixed(1)}%) ${
+        customSlPrice
+          ? (smcAnalysis?.nearestDemandZone || smcAnalysis?.nearestSupplyZone ? '[SMC OB]' : detectedPattern ? '[Candlestick]' : '[Custom]')
+          : '[Base Vol]'
+      }`,
       isHit: false,
     },
     riskRewardRatio: rrRatio,

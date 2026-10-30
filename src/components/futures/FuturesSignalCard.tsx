@@ -636,7 +636,14 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
             <span className="font-bold text-emerald-400">{signal.entryZone.label}</span>
           </div>
           <div className="text-right">
-            <span className="text-[11px] text-zinc-400 block mb-0.5">🛑 Hard Stop Loss</span>
+            <div className="flex items-center justify-end gap-1 mb-0.5">
+              {Math.abs(signal.stopLoss.lossPct) < 1.5 && (
+                <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30" title="Stop loss relatif sempit untuk volatilitas pasar. Disiplin gunakan leverage rendah!">
+                  ⚠️ Sempit
+                </span>
+              )}
+              <span className="text-[11px] text-zinc-400">🛑 Hard Stop Loss</span>
+            </div>
             <span className="font-bold text-rose-400">{signal.stopLoss.label}</span>
           </div>
         </div>

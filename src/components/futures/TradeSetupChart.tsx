@@ -1120,6 +1120,16 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
               <span className="px-2 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-[11px] font-mono text-zinc-300">
                 R:R: <strong className="text-yellow-400">{riskRewardRatio.toFixed(1)} : 1</strong>
               </span>
+              {signal?.stopLoss?.label?.includes('[') && (
+                <span className="px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-[10px] font-mono text-sky-400">
+                  SL: {signal.stopLoss.label.split('[')[1]?.replace(']', '')}
+                </span>
+              )}
+              {stopLossPct < 1.5 && (
+                <span className="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-[10px] font-mono text-amber-300 font-bold" title="Stop loss relatif sempit untuk volatilitas altcoin. Disiplin gunakan leverage rendah!">
+                  ⚠️ SL &lt; 1.5%
+                </span>
+              )}
             </div>
             <p className="text-[11px] text-zinc-400 font-mono mt-0.5">
               Harga: <strong className="text-white">${fmtP(lastPrice)}</strong> • {signal?.strategyLabel || 'Indikator Binance Confluence'}
@@ -1636,11 +1646,21 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
                     ${fmtP(selectedTargetPrice)} (+{targetGainPct.toFixed(2)}%)
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <span className="text-zinc-500">Stop Loss:</span>
                   <span className="font-bold text-rose-400">
                     ${fmtP(stopLossPrice)} (-{stopLossPct.toFixed(2)}%)
                   </span>
+                  {signal?.stopLoss?.label?.includes('[') && (
+                    <span className="text-[10px] text-zinc-400 font-mono px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800">
+                      [{signal.stopLoss.label.split('[')[1]?.replace(']', '')}]
+                    </span>
+                  )}
+                  {stopLossPct < 1.5 && (
+                    <span className="text-[10px] text-amber-400 font-bold px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30" title="Stop loss relatif sempit untuk volatilitas altcoin. Disiplin gunakan leverage rendah!">
+                      ⚠️ SL Sempit
+                    </span>
+                  )}
                 </div>
               </div>
 
