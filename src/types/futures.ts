@@ -169,6 +169,7 @@ export interface BinanceFuturesSignal {
   multiTimeframe?: MultiTimeframeAlignment;
   newsContext?: NewsImpactScore;
   smcAnalysis?: SmcAnalysisResult;
+  sniperAdvisory?: SniperAdvisory;
 }
 
 export type TimeframeTrendBias = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
@@ -276,6 +277,16 @@ export interface IndicatorExplanation {
     tp3Eta: string;           // Estimasi waktu tempuh TP3 (Hari/Jam)
     summaryText: string;      // Rangkuman perkiraan waktu
   };
+}
+
+export interface SniperAdvisory {
+  status: 'READY_TO_FIRE' | 'WAIT_CONFIRMATION';
+  actionType: 'LIMIT_ORDER' | 'CONFIRMATION_WAIT' | 'MARKET_READY';
+  recommendedWaitCandles: number;
+  estimatedWaitMinutes: string;
+  confirmationRule: string;
+  cancellationRule: string;
+  entryTechnique: string;
 }
 
 export interface FuturesTechnicalIndicators {

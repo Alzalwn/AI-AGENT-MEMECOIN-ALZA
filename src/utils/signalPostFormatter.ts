@@ -62,6 +62,7 @@ export interface SignalPostParams {
   volumeMultiplier?: number;
   maValues?: { ma7: number; ma25: number; ma99: number; };
   smcAnalysis?: import('../types/futures').SmcAnalysisResult;
+  sniperAdvisory?: import('../types/futures').SniperAdvisory;
 }
 
 /**
@@ -78,9 +79,11 @@ export function generateCommunitySignalPost(params: SignalPostParams): string {
 
   let header = `${params.position} ${cleanPair}`;
   
-  // Rule 2: HEADER LEDAKAN VOLUME V3.0
-  if (params.volumeMultiplier && params.volumeMultiplier >= 2.0) {
-    header = `🚀 [BREAKOUT DETECTED - AGGRESSIVE ENTRY]\n💡 STRATEGI: VOLUME EXPANSION ${params.volumeMultiplier.toFixed(1)}x\n\n${params.position} ${cleanPair}`;
+  // Rule 2: HEADER CERDAS (Anti-FOMO & Sniper Advisory)
+  if (params.sniperAdvisory?.status === 'WAIT_CONFIRMATION') {
+    header = `⏳ [PULLBACK SETUP - TUNGGU KONFIRMASI REJECTION]\n💡 STATUS: PERSIAPAN ENTRY (TUNGGU ${params.sniperAdvisory.recommendedWaitCandles} CANDLE 15M)\n\n${params.position} ${cleanPair}`;
+  } else if (params.volumeMultiplier && params.volumeMultiplier >= 2.0) {
+    header = `🚀 [BREAKOUT DETECTED - MOMENTUM ENTRY]\n💡 STRATEGI: VOLUME EXPANSION ${params.volumeMultiplier.toFixed(1)}x\n\n${params.position} ${cleanPair}`;
   }
 
   // 1. Paragraf 1: Narasi teknikal 1 kalimat (Rule 3: FORMAT MOVING AVERAGE EKSPLISIT)
@@ -200,7 +203,11 @@ export function generateCommunitySignalPost(params: SignalPostParams): string {
     if (smc.cisd?.confirmed) ictBadges.push(`⚡ ${smc.cisd.type === 'BULLISH_CISD' ? 'Bullish' : 'Bearish'} CISD`);
     if (smc.smtDivergence?.detected) ictBadges.push(`✨ SMT vs ${smc.smtDivergence.correlatedSymbol}`);
     if (smc.liquidityRange?.pricePosition && smc.liquidityRange.pricePosition !== 'EQUILIBRIUM') {
-      ictBadges.push(`📊 Zona ${smc.liquidityRange.pricePosition}`);
+      const isAligned = (params.position === 'SHORT' && smc.liquidityRange.pricePosition === 'PREMIUM') ||
+                        (params.position === 'LONG' && smc.liquidityRange.pricePosition === 'DISCOUNT');
+      if (isAligned) {
+        ictBadges.push(`📊 Zona ${smc.liquidityRange.pricePosition} (Selaras)`);
+      }
     }
     if (ictBadges.length > 0) {
       extraLines.push(`💎 Konfluensi ICT: ${ictBadges.join(' · ')}`);
@@ -208,6 +215,23 @@ export function generateCommunitySignalPost(params: SignalPostParams): string {
   }
   if (params.binanceUrl) {
     extraLines.push(`🔗 Eksekusi di Binance: ${params.binanceUrl}`);
+  }
+
+  let sniperAdvisorySection = '';
+  if (params.sniperAdvisory) {
+    const adv = params.sniperAdvisory;
+    if (adv.status === 'WAIT_CONFIRMATION') {
+      sniperAdvisorySection = `\n\n🎯 PANDUAN SNIPER ENTRY (DISIPLIN):
+• Status: 🟡 TUNGGU ${adv.recommendedWaitCandles} CANDLE 15M LAGI (${adv.estimatedWaitMinutes})
+• Syarat Konfirmasi: ${adv.confirmationRule}
+• Teknik Entry: ${adv.entryTechnique}
+• Skenario Batal: ${adv.cancellationRule}`;
+    } else {
+      sniperAdvisorySection = `\n\n🎯 PANDUAN SNIPER ENTRY:
+• Status: 🟢 READY TO FIRE (Konfluensi Valid)
+• Konfirmasi: ${adv.confirmationRule}
+• Teknik Entry: ${adv.entryTechnique}`;
+    }
   }
 
   const extraSection = extraLines.length > 0 ? `\n\n${extraLines.join('\n')}` : '';
@@ -220,5 +244,5 @@ ${paragraph1}
 ${tpSection}
 🔴 Stop-Loss: ${slStr}
 
-${paragraph2}${extraSection}`;
+${paragraph2}${sniperAdvisorySection}${extraSection}`;
 }

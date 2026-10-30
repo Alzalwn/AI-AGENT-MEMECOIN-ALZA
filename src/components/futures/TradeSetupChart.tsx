@@ -230,6 +230,7 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
           ma99: signal.indicators.ma.ma99,
         } : undefined,
         smcAnalysis: signal?.smcAnalysis,
+        sniperAdvisory: signal?.sniperAdvisory,
       });
 
       canvas.toBlob(async (blob) => {

@@ -25,6 +25,7 @@ import {
   MultiTimeframeAlignment,
   TimeframeTrendBias,
   SmcAnalysisResult,
+  SniperAdvisory,
 } from '../types/futures';
 import {
   getFutures24hTickers,
@@ -1191,6 +1192,54 @@ function generateIndicatorExplanation(
 }
 
 /**
+ * Menghitung status Kesiapan Sniper Entry dan Saran Tunggu Konfirmasi Candle
+ */
+export function calculateSniperAdvisory(signal: BinanceFuturesSignal): SniperAdvisory {
+  const isShort = signal.direction === 'SHORT';
+  const mssConfirmed = signal.smcAnalysis?.mssConfirmed ?? false;
+  const keyLevelGateOpen = signal.smcAnalysis?.keyLevelGateOpen ?? false;
+
+  // Cek apakah candle/tren 15m saat ini masih bergerak melawan arah sinyal (counter-trend pullback)
+  const tf15mTrend = signal.multiTimeframe?.tf15m?.trend;
+  const isCounterTrend15m = isShort
+    ? (tf15mTrend === 'BULLISH' || (signal.indicators?.macd?.dif ?? 0) > (signal.indicators?.macd?.dea ?? 0))
+    : (tf15mTrend === 'BEARISH' || (signal.indicators?.macd?.dif ?? 0) < (signal.indicators?.macd?.dea ?? 0));
+
+  const entryStr = `$${formatFuturesPrice(signal.entryZone.current)}`;
+  const slStr = `$${formatFuturesPrice(signal.stopLoss.price)}`;
+
+  if (isCounterTrend15m || !mssConfirmed || !keyLevelGateOpen) {
+    const waitCandles = isCounterTrend15m ? 2 : 1;
+    const waitMin = waitCandles === 2 ? '15 – 30 Menit' : '10 – 15 Menit';
+    const rejectionDesc = isShort
+      ? 'lilin penolakan (upper wick panjang / candle merah bearish)'
+      : 'lilin pantulan (lower wick panjang / candle hijau bullish)';
+
+    return {
+      status: 'WAIT_CONFIRMATION',
+      actionType: 'CONFIRMATION_WAIT',
+      recommendedWaitCandles: waitCandles,
+      estimatedWaitMinutes: waitMin,
+      confirmationRule: `Tunggu ${waitCandles} candle 15m (${waitMin}) hingga ditutup dengan ${rejectionDesc} di area ${entryStr}. Dilarang Market Order sekarang!`,
+      cancellationRule: isShort
+        ? `Batal jika candle 15m ditutup di atas Stop Loss ${slStr}.`
+        : `Batal jika candle 15m ditutup di bawah Stop Loss ${slStr}.`,
+      entryTechnique: `Pasang Limit Order di ${entryStr} atau tunggu penutupan close candle konfirmasi.`,
+    };
+  }
+
+  return {
+    status: 'READY_TO_FIRE',
+    actionType: 'MARKET_READY',
+    recommendedWaitCandles: 0,
+    estimatedWaitMinutes: 'Eksekusi Sekarang',
+    confirmationRule: `Konfluensi struktur & displacement 15m telah selaras dengan arah ${signal.direction}.`,
+    cancellationRule: `Disiplin pasang Hard Stop Loss di ${slStr}.`,
+    entryTechnique: `Buka posisi di area ${entryStr} (Market Order atau Limit aktif).`,
+  };
+}
+
+/**
  * Menghasilkan sinyal futures dari seluruh daftar koin Binance
  */
 export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> {
@@ -1730,11 +1779,24 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
 
     // 🚨 GATEKEEPER 2: Candlestick Trigger Gatekeeper (Anti-Rejection Fatal)
     const pattern = s.candlestickPattern;
-    const lethalPatterns = ['Engulfing', 'Star', 'Marubozu', 'Dark Cloud', 'Piercing', 'Three Outside'];
+    const lethalPatterns = ['Engulfing', 'Star', 'Marubozu', 'Dark Cloud', 'Piercing', 'Three Outside', 'Tweezer', 'Hammer', 'Hanging Man', 'Shooting Star'];
     if (pattern && pattern.direction !== 'NEUTRAL' && pattern.direction !== s.direction) {
-      const isLethal = lethalPatterns.some(name => pattern.name.includes(name));
+      const isLethal = pattern.reliability >= 60 || lethalPatterns.some(name => pattern.name.includes(name));
       if (isLethal) {
-        console.warn(`⛔ VETO: ${s.symbol} Arah ${s.direction} menabrak pola lilin fatal: ${pattern.name} (Anti-Rejection)`);
+        console.warn(`⛔ VETO: ${s.symbol} Arah ${s.direction} menabrak pola lilin pembalikan arah: ${pattern.name} (Akurasi ${pattern.reliability}%)`);
+        return false;
+      }
+    }
+
+    // 🚨 GATEKEEPER 2.5: ICT Liquidity PD-Array Guard (Anti-Selling Discount / Buying Premium)
+    const pricePos = s.smcAnalysis?.liquidityRange?.pricePosition;
+    if (pricePos) {
+      if (s.direction === 'SHORT' && pricePos === 'DISCOUNT') {
+        console.warn(`⛔ VETO: ${s.symbol} Sinyal SHORT di Zona DISCOUNT (Dilarang short di harga diskon paruh bawah).`);
+        return false;
+      }
+      if (s.direction === 'LONG' && pricePos === 'PREMIUM') {
+        console.warn(`⛔ VETO: ${s.symbol} Sinyal LONG di Zona PREMIUM (Dilarang buy di pucuk paruh atas).`);
         return false;
       }
     }
@@ -1762,6 +1824,9 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
       s.overallScore = Math.min(s.overallScore, 72);
       s.rationale += ' ⚠️ R:R Terkompresi: Stop loss diperlebar untuk keamanan dari perburuan wick, rasio risk-reward berada di kisaran 1.0 - 1.5x.';
     }
+
+    // 🎯 Lampirkan Sniper Advisory & Dynamic Candle Wait untuk setiap sinyal yang lolos
+    s.sniperAdvisory = calculateSniperAdvisory(s);
 
     return true;
   });

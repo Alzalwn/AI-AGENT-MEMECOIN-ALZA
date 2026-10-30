@@ -159,6 +159,8 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
           ma25: signal.indicators.ma.ma25,
           ma99: signal.indicators.ma.ma99,
         } : undefined,
+        smcAnalysis: signal.smcAnalysis,
+        sniperAdvisory: signal.sniperAdvisory,
       });
 
       // Bangkitkan gambar grafik analisis berkualitas tinggi
@@ -625,6 +627,34 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
             {/* Rationale Narasi Singkat */}
             <div className="mt-2 pt-2 border-t border-amber-500/20 text-[10px] text-amber-200/90 leading-relaxed font-sans">
               💡 <strong>Sniper Confluence:</strong> {signal.smcAnalysis.smcRationale}
+            </div>
+          </div>
+        )}
+
+        {/* Sniper Execution & Candle Wait Advisory */}
+        {signal.sniperAdvisory && (
+          <div className={`p-2.5 rounded-xl border text-xs font-mono flex items-start gap-2.5 ${
+            signal.sniperAdvisory.status === 'READY_TO_FIRE'
+              ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
+              : 'bg-amber-950/40 border-amber-500/40 text-amber-200'
+          }`}>
+            <span className="text-base leading-none mt-0.5">
+              {signal.sniperAdvisory.status === 'READY_TO_FIRE' ? '🟢' : '⏳'}
+            </span>
+            <div className="flex-1 space-y-1">
+              <div className="flex items-center justify-between flex-wrap gap-1 font-bold">
+                <span className={signal.sniperAdvisory.status === 'READY_TO_FIRE' ? 'text-emerald-300' : 'text-amber-300'}>
+                  {signal.sniperAdvisory.status === 'READY_TO_FIRE'
+                    ? 'READY TO FIRE: Konfirmasi Lengkap'
+                    : `TUNGGU ${signal.sniperAdvisory.recommendedWaitCandles} CANDLE 15M (${signal.sniperAdvisory.estimatedWaitMinutes})`}
+                </span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/40 border border-current font-semibold">
+                  {signal.sniperAdvisory.actionType === 'MARKET_READY' ? '⚡ Siap Eksekusi' : '🟡 Limit / Tunggu Rejection'}
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-300 leading-snug font-sans">
+                {signal.sniperAdvisory.confirmationRule}
+              </p>
             </div>
           </div>
         )}
@@ -1241,6 +1271,8 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
                     reliability: signal.candlestickPattern.reliability,
                   }
                 : undefined,
+              smcAnalysis: signal.smcAnalysis,
+              sniperAdvisory: signal.sniperAdvisory,
             })
           )}`}
           className="p-2.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 hover:border-sky-500/50 text-sky-400 hover:text-sky-300 transition-all cursor-pointer flex items-center gap-1.5"
