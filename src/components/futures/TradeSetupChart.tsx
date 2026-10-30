@@ -340,7 +340,7 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
   }, [signal, entryPrice, isLong]);
 
   const stopLossPct = useMemo(() => {
-    if (signal) return signal.stopLoss.lossPct;
+    if (signal) return Math.abs(signal.stopLoss.lossPct);
     return Math.abs((stopLossPrice - entryPrice) / entryPrice) * 100;
   }, [signal, stopLossPrice, entryPrice]);
 

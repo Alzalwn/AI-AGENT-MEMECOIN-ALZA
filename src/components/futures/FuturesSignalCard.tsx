@@ -547,7 +547,7 @@ export const FuturesSignalCard: React.FC<FuturesSignalCardProps> = ({
                   {signal.smcAnalysis.mssConfirmed ? '✅ Terkonfirmasi' : '⏳ Menunggu Break'}
                 </span>
                 <span className="text-[9px] text-zinc-400 truncate mt-0.5">
-                  {signal.smcAnalysis.candlestickTrigger15m || 'Higher High 15m'}
+                  {signal.smcAnalysis.candlestickTrigger15m || (isLong ? 'Higher High 15m' : 'Lower Low 15m')}
                 </span>
               </div>
 

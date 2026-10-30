@@ -1562,6 +1562,10 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
                 signal.signalTier = 'SUPERNOVA';
               }
 
+              if (signal.indicatorExplanation && signal.indicatorExplanation.directionVerdict.includes('DITOLAK')) {
+                signal.indicatorExplanation.directionVerdict = `🟢 KONFLUENSI ${pattern.name.toUpperCase()}: Terkonfirmasi pola candlestick elit (Akurasi ${pattern.reliability}%). Mengonfirmasi dorongan momentum ${signal.direction}!`;
+              }
+
               signal.agentConsensus.trendAgent.score = Math.min(signal.agentConsensus.trendAgent.score + 8, 98);
               signal.agentConsensus.trendAgent.reason += ` | Dikonfirmasi pola candlestick elit: ${pattern.name} (Akurasi ${pattern.reliability}%).`;
 
@@ -1650,7 +1654,12 @@ export async function generateFuturesSignals(): Promise<BinanceFuturesSignal[]> 
                   (newsScore.signalModifier === 'STRONG_BOOST_LONG' && isLong) ||
                   (newsScore.signalModifier === 'STRONG_BOOST_SHORT' && !isLong)
                 ) {
-                  if (signal.overallScore >= 88) signal.signalTier = 'SUPERNOVA';
+                  if (signal.overallScore >= 88) {
+                    signal.signalTier = 'SUPERNOVA';
+                    if (signal.indicatorExplanation) {
+                      signal.indicatorExplanation.directionVerdict = `🔥 KATALIS BERITA ${newsScore.catalystType} (${newsScore.sentimentScore > 0 ? '+' : ''}${newsScore.sentimentScore}): Sentimen berita mendukung kuat dorongan momentum ${signal.direction}!`;
+                    }
+                  }
                 } else if (
                   (newsScore.signalModifier === 'VETO_LONG' && isLong) ||
                   (newsScore.signalModifier === 'VETO_SHORT' && !isLong)
