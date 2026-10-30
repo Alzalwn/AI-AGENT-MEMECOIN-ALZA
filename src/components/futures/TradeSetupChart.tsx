@@ -1325,15 +1325,15 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
       </div>
 
       {/* 3. Main Chart Canvas Area */}
-      <div className="flex-1 relative overflow-hidden bg-black flex flex-col" ref={containerRef}>
+      <div className="flex-1 relative overflow-hidden bg-black flex flex-col min-h-0" ref={containerRef}>
         {activeTab === 'PROJECTION' ? (
           <>
-            <canvas ref={canvasRef} className="w-full h-full flex-1 cursor-crosshair block" />
+            <canvas ref={canvasRef} className="w-full h-full flex-1 min-h-[180px] cursor-crosshair block" />
 
             {/* Protokol Analisis Teknikal Universal - Real-Time Close Candle Telemetry */}
             {liveProtocol && (
-              <div className="bg-zinc-950 border-t border-zinc-800/80 px-4 py-2 font-mono text-xs">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="bg-zinc-950 border-t border-zinc-800/80 px-4 py-2 font-mono text-xs shrink-0 flex flex-col max-h-[52vh]">
+                <div className="flex items-center justify-between gap-2 flex-wrap shrink-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-yellow-400 font-bold flex items-center gap-1.5 text-[11px]">
                       <Sparkles className="w-3.5 h-3.5" />
@@ -1436,7 +1436,7 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
 
                 {/* Expanded Detailed 4-Pillar Verification Panel */}
                 {showChartAiAnalysis && (
-                  <div className="mt-2 pt-2 border-t border-zinc-800/80 space-y-2 text-[11px]">
+                  <div className="mt-2 pt-2 border-t border-zinc-800/80 space-y-2 text-[11px] overflow-y-auto pr-1.5 custom-scrollbar flex-1">
                     {/* Verdict & Confluence Summary */}
                     <div
                       className={`p-2.5 rounded-lg border ${
@@ -1634,7 +1634,7 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
             )}
 
             {/* Bottom Risk / Reward Telemetry Strip */}
-            <div className="p-3 bg-zinc-950/90 border-t border-zinc-800/80 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+            <div className="p-3 bg-zinc-950/90 border-t border-zinc-800/80 flex flex-wrap items-center justify-between gap-3 text-xs font-mono shrink-0">
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-1.5">
                   <span className="text-zinc-500">Entry:</span>
