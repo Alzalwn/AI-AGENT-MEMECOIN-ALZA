@@ -61,6 +61,7 @@ export interface SignalPostParams {
   // V3.0 Specific Additions
   volumeMultiplier?: number;
   maValues?: { ma7: number; ma25: number; ma99: number; };
+  smcAnalysis?: import('../types/futures').SmcAnalysisResult;
 }
 
 /**
@@ -184,6 +185,26 @@ export function generateCommunitySignalPost(params: SignalPostParams): string {
     }
 
     extraLines.push(`📊 Konfluensi 4-Timeframe: [15m: ${params.multiTimeframe.tf15mTrend === 'BULLISH' ? '🟢' : '🔴'}] [1h: ${params.multiTimeframe.tf1hTrend === 'BULLISH' ? '🟢' : '🔴'}] [4h: ${params.multiTimeframe.tf4hTrend === 'BULLISH' ? '🟢' : '🔴'}] [Daily: ${params.multiTimeframe.tf1dTrend === 'BULLISH' ? '🟢' : '🔴'}] (${mtfVerdict})`);
+  }
+  // ICT & POI Key Level Gate (v2.1)
+  if (params.smcAnalysis) {
+    const smc = params.smcAnalysis;
+    if (smc.keyLevelZone) {
+      const gateIcon = smc.keyLevelGateOpen ? '🟢' : '🟡';
+      const gateStatus = smc.keyLevelGateOpen ? 'TERBUKA' : 'MENDEKATI ZONA';
+      extraLines.push(`🗺️ POI Gate (${gateStatus}): ${gateIcon} ${smc.keyLevelZone.description} [Jarak: ${smc.keyLevelZone.distancePct}%]`);
+    }
+    const ictBadges: string[] = [];
+    if (smc.killZoneActive && smc.killZoneName) ictBadges.push(`🎯 ${smc.killZoneName}`);
+    if (smc.ifvg?.status === 'ACTIVE') ictBadges.push(`🔄 ${smc.ifvg.type === 'BULLISH_IFVG' ? 'Bullish' : 'Bearish'} IFVG`);
+    if (smc.cisd?.confirmed) ictBadges.push(`⚡ ${smc.cisd.type === 'BULLISH_CISD' ? 'Bullish' : 'Bearish'} CISD`);
+    if (smc.smtDivergence?.detected) ictBadges.push(`✨ SMT vs ${smc.smtDivergence.correlatedSymbol}`);
+    if (smc.liquidityRange?.pricePosition && smc.liquidityRange.pricePosition !== 'EQUILIBRIUM') {
+      ictBadges.push(`📊 Zona ${smc.liquidityRange.pricePosition}`);
+    }
+    if (ictBadges.length > 0) {
+      extraLines.push(`💎 Konfluensi ICT: ${ictBadges.join(' · ')}`);
+    }
   }
   if (params.binanceUrl) {
     extraLines.push(`🔗 Eksekusi di Binance: ${params.binanceUrl}`);

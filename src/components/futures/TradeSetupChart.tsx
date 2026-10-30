@@ -229,6 +229,7 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
           ma25: signal.indicators.ma.ma25,
           ma99: signal.indicators.ma.ma99,
         } : undefined,
+        smcAnalysis: signal?.smcAnalysis,
       });
 
       canvas.toBlob(async (blob) => {
@@ -1382,6 +1383,27 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
                       <span className="px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-yellow-300">
                         MA: {liveProtocol.indicators.ma.alignment === 'BULLISH_UPTREND' ? 'Golden Stack' : liveProtocol.indicators.ma.alignment === 'BEARISH_DOWNTREND' ? 'Death Stack' : 'Transisi'}
                       </span>
+
+                      {/* ICT POI Gate Quick Badge */}
+                      {signal?.smcAnalysis?.keyLevelZone && (
+                        <span
+                          className={`px-1.5 py-0.5 rounded border font-mono font-bold ${
+                            signal.smcAnalysis.keyLevelGateOpen
+                              ? 'bg-emerald-950/70 border-emerald-500/50 text-emerald-300'
+                              : 'bg-amber-950/70 border-amber-500/50 text-amber-300'
+                          }`}
+                          title={signal.smcAnalysis.keyLevelZone.description}
+                        >
+                          {signal.smcAnalysis.keyLevelGateOpen ? '🟢 POI Open' : '🟡 POI Near'}
+                        </span>
+                      )}
+
+                      {/* ICT Kill Zone Quick Badge */}
+                      {signal?.smcAnalysis?.killZoneActive && (
+                        <span className="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 font-mono">
+                          🎯 {signal.smcAnalysis.killZoneName || 'Kill Zone'}
+                        </span>
+                      )}
                     </div>
 
                     {signal?.indicatorExplanation && (
@@ -1517,6 +1539,82 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
                               <span><strong className="text-white">Level SL Pola:</strong> ${fmtP(liveProtocol.candlestickPattern.stopLossPrice)}</span>
                             )}
                           </div>
+                        </div>
+                      )}
+
+                      {/* Pillar 6: ICT & POI Key Level Gate (v2.1) */}
+                      {signal?.smcAnalysis && (
+                        <div className={`md:col-span-2 p-2.5 rounded-lg border space-y-2 ${
+                          signal.smcAnalysis.keyLevelGateOpen
+                            ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200'
+                            : 'bg-zinc-900/80 border-zinc-800 text-zinc-300'
+                        }`}>
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold flex items-center gap-1.5 text-xs text-amber-300">
+                              <span>🗺️</span>
+                              <span>6. ICT & POI Key Level Gate (Filter Lokasi & Sniper R:R)</span>
+                            </span>
+                            <span className={`px-2 py-0.5 rounded font-bold font-mono text-[9px] border ${
+                              signal.smcAnalysis.keyLevelGateOpen
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                            }`}>
+                              {signal.smcAnalysis.keyLevelGateOpen ? 'GATE OPEN (SIAP EKSEKUSI)' : 'GATE WAITING (FILTER AKTIF)'}
+                            </span>
+                          </div>
+
+                          {/* POI Description */}
+                          {signal.smcAnalysis.keyLevelZone ? (
+                            <div className="p-2 rounded bg-black/40 border border-zinc-800/80 font-mono text-[10px] space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-white">Area POI: {signal.smcAnalysis.keyLevelZone.description}</span>
+                                <span className="text-zinc-400">Jarak: <strong className="text-yellow-400">{signal.smcAnalysis.keyLevelZone.distancePct}%</strong></span>
+                              </div>
+                              <div className="flex items-center gap-2 text-zinc-400 text-[9.5px]">
+                                <span>Zona: ${fmtP(signal.smcAnalysis.keyLevelZone.zoneLow)} – ${fmtP(signal.smcAnalysis.keyLevelZone.zoneHigh)}</span>
+                                <span>•</span>
+                                <span>Kekuatan: <strong className="text-zinc-200">{signal.smcAnalysis.keyLevelZone.strength}</strong></span>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-[10px] text-zinc-400">
+                              Harga berada di luar zona institusional utama (menghindari fakeout di tengah grafik).
+                            </p>
+                          )}
+
+                          {/* ICT Badges Row */}
+                          <div className="flex flex-wrap gap-1.5 pt-1 text-[9px] font-mono">
+                            {signal.smcAnalysis.killZoneActive && (
+                              <span className="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300">
+                                🎯 {signal.smcAnalysis.killZoneName || 'Kill Zone'}
+                              </span>
+                            )}
+                            {signal.smcAnalysis.ifvg && signal.smcAnalysis.ifvg.status === 'ACTIVE' && (
+                              <span className="px-1.5 py-0.5 rounded bg-blue-500/10 border border-blue-500/30 text-blue-300">
+                                🔄 {signal.smcAnalysis.ifvg.type === 'BULLISH_IFVG' ? 'Bullish' : 'Bearish'} IFVG ($${fmtP(signal.smcAnalysis.ifvg.inversionPrice)})
+                              </span>
+                            )}
+                            {signal.smcAnalysis.cisd?.confirmed && (
+                              <span className="px-1.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/30 text-purple-300">
+                                ⚡ CISD Breakout Terkonfirmasi
+                              </span>
+                            )}
+                            {signal.smcAnalysis.smtDivergence?.detected && (
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300">
+                                ✨ SMT vs {signal.smcAnalysis.smtDivergence.correlatedSymbol}
+                              </span>
+                            )}
+                            {signal.smcAnalysis.liquidityRange?.pricePosition && signal.smcAnalysis.liquidityRange.pricePosition !== 'EQUILIBRIUM' && (
+                              <span className="px-1.5 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-300">
+                                📊 Zona {signal.smcAnalysis.liquidityRange.pricePosition}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Sniper Confluence Rationale */}
+                          <p className="text-[10px] text-zinc-300/90 leading-relaxed font-sans pt-1 border-t border-zinc-800">
+                            💡 <strong className="text-amber-300">Konfluensi Sniper:</strong> {signal.smcAnalysis.smcRationale}
+                          </p>
                         </div>
                       )}
                     </div>
