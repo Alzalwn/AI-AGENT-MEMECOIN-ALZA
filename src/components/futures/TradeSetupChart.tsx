@@ -355,8 +355,8 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
   // Universal Technical Protocol Result (Kalkulasi 100% Real-Time dari Close Candle Terakhir + Candlestick Pattern)
   const liveProtocol = useMemo(() => {
     if (closePrices.length === 0) return null;
-    return analyzeTechnicalProtocol(closePrices, timeframe, klines);
-  }, [closePrices, timeframe, klines]);
+    return analyzeTechnicalProtocol(closePrices, timeframe, klines, direction);
+  }, [closePrices, timeframe, klines, direction]);
 
   const ma7Series = useMemo(() => calculateSMA(closePrices, 7), [closePrices]);
   const ma25Series = useMemo(() => calculateSMA(closePrices, 25), [closePrices]);

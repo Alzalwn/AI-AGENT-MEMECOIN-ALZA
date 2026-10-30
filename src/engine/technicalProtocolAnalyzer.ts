@@ -178,7 +178,8 @@ export function formatExactPrice(price: number | null): string {
 export function analyzeTechnicalProtocol(
   closePrices: number[],
   timeframe: string = '15m',
-  fullCandles?: Candle[]
+  fullCandles?: Candle[],
+  expectedDirection?: 'LONG' | 'SHORT'
 ): ProtocolVerificationResult {
   if (!closePrices || closePrices.length === 0) {
     throw new Error('Data close candle tidak boleh kosong untuk analisis protokol.');
@@ -405,21 +406,59 @@ export function analyzeTechnicalProtocol(
     ? ` Disertai konfirmasi pola ${detectedPattern.name} (Akurasi ${detectedPattern.reliability}%).`
     : '';
 
-  if (isConfluencePerfect && isBullishScore >= 3.5 && dif > dea) {
-    verdictStatus = 'STRONG_BUY';
-    badgeLabel = '🟢 REKOMENDASI KUAT: LONG (BUY)';
-    confluenceRate = 100;
-    summaryText = `Konfluensi 100% Terpenuhi: Formasi MA7 > MA25 > MA99 valid uptrend, DIF (${dif.toFixed(5)}) > DEA (${dea.toFixed(5)}) mutlak terkonfirmasi, dan posisi harga/RSI selaras tanpa divergensi bertentangan.${patternExtra}`;
-  } else if (isConfluencePerfect && isBearishScore >= 3.5 && dif < dea) {
-    verdictStatus = 'STRONG_SELL';
-    badgeLabel = '🔴 REKOMENDASI KUAT: SHORT (SELL)';
-    confluenceRate = 100;
-    summaryText = `Konfluensi 100% Terpenuhi: Formasi MA7 < MA25 < MA99 valid downtrend, DIF (${dif.toFixed(5)}) < DEA (${dea.toFixed(5)}) mutlak terkonfirmasi, dan tekanan jual mengonfirmasi kelanjutan penurunan.${patternExtra}`;
+  if (expectedDirection === 'SHORT') {
+    if (isBullishScore >= 2.5 && dif > dea) {
+      verdictStatus = 'WAIT_AND_SEE_NEUTRAL';
+      badgeLabel = `🟡 WAIT & SEE: TF ${timeframe} Rebound (Tunggu Rejection)`;
+      confluenceRate = Math.round((isBearishScore / 4) * 100);
+      conflicts.push(`Arah setup adalah SHORT, namun TF ${timeframe} saat ini sedang mengalami rebound beli (Golden Stack/MACD Bullish). Wajib tunggu rejection sebelum membuka posisi SHORT.`);
+      summaryText = `Peringatan Protokol: Sinyal setup adalah SHORT, namun TF ${timeframe} saat ini sedang mengalami pantulan (rebound) beli sementara. Jangan membuka posisi SHORT sekarang sampai harga tertolak (rejection) atau struktur kembali berbalik bearish.${patternExtra}`;
+    } else if (isConfluencePerfect && isBearishScore >= 3.5 && dif < dea) {
+      verdictStatus = 'STRONG_SELL';
+      badgeLabel = '🔴 KONFLUENSI SELARAS: VALID EKSEKUSI SHORT';
+      confluenceRate = 100;
+      summaryText = `Konfluensi 100% Selaras: Indikator TF ${timeframe} sepenuhnya mendukung posisi SHORT (Downtrend, DIF < DEA, Tekanan Jual Kuat).${patternExtra}`;
+    } else {
+      verdictStatus = 'WAIT_AND_SEE_NEUTRAL';
+      badgeLabel = '🟡 WAIT & SEE / NEUTRAL: Konfluensi Belum Sempurna';
+      confluenceRate = Math.round((Math.max(isBullishScore, isBearishScore) / 4) * 100);
+      summaryText = `Peringatan Protokol: Konfluensi indikator belum selaras 100% (${confluenceRate}% konfluensi). Terdapat sinyal bertentangan sehingga rekomendasi wajib diturunkan menjadi WAIT & SEE untuk menghindari sinyal palsu.${patternExtra}`;
+    }
+  } else if (expectedDirection === 'LONG') {
+    if (isBearishScore >= 2.5 && dif < dea) {
+      verdictStatus = 'WAIT_AND_SEE_NEUTRAL';
+      badgeLabel = `🟡 WAIT & SEE: TF ${timeframe} Koreksi (Tunggu Pantulan/Support)`;
+      confluenceRate = Math.round((isBullishScore / 4) * 100);
+      conflicts.push(`Arah setup adalah LONG, namun TF ${timeframe} saat ini sedang mengalami tekanan jual/koreksi bearish. Wajib tunggu konfirmasi support sebelum membuka posisi LONG.`);
+      summaryText = `Peringatan Protokol: Sinyal setup adalah LONG, namun TF ${timeframe} saat ini sedang mengalami koreksi bearish. Jangan membuka posisi LONG sekarang sampai harga tertahan di support atau momentum kembali bullish.${patternExtra}`;
+    } else if (isConfluencePerfect && isBullishScore >= 3.5 && dif > dea) {
+      verdictStatus = 'STRONG_BUY';
+      badgeLabel = '🟢 KONFLUENSI SELARAS: VALID EKSEKUSI LONG';
+      confluenceRate = 100;
+      summaryText = `Konfluensi 100% Selaras: Indikator TF ${timeframe} sepenuhnya mendukung posisi LONG (Uptrend, DIF > DEA, Pembeli Memegang Kendali).${patternExtra}`;
+    } else {
+      verdictStatus = 'WAIT_AND_SEE_NEUTRAL';
+      badgeLabel = '🟡 WAIT & SEE / NEUTRAL: Konfluensi Belum Sempurna';
+      confluenceRate = Math.round((Math.max(isBullishScore, isBearishScore) / 4) * 100);
+      summaryText = `Peringatan Protokol: Konfluensi indikator belum selaras 100% (${confluenceRate}% konfluensi). Terdapat sinyal bertentangan sehingga rekomendasi wajib diturunkan menjadi WAIT & SEE untuk menghindari sinyal palsu.${patternExtra}`;
+    }
   } else {
-    verdictStatus = 'WAIT_AND_SEE_NEUTRAL';
-    badgeLabel = '🟡 WAIT & SEE / NEUTRAL: Konfluensi Belum Sempurna';
-    confluenceRate = Math.round((Math.max(isBullishScore, isBearishScore) / 4) * 100);
-    summaryText = `Peringatan Protokol: Konfluensi indikator belum selaras 100% (${confluenceRate}% konfluensi). Terdapat sinyal bertentangan sehingga rekomendasi wajib diturunkan menjadi WAIT & SEE untuk menghindari sinyal palsu.${patternExtra}`;
+    if (isConfluencePerfect && isBullishScore >= 3.5 && dif > dea) {
+      verdictStatus = 'STRONG_BUY';
+      badgeLabel = '🟢 REKOMENDASI KUAT: LONG (BUY)';
+      confluenceRate = 100;
+      summaryText = `Konfluensi 100% Terpenuhi: Formasi MA7 > MA25 > MA99 valid uptrend, DIF (${dif.toFixed(5)}) > DEA (${dea.toFixed(5)}) mutlak terkonfirmasi, dan posisi harga/RSI selaras tanpa divergensi bertentangan.${patternExtra}`;
+    } else if (isConfluencePerfect && isBearishScore >= 3.5 && dif < dea) {
+      verdictStatus = 'STRONG_SELL';
+      badgeLabel = '🔴 REKOMENDASI KUAT: SHORT (SELL)';
+      confluenceRate = 100;
+      summaryText = `Konfluensi 100% Terpenuhi: Formasi MA7 < MA25 < MA99 valid downtrend, DIF (${dif.toFixed(5)}) < DEA (${dea.toFixed(5)}) mutlak terkonfirmasi, dan tekanan jual mengonfirmasi kelanjutan penurunan.${patternExtra}`;
+    } else {
+      verdictStatus = 'WAIT_AND_SEE_NEUTRAL';
+      badgeLabel = '🟡 WAIT & SEE / NEUTRAL: Konfluensi Belum Sempurna';
+      confluenceRate = Math.round((Math.max(isBullishScore, isBearishScore) / 4) * 100);
+      summaryText = `Peringatan Protokol: Konfluensi indikator belum selaras 100% (${confluenceRate}% konfluensi). Terdapat sinyal bertentangan sehingga rekomendasi wajib diturunkan menjadi WAIT & SEE untuk menghindari sinyal palsu.${patternExtra}`;
+    }
   }
 
   const checklistNotes: string[] = [
