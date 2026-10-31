@@ -523,7 +523,15 @@ export const FuturesDashboard: React.FC = () => {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari semua koin futures (BTC, ETH, SOL, DOGE, SUI, PEPE...)"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && searchQuery.trim() !== '') {
+                const clean = searchQuery.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+                const pair = clean.endsWith('USDT') ? clean : `${clean}USDT`;
+                const found = signals.find((s) => s.symbol === pair || s.baseAsset === clean);
+                handleOpenChart(pair, found);
+              }
+            }}
+            placeholder="Cari koin futures (ARB, BTC, SOL... Tekan Enter untuk buka chart)"
             className="w-full bg-zinc-900/90 border border-zinc-700/80 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-yellow-500/60 font-mono transition-colors"
           />
           {searchQuery && (
@@ -725,24 +733,40 @@ export const FuturesDashboard: React.FC = () => {
             <Zap className="w-8 h-8 animate-pulse" />
           </div>
           <h4 className="text-base font-bold text-zinc-100 font-mono mb-1">
-            {searchQuery ? `Tidak Ada Sinyal untuk "${searchQuery}"` : 'Memindai Peluang Futures Presisi Tinggi...'}
+            {searchQuery ? `Tidak Ada di Top 10 Radar untuk "${searchQuery}"` : 'Memindai Peluang Futures Presisi Tinggi...'}
           </h4>
           <p className="text-xs text-zinc-400 max-w-md">
-            Filter kuantitatif ketat sedang menyaring ratusan pasangan koin di Binance Futures. Hanya sinyal dengan Risk/Reward $\ge 2.5$ dan konfirmasi multi-agen yang akan diterbitkan.
+            {searchQuery
+              ? `Radar utama membatasi hanya Top 10 sinyal tertinggi Binance. Koin "${searchQuery.toUpperCase()}" kemungkinan berada di peringkat berikutnya atau memiliki R:R di bawah ambang prioritas.`
+              : 'Filter kuantitatif ketat sedang menyaring ratusan pasangan koin di Binance Futures. Hanya sinyal dengan Risk/Reward >= 2.5x dan konfirmasi multi-agen yang akan diterbitkan.'}
           </p>
-          <div className="flex items-center gap-2 mt-4">
-            <button
-              onClick={handleAutoScan}
-              className="px-4 py-2 rounded-xl bg-yellow-500 hover:bg-yellow-400 text-zinc-950 text-xs font-black font-mono transition-all shadow-md cursor-pointer"
-            >
-              ⚡ Pindai Otomatis Sekarang
-            </button>
-            {searchQuery && (
+          <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
+            {searchQuery ? (
+              <>
+                <button
+                  onClick={() => {
+                    const clean = searchQuery.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+                    const pair = clean.endsWith('USDT') ? clean : `${clean}USDT`;
+                    const found = signals.find((s) => s.symbol === pair || s.baseAsset === clean);
+                    handleOpenChart(pair, found);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-xs font-black font-mono transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>🔍 Buka Setup &amp; Chart {searchQuery.toUpperCase()} On-Demand</span>
+                </button>
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold font-mono transition-colors"
+                >
+                  Reset Pencarian
+                </button>
+              </>
+            ) : (
               <button
-                onClick={() => setSearchQuery('')}
-                className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold font-mono transition-colors"
+                onClick={handleAutoScan}
+                className="px-4 py-2 rounded-xl bg-yellow-500 hover:bg-yellow-400 text-zinc-950 text-xs font-black font-mono transition-all shadow-md cursor-pointer"
               >
-                Reset Pencarian
+                ⚡ Pindai Otomatis Sekarang
               </button>
             )}
           </div>
