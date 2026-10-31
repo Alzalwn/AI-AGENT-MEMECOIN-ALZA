@@ -33,6 +33,13 @@ import {
   downloadImageBlob,
 } from '../../utils/generateSignalImage';
 import { SignalShareModal } from './SignalShareModal';
+import {
+  findOrderBlocks,
+  detectInducement,
+  detectSnrFlip,
+  detectTrendlineBreak,
+  detectVolumeExhaustion,
+} from '../../engine/smcAnalysisEngine';
 
 interface KlineData {
   time: number;
@@ -142,6 +149,7 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
   const [targetLevel, setTargetLevel] = useState<'TP1' | 'TP2' | 'TP3'>('TP2');
   const [leverage, setLeverage] = useState<number>(signal?.leverage?.safe?.multiplier || 10);
   const [activeTab, setActiveTab] = useState<'PROJECTION' | 'TRADINGVIEW'>('PROJECTION');
+  const [entryMode, setEntryMode] = useState<'LIMIT' | 'MARKET'>('LIMIT'); // Default: SNIPER LIMIT ENTRY (Area OB)
 
   // Indicator Visibility Toggles
   const [showMA, setShowMA] = useState<boolean>(true);
@@ -184,7 +192,9 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
       const text = generateCommunitySignalPost({
         pair: cleanPair,
         position: direction,
-        entry: fmtP(entryPrice),
+        entry: entryMode === 'LIMIT'
+          ? `${fmtP(entryAreaLow)} – ${fmtP(entryAreaHigh)} (🎯 Limit di Area ${isLong ? 'Buy/OB' : 'Sell/OB'})`
+          : `$${fmtP(effectiveEntryPrice)} (⚡ Market)`,
         targets: {
           tp1: {
             price: tp1P,
@@ -313,42 +323,118 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
     return () => clearInterval(timer);
   }, [symbol, timeframe]);
 
+  // 1. Live SMC Analysis dari klines terkini
+  const liveSmc = useMemo(() => {
+    if (klines.length < 15) return null;
+    const currentP = klines[klines.length - 1].close;
+    const { demandZone, supplyZone } = findOrderBlocks(klines as any);
+    const idm = detectInducement(klines as any, currentP, demandZone, supplyZone);
+    const snr = detectSnrFlip(klines as any, demandZone, supplyZone);
+    const tb = detectTrendlineBreak(klines as any, currentP);
+    const ve = detectVolumeExhaustion(klines as any);
+    return { demandZone, supplyZone, idm, snr, tb, ve };
+  }, [klines]);
+
   // Pricing & Metrics
   const lastPrice = klines.length > 0 ? klines[klines.length - 1].close : (signal?.entryZone?.current || 100);
-  const entryPrice = signal?.entryZone?.current || lastPrice;
+
+  // Area Entry SMC: Rentang Area Beli (Demand Zone untuk LONG) atau Area Jual (Supply Zone untuk SHORT)
+  const entryAreaHigh = useMemo(() => {
+    if (isLong) {
+      if (liveSmc?.demandZone) return liveSmc.demandZone.zoneHigh;
+      if (signal?.entryZone?.high) return signal.entryZone.high;
+      if (signal?.smcAnalysis?.nearestDemandZone) return signal.smcAnalysis.nearestDemandZone.zoneHigh;
+      if (liveSmc?.snr?.type === 'RBS' && liveSmc.snr.level < lastPrice) return liveSmc.snr.level;
+      // Fallback: swing low terdekat di bawah harga saat ini
+      const priorLows = klines.slice(-30).map((k) => k.low);
+      const lowest = priorLows.length > 0 ? Math.min(...priorLows) : lastPrice * 0.985;
+      return Math.min(lastPrice * 0.994, Math.max(lowest * 1.008, lastPrice * 0.988));
+    } else {
+      if (liveSmc?.supplyZone) return liveSmc.supplyZone.zoneHigh;
+      if (signal?.entryZone?.high) return signal.entryZone.high;
+      if (signal?.smcAnalysis?.nearestSupplyZone) return signal.smcAnalysis.nearestSupplyZone.zoneHigh;
+      const priorHighs = klines.slice(-30).map((k) => k.high);
+      const highest = priorHighs.length > 0 ? Math.max(...priorHighs) : lastPrice * 1.015;
+      return Math.max(lastPrice * 1.012, highest);
+    }
+  }, [isLong, liveSmc, signal, klines, lastPrice]);
+
+  const entryAreaLow = useMemo(() => {
+    if (isLong) {
+      if (liveSmc?.demandZone) return liveSmc.demandZone.zoneLow;
+      if (signal?.entryZone?.low) return signal.entryZone.low;
+      if (signal?.smcAnalysis?.nearestDemandZone) return signal.smcAnalysis.nearestDemandZone.zoneLow;
+      return entryAreaHigh * 0.988;
+    } else {
+      if (liveSmc?.supplyZone) return liveSmc.supplyZone.zoneLow;
+      if (signal?.entryZone?.low) return signal.entryZone.low;
+      if (signal?.smcAnalysis?.nearestSupplyZone) return signal.smcAnalysis.nearestSupplyZone.zoneLow;
+      if (liveSmc?.tb?.retestTargetPrice && liveSmc.tb.retestTargetPrice > lastPrice) return liveSmc.tb.retestTargetPrice;
+      const priorHighs = klines.slice(-30).map((k) => k.high);
+      const highest = priorHighs.length > 0 ? Math.max(...priorHighs) : lastPrice * 1.015;
+      return Math.max(lastPrice * 1.006, Math.min(highest * 0.992, lastPrice * 1.012));
+    }
+  }, [isLong, liveSmc, signal, entryAreaHigh, lastPrice, klines]);
+
+  // Demand Zone (Bawah) & Supply Zone (Atas)
+  const demandZoneHigh = isLong ? entryAreaHigh : (liveSmc?.demandZone?.zoneHigh || lastPrice * 0.975);
+  const demandZoneLow = isLong ? entryAreaLow : (liveSmc?.demandZone?.zoneLow || demandZoneHigh * 0.988);
+  const supplyZoneLow = !isLong ? entryAreaLow : (liveSmc?.supplyZone?.zoneLow || lastPrice * 1.025);
+  const supplyZoneHigh = !isLong ? entryAreaHigh : (liveSmc?.supplyZone?.zoneHigh || supplyZoneLow * 1.012);
+
+  // Effective Entry Price: Sniper Limit (di Area Buy/Sell) vs Market Order (Harga Sekarang)
+  const effectiveEntryPrice = useMemo(() => {
+    if (entryMode === 'MARKET') {
+      return lastPrice;
+    }
+    // Mode LIMIT (Sniper Area Entry):
+    // LONG: jemput di batas atas area demand (saat retest pullback)
+    // SHORT: jemput di batas bawah area supply (saat retest bounce)
+    return isLong ? entryAreaHigh : entryAreaLow;
+  }, [entryMode, isLong, lastPrice, entryAreaHigh, entryAreaLow]);
+
+  // Alias untuk kompatibilitas fungsi & modal
+  const entryPrice = effectiveEntryPrice;
+
+  const stopLossPrice = useMemo(() => {
+    if (entryMode === 'LIMIT') {
+      if (isLong) {
+        return entryAreaLow * 0.994; // Terproteksi di bawah wick Area Buy / OB
+      } else {
+        return entryAreaHigh * 1.006; // Terproteksi di atas wick Area Sell / OB
+      }
+    }
+    if (signal) return signal.stopLoss.price;
+    return isLong ? lastPrice * 0.985 : lastPrice * 1.015;
+  }, [entryMode, isLong, entryAreaLow, entryAreaHigh, signal, lastPrice]);
+
+  const stopLossPct = useMemo(() => {
+    return Math.abs((stopLossPrice - effectiveEntryPrice) / effectiveEntryPrice) * 100;
+  }, [stopLossPrice, effectiveEntryPrice]);
 
   const selectedTargetPrice = useMemo(() => {
+    const slDist = Math.abs(effectiveEntryPrice - stopLossPrice);
+    if (entryMode === 'LIMIT') {
+      const rMultiplier = targetLevel === 'TP1' ? 1.6 : targetLevel === 'TP2' ? 2.6 : 4.0;
+      return isLong
+        ? effectiveEntryPrice + slDist * rMultiplier
+        : effectiveEntryPrice - slDist * rMultiplier;
+    }
     if (signal) {
       if (targetLevel === 'TP1') return signal.targets.tp1.price;
       if (targetLevel === 'TP2') return signal.targets.tp2.price;
       return signal.targets.tp3.price;
     }
-    return isLong ? entryPrice * 1.06 : entryPrice * 0.94;
-  }, [signal, targetLevel, entryPrice, isLong]);
+    return isLong ? effectiveEntryPrice * 1.06 : effectiveEntryPrice * 0.94;
+  }, [entryMode, effectiveEntryPrice, stopLossPrice, targetLevel, isLong, signal]);
 
   const targetGainPct = useMemo(() => {
-    if (signal) {
-      if (targetLevel === 'TP1') return signal.targets.tp1.gainPct;
-      if (targetLevel === 'TP2') return signal.targets.tp2.gainPct;
-      return signal.targets.tp3.gainPct;
-    }
-    return Math.abs((selectedTargetPrice - entryPrice) / entryPrice) * 100;
-  }, [signal, targetLevel, selectedTargetPrice, entryPrice]);
-
-  const stopLossPrice = useMemo(() => {
-    if (signal) return signal.stopLoss.price;
-    return isLong ? entryPrice * 0.985 : entryPrice * 1.015;
-  }, [signal, entryPrice, isLong]);
-
-  const stopLossPct = useMemo(() => {
-    if (signal) return Math.abs(signal.stopLoss.lossPct);
-    return Math.abs((stopLossPrice - entryPrice) / entryPrice) * 100;
-  }, [signal, stopLossPrice, entryPrice]);
+    return Math.abs((selectedTargetPrice - effectiveEntryPrice) / effectiveEntryPrice) * 100;
+  }, [selectedTargetPrice, effectiveEntryPrice]);
 
   const riskRewardRatio = useMemo(() => {
-    if (signal) return signal.riskRewardRatio;
-    return stopLossPct > 0 ? targetGainPct / stopLossPct : 3.0;
-  }, [signal, targetGainPct, stopLossPct]);
+    return stopLossPct > 0 ? targetGainPct / stopLossPct : 2.5;
+  }, [targetGainPct, stopLossPct]);
 
   // Calculate Technical Indicator Series
   const closePrices = useMemo(() => klines.map((k) => k.close), [klines]);
@@ -579,10 +665,9 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
       ctx.fillRect(x - candleWidth / 2, topY, candleWidth, bodyH);
     });
 
-    // 4. Draw TradingView Long/Short Position Box (Proyeksi R:R)
+    // 4. Draw TradingView Long/Short Position Box (Proyeksi R:R) & Area Entry SMC
     if (showRRBox) {
-      const isPendingLimit = Boolean(signal?.smcAnalysis?.isPendingLimitSetup && signal?.smcAnalysis?.pendingLimitPrice);
-      const effectiveEntryPrice = isPendingLimit ? (signal?.smcAnalysis?.pendingLimitPrice || entryPrice) : entryPrice;
+      const isLimitMode = entryMode === 'LIMIT';
       const boxStartX = padding.left + candleAreaWidth + 5;
       const boxW = chartW - candleAreaWidth - 10;
       const entryY = priceToY(effectiveEntryPrice);
@@ -590,11 +675,39 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
       const stopY = priceToY(stopLossPrice);
       const currentPriceY = priceToY(lastPrice);
 
-      // Garis penghubung titik harga saat ini ke zona limit yang menanti (Persis Gambar DASH & CRV)
-      if (isPendingLimit && count > 0) {
+      // --- VISUAL RENTANG AREA ENTRY (Beli / Jual SMC) ---
+      const entryAreaY1 = priceToY(entryAreaHigh);
+      const entryAreaY2 = priceToY(entryAreaLow);
+      const areaTop = Math.min(entryAreaY1, entryAreaY2);
+      const areaH = Math.max(Math.abs(entryAreaY2 - entryAreaY1), 18);
+      const areaStartX = padding.left + candleSpacing * 4;
+      const areaW = width - padding.right - areaStartX - 5;
+
+      // Shaded Area Entry Ribbon (Persis Gambar Referensi DASH & CRV)
+      ctx.fillStyle = isLong ? 'rgba(59, 130, 246, 0.16)' : 'rgba(239, 68, 68, 0.16)';
+      ctx.fillRect(areaStartX, areaTop, areaW, areaH);
+      ctx.strokeStyle = isLong ? '#3b82f6' : '#ef4444';
+      ctx.lineWidth = 1.4;
+      ctx.setLineDash([5, 3]);
+      ctx.strokeRect(areaStartX, areaTop, areaW, areaH);
+      ctx.setLineDash([]);
+
+      // Label Badge Area Entry
+      ctx.fillStyle = isLong ? '#1d4ed8' : '#b91c1c';
+      ctx.fillRect(areaStartX + 6, areaTop + 2, 235, 14);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 8.5px monospace';
+      ctx.fillText(
+        `🎯 AREA ENTRY (${isLong ? 'BUY ZONE' : 'SELL ZONE'}): $${fmtP(entryAreaLow)} – $${fmtP(entryAreaHigh)}`,
+        areaStartX + 10,
+        areaTop + 12
+      );
+
+      // Garis penghubung titik harga saat ini ke zona limit yang menanti (Pullback ke Area Entry)
+      if (isLimitMode && count > 0 && Math.abs(currentPriceY - entryY) > 4) {
         const lastCandleX = getX(count - 1);
         ctx.strokeStyle = '#f59e0b';
-        ctx.lineWidth = 1.6;
+        ctx.lineWidth = 1.8;
         ctx.setLineDash([4, 4]);
         ctx.beginPath();
         ctx.moveTo(lastCandleX, currentPriceY);
@@ -606,7 +719,7 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
         ctx.fillStyle = '#f59e0b';
         ctx.font = 'bold 8.5px monospace';
         const distPct = (((effectiveEntryPrice - lastPrice) / lastPrice) * 100);
-        ctx.fillText(`PULLBACK TO LIMIT (${distPct >= 0 ? '+' : ''}${distPct.toFixed(1)}%)`, boxStartX - 130, (currentPriceY + entryY) / 2);
+        ctx.fillText(`⏳ PULLBACK TO AREA ENTRY (${distPct >= 0 ? '+' : ''}${distPct.toFixed(2)}%)`, boxStartX - 160, (currentPriceY + entryY) / 2);
       }
 
       if (isLong) {
@@ -659,8 +772,8 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
       }
 
       // Entry Line
-      ctx.strokeStyle = isPendingLimit ? '#f59e0b' : '#f4f4f5';
-      ctx.lineWidth = isPendingLimit ? 2 : 1.5;
+      ctx.strokeStyle = isLimitMode ? '#f59e0b' : '#38bdf8';
+      ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(boxStartX - 20, entryY);
       ctx.lineTo(boxStartX + boxW, entryY);
@@ -674,17 +787,17 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
       ctx.font = 'bold 9px monospace';
       ctx.fillText(`Target: +${targetGainPct.toFixed(2)}% (+${fmtP(targetDiff)})`, boxStartX + 10, targetY - 6);
 
-      ctx.fillStyle = isPendingLimit ? '#78350f' : '#27272a';
-      ctx.strokeStyle = isPendingLimit ? '#f59e0b' : '#52525b';
+      ctx.fillStyle = isLimitMode ? '#78350f' : '#0369a1';
+      ctx.strokeStyle = isLimitMode ? '#f59e0b' : '#38bdf8';
       ctx.lineWidth = 1;
-      ctx.fillRect(boxStartX + 6, entryY - 9, isPendingLimit ? 185 : 145, 18);
-      ctx.strokeRect(boxStartX + 6, entryY - 9, isPendingLimit ? 185 : 145, 18);
-      ctx.fillStyle = isPendingLimit ? '#fef08a' : '#ffffff';
+      ctx.fillRect(boxStartX + 6, entryY - 9, isLimitMode ? 210 : 160, 18);
+      ctx.strokeRect(boxStartX + 6, entryY - 9, isLimitMode ? 210 : 160, 18);
+      ctx.fillStyle = isLimitMode ? '#fef08a' : '#ffffff';
       ctx.font = 'bold 9px monospace';
       ctx.fillText(
-        isPendingLimit
-          ? `⏳ Limit: $${fmtP(effectiveEntryPrice)} | R:R: ${riskRewardRatio.toFixed(1)}`
-          : `Entry: $${fmtP(effectiveEntryPrice)} | R:R: ${riskRewardRatio.toFixed(1)}`,
+        isLimitMode
+          ? `🎯 Limit Entry: $${fmtP(effectiveEntryPrice)} | R:R: ${riskRewardRatio.toFixed(1)}`
+          : `⚡ Market: $${fmtP(effectiveEntryPrice)} | R:R: ${riskRewardRatio.toFixed(1)}`,
         boxStartX + 10,
         entryY + 4
       );
@@ -703,11 +816,11 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
       ctx.font = 'bold 10px monospace';
       ctx.fillText(fmtP(selectedTargetPrice), width - padding.right + 6, targetY + 4);
 
-      ctx.fillStyle = isPendingLimit ? '#f59e0b' : '#fff';
+      ctx.fillStyle = isLimitMode ? '#f59e0b' : '#38bdf8';
       ctx.fillRect(width - padding.right + 2, entryY - 9, 65, 18);
       ctx.fillStyle = '#000';
       ctx.font = 'bold 10px monospace';
-      ctx.fillText(isPendingLimit ? `LMT ${fmtP(effectiveEntryPrice)}` : fmtP(effectiveEntryPrice), width - padding.right + 6, entryY + 4);
+      ctx.fillText(isLimitMode ? `LMT ${fmtP(effectiveEntryPrice)}` : `MKT ${fmtP(effectiveEntryPrice)}`, width - padding.right + 4, entryY + 4);
 
       ctx.fillStyle = '#f43f5e';
       ctx.fillRect(width - padding.right + 2, stopY - 9, 65, 18);
@@ -765,11 +878,11 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
       const zW = width - padding.right - zStartX - 5;
 
       // 1. SUPPLY AREA (Resistensi Atas)
-      const supHigh = Math.max(selectedTargetPrice * (isLong ? 0.985 : 1.025), entryPrice * 1.035);
-      const supLow = supHigh * 0.988;
+      const supHigh = supplyZoneHigh;
+      const supLow = supplyZoneLow;
       const sY1 = priceToY(supHigh);
       const sY2 = priceToY(supLow);
-      const sH = Math.max(Math.abs(sY2 - sY1), 20);
+      const sH = Math.max(Math.abs(sY2 - sY1), 18);
       const sTop = Math.min(sY1, sY2);
 
       // Soft yellow box with red outline (persis Gambar 2)
@@ -786,11 +899,11 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
       ctx.textAlign = 'left';
 
       // 2. DEMAND / AREA BUY (Support Bawah)
-      const demLow = Math.min(stopLossPrice, entryPrice * 0.985);
-      const demHigh = Math.max(entryPrice * 1.006, demLow * 1.015);
+      const demLow = demandZoneLow;
+      const demHigh = demandZoneHigh;
       const dY1 = priceToY(demHigh);
       const dY2 = priceToY(demLow);
-      const dH = Math.max(Math.abs(dY2 - dY1), 20);
+      const dH = Math.max(Math.abs(dY2 - dY1), 18);
       const dTop = Math.min(dY1, dY2);
 
       // Soft yellow box with blue outline (persis Gambar 3)
@@ -807,8 +920,8 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
       ctx.textAlign = 'left';
 
       // 3. BREAK INDUCEMENT (IDM) — Persis Metode CRV & SMC
-      const idmInfo = signal?.smcAnalysis?.inducement;
-      const idmLevel = idmInfo ? idmInfo.level : (isLong ? entryPrice * 1.009 : entryPrice * 0.991);
+      const idmInfo = liveSmc?.idm || signal?.smcAnalysis?.inducement;
+      const idmLevel = idmInfo ? idmInfo.level : (isLong ? effectiveEntryPrice * 1.009 : effectiveEntryPrice * 0.991);
       if (idmLevel && idmLevel >= minPrice && idmLevel <= maxPrice) {
         const idmY = priceToY(idmLevel);
         const isSwept = idmInfo ? idmInfo.status === 'SWEPT' : true;
@@ -829,8 +942,8 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
       }
 
       // 4. SnR FLIP ZONE (RBS / SBR) — Persis Metode CRV
-      const snrInfo = signal?.smcAnalysis?.snrFlip;
-      const flipLevel = snrInfo ? snrInfo.level : (isLong ? entryPrice * 1.003 : entryPrice * 0.997);
+      const snrInfo = liveSmc?.snr || signal?.smcAnalysis?.snrFlip;
+      const flipLevel = snrInfo ? snrInfo.level : (isLong ? effectiveEntryPrice * 1.003 : effectiveEntryPrice * 0.997);
       if (flipLevel && flipLevel >= minPrice && flipLevel <= maxPrice) {
         const flipY = priceToY(flipLevel);
         const flipType = snrInfo ? snrInfo.type : (isLong ? 'RBS' : 'SBR');
@@ -932,7 +1045,7 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
       }
 
       // Struktur Pasar: Neckline & CHoCH (Change of Character)
-      const necklinePrice = entryPrice * 1.014;
+      const necklinePrice = effectiveEntryPrice * (isLong ? 1.014 : 0.986);
       const nY = priceToY(necklinePrice);
       ctx.strokeStyle = '#71717a';
       ctx.lineWidth = 1;
@@ -950,8 +1063,7 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
 
     // D. JALUR PANAH PREDIKSI ZIGZAG HARGA (Gambar 2 & 3)
     if (showPathProjection && count >= 5) {
-      const isPendingLimit = Boolean(signal?.smcAnalysis?.isPendingLimitSetup && signal?.smcAnalysis?.pendingLimitPrice);
-      const effectiveEntry = isPendingLimit ? (signal?.smcAnalysis?.pendingLimitPrice || entryPrice) : entryPrice;
+      const effectiveEntry = effectiveEntryPrice;
       const lastK = klines[count - 1];
       const lastX = getX(count - 1);
       const lastY = priceToY(lastK.close);
@@ -1175,7 +1287,10 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
     }
   }, [
     klines,
-    entryPrice,
+    effectiveEntryPrice,
+    entryAreaHigh,
+    entryAreaLow,
+    entryMode,
     selectedTargetPrice,
     stopLossPrice,
     riskRewardRatio,
@@ -1188,6 +1303,10 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
     showMACD,
     showRSI,
     showRRBox,
+    showSMCZones,
+    showPathProjection,
+    showTrendlines,
+    showFibonacci,
     ma7Series,
     ma25Series,
     ma99Series,
@@ -1271,6 +1390,32 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
               }`}
             >
               📊 TradingView Asli
+            </button>
+          </div>
+
+          {/* Entry Mode Toggle: Limit Area vs Market */}
+          <div className="flex items-center gap-1 bg-zinc-900 p-1 rounded-xl border border-zinc-800">
+            <button
+              onClick={() => setEntryMode('LIMIT')}
+              className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                entryMode === 'LIMIT'
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+              title="Sniper Order: Pasang limit jemputan di dalam Area Beli / Demand Zone"
+            >
+              🎯 Limit ({isLong ? 'Area Beli' : 'Area Jual'})
+            </button>
+            <button
+              onClick={() => setEntryMode('MARKET')}
+              className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                entryMode === 'MARKET'
+                  ? 'bg-zinc-800 text-white border border-zinc-700 shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+              title="Market Order: Langsung eksekusi di harga running candle saat ini"
+            >
+              ⚡ Market
             </button>
           </div>
 
@@ -1829,14 +1974,18 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
             {/* Bottom Risk / Reward Telemetry Strip */}
             <div className="p-3 bg-zinc-950/90 border-t border-zinc-800/80 flex flex-wrap items-center justify-between gap-3 text-xs font-mono shrink-0">
               <div className="flex items-center gap-4">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-zinc-500">Entry:</span>
-                  <span className="font-bold text-white">${fmtP(entryPrice)}</span>
-                  {signal?.smcAnalysis?.isPendingLimitSetup && signal?.smcAnalysis?.pendingLimitPrice && (
-                    <span className="text-[10px] text-yellow-400 font-bold px-1.5 py-0.5 rounded bg-yellow-500/10 border border-yellow-500/30">
-                      Limit: ${fmtP(signal.smcAnalysis.pendingLimitPrice)}
-                    </span>
-                  )}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-zinc-500">Area Entry:</span>
+                  <span className="font-bold text-amber-400">
+                    ${fmtP(entryAreaLow)} – ${fmtP(entryAreaHigh)}
+                  </span>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                    entryMode === 'LIMIT'
+                      ? 'bg-amber-500/15 text-amber-300 border-amber-500/40'
+                      : 'bg-blue-500/15 text-blue-300 border-blue-500/40'
+                  }`}>
+                    {entryMode === 'LIMIT' ? `🎯 Limit: $${fmtP(effectiveEntryPrice)}` : `⚡ Market: $${fmtP(effectiveEntryPrice)}`}
+                  </span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="text-zinc-500">Target ({targetLevel}):</span>

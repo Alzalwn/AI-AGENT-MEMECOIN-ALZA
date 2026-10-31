@@ -1287,23 +1287,21 @@ export function runSmcAnalysis(
   let pendingLimitPrice: number | undefined;
   let pendingLimitAdvice: string | undefined;
 
-  if (smcBias === 'BULLISH' && demandZone && currentPrice > demandZone.zoneHigh * 1.006) {
+  if (demandZone && currentPrice > demandZone.zoneHigh * 1.003) {
     isPendingLimitSetup = true;
-    pendingLimitPrice = (demandZone.zoneHigh + demandZone.zoneLow) / 2;
+    pendingLimitPrice = demandZone.zoneHigh;
     const distPct = ((currentPrice - pendingLimitPrice) / currentPrice) * 100;
-    pendingLimitAdvice = `Harga masih di tengah ($${currentPrice.toFixed(4)}). Pasang Buy Limit di Bullish OB + SnR Flip ($${pendingLimitPrice.toFixed(4)}, jarak -${distPct.toFixed(1)}%). Jangan FOMO hajar kanan!`;
-  } else if (smcBias === 'BEARISH') {
-    if (supplyZone && currentPrice < supplyZone.zoneLow * 0.994) {
-      isPendingLimitSetup = true;
-      pendingLimitPrice = (supplyZone.zoneHigh + supplyZone.zoneLow) / 2;
-      const distPct = ((pendingLimitPrice - currentPrice) / currentPrice) * 100;
-      pendingLimitAdvice = `Harga masih mengambang di bawah ($${currentPrice.toFixed(4)}). Pasang Sell Limit di Supply OB ($${pendingLimitPrice.toFixed(4)}, jarak +${distPct.toFixed(1)}%). Tunggu retest!`;
-    } else if (trendlineBreak && trendlineBreak.breakDirection === 'BREAKDOWN' && trendlineBreak.status === 'PENDING_RETEST') {
-      isPendingLimitSetup = true;
-      pendingLimitPrice = trendlineBreak.retestTargetPrice;
-      const distPct = ((pendingLimitPrice - currentPrice) / currentPrice) * 100;
-      pendingLimitAdvice = `Trendline breakdown! Harga masih di tengah. Pasang Sell Limit di area Retest Trendline ($${pendingLimitPrice.toFixed(4)}, jarak +${distPct.toFixed(1)}%).`;
-    }
+    pendingLimitAdvice = `Harga masih mengambang di atas ($${currentPrice.toFixed(4)}). Pasang Buy Limit di Area Demand / Bullish OB ($${pendingLimitPrice.toFixed(4)}, jarak -${distPct.toFixed(1)}%). Tunggu jemputan, jangan FOMO!`;
+  } else if (supplyZone && currentPrice < supplyZone.zoneLow * 0.997) {
+    isPendingLimitSetup = true;
+    pendingLimitPrice = supplyZone.zoneLow;
+    const distPct = ((pendingLimitPrice - currentPrice) / currentPrice) * 100;
+    pendingLimitAdvice = `Harga masih mengambang di bawah ($${currentPrice.toFixed(4)}). Pasang Sell Limit di Area Supply / Bearish OB ($${pendingLimitPrice.toFixed(4)}, jarak +${distPct.toFixed(1)}%). Tunggu retest!`;
+  } else if (trendlineBreak && trendlineBreak.breakDirection === 'BREAKDOWN' && trendlineBreak.status === 'PENDING_RETEST') {
+    isPendingLimitSetup = true;
+    pendingLimitPrice = trendlineBreak.retestTargetPrice;
+    const distPct = ((pendingLimitPrice - currentPrice) / currentPrice) * 100;
+    pendingLimitAdvice = `Trendline breakdown! Harga masih di tengah. Pasang Sell Limit di area Retest Trendline ($${pendingLimitPrice.toFixed(4)}, jarak +${distPct.toFixed(1)}%).`;
   }
 
   // Penalti ATR (Pasar Choppy / Sideways Mati)
