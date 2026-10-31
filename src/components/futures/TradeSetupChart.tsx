@@ -581,11 +581,33 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
 
     // 4. Draw TradingView Long/Short Position Box (Proyeksi R:R)
     if (showRRBox) {
+      const isPendingLimit = Boolean(signal?.smcAnalysis?.isPendingLimitSetup && signal?.smcAnalysis?.pendingLimitPrice);
+      const effectiveEntryPrice = isPendingLimit ? (signal?.smcAnalysis?.pendingLimitPrice || entryPrice) : entryPrice;
       const boxStartX = padding.left + candleAreaWidth + 5;
       const boxW = chartW - candleAreaWidth - 10;
-      const entryY = priceToY(entryPrice);
+      const entryY = priceToY(effectiveEntryPrice);
       const targetY = priceToY(selectedTargetPrice);
       const stopY = priceToY(stopLossPrice);
+      const currentPriceY = priceToY(lastPrice);
+
+      // Garis penghubung titik harga saat ini ke zona limit yang menanti (Persis Gambar DASH & CRV)
+      if (isPendingLimit && count > 0) {
+        const lastCandleX = getX(count - 1);
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 1.6;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(lastCandleX, currentPriceY);
+        ctx.lineTo(boxStartX, entryY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Label penuntun jemputan
+        ctx.fillStyle = '#f59e0b';
+        ctx.font = 'bold 8.5px monospace';
+        const distPct = (((effectiveEntryPrice - lastPrice) / lastPrice) * 100);
+        ctx.fillText(`PULLBACK TO LIMIT (${distPct >= 0 ? '+' : ''}${distPct.toFixed(1)}%)`, boxStartX - 130, (currentPriceY + entryY) / 2);
+      }
 
       if (isLong) {
         // Target Box (Emerald)
@@ -637,31 +659,37 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
       }
 
       // Entry Line
-      ctx.strokeStyle = '#f4f4f5';
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = isPendingLimit ? '#f59e0b' : '#f4f4f5';
+      ctx.lineWidth = isPendingLimit ? 2 : 1.5;
       ctx.beginPath();
       ctx.moveTo(boxStartX - 20, entryY);
       ctx.lineTo(boxStartX + boxW, entryY);
       ctx.stroke();
 
       // Tool Floating Badges
-      const targetDiff = Math.abs(selectedTargetPrice - entryPrice);
+      const targetDiff = Math.abs(selectedTargetPrice - effectiveEntryPrice);
       ctx.fillStyle = '#10b981';
       ctx.fillRect(boxStartX + 6, targetY - 17, 135, 15);
       ctx.fillStyle = '#000000';
       ctx.font = 'bold 9px monospace';
       ctx.fillText(`Target: +${targetGainPct.toFixed(2)}% (+${fmtP(targetDiff)})`, boxStartX + 10, targetY - 6);
 
-      ctx.fillStyle = '#27272a';
-      ctx.strokeStyle = '#52525b';
+      ctx.fillStyle = isPendingLimit ? '#78350f' : '#27272a';
+      ctx.strokeStyle = isPendingLimit ? '#f59e0b' : '#52525b';
       ctx.lineWidth = 1;
-      ctx.fillRect(boxStartX + 6, entryY - 9, 145, 18);
-      ctx.strokeRect(boxStartX + 6, entryY - 9, 145, 18);
-      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(boxStartX + 6, entryY - 9, isPendingLimit ? 185 : 145, 18);
+      ctx.strokeRect(boxStartX + 6, entryY - 9, isPendingLimit ? 185 : 145, 18);
+      ctx.fillStyle = isPendingLimit ? '#fef08a' : '#ffffff';
       ctx.font = 'bold 9px monospace';
-      ctx.fillText(`Entry: $${fmtP(entryPrice)} | R:R: ${riskRewardRatio.toFixed(1)}`, boxStartX + 10, entryY + 4);
+      ctx.fillText(
+        isPendingLimit
+          ? `⏳ Limit: $${fmtP(effectiveEntryPrice)} | R:R: ${riskRewardRatio.toFixed(1)}`
+          : `Entry: $${fmtP(effectiveEntryPrice)} | R:R: ${riskRewardRatio.toFixed(1)}`,
+        boxStartX + 10,
+        entryY + 4
+      );
 
-      const stopDiff = Math.abs(entryPrice - stopLossPrice);
+      const stopDiff = Math.abs(effectiveEntryPrice - stopLossPrice);
       ctx.fillStyle = '#f43f5e';
       ctx.fillRect(boxStartX + 6, stopY + 3, 125, 15);
       ctx.fillStyle = '#ffffff';
@@ -675,11 +703,11 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
       ctx.font = 'bold 10px monospace';
       ctx.fillText(fmtP(selectedTargetPrice), width - padding.right + 6, targetY + 4);
 
-      ctx.fillStyle = '#fff';
+      ctx.fillStyle = isPendingLimit ? '#f59e0b' : '#fff';
       ctx.fillRect(width - padding.right + 2, entryY - 9, 65, 18);
       ctx.fillStyle = '#000';
       ctx.font = 'bold 10px monospace';
-      ctx.fillText(fmtP(entryPrice), width - padding.right + 6, entryY + 4);
+      ctx.fillText(isPendingLimit ? `LMT ${fmtP(effectiveEntryPrice)}` : fmtP(effectiveEntryPrice), width - padding.right + 6, entryY + 4);
 
       ctx.fillStyle = '#f43f5e';
       ctx.fillRect(width - padding.right + 2, stopY - 9, 65, 18);
@@ -777,6 +805,52 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
       ctx.textAlign = 'center';
       ctx.fillText('AREA BUY / DEMAND (Strong Support)', zStartX + 40 + (zW - 40) / 2, dTop + dH / 2 + 3);
       ctx.textAlign = 'left';
+
+      // 3. BREAK INDUCEMENT (IDM) — Persis Metode CRV & SMC
+      const idmInfo = signal?.smcAnalysis?.inducement;
+      const idmLevel = idmInfo ? idmInfo.level : (isLong ? entryPrice * 1.009 : entryPrice * 0.991);
+      if (idmLevel && idmLevel >= minPrice && idmLevel <= maxPrice) {
+        const idmY = priceToY(idmLevel);
+        const isSwept = idmInfo ? idmInfo.status === 'SWEPT' : true;
+        ctx.strokeStyle = isSwept ? '#c026d3' : '#e879f9';
+        ctx.lineWidth = 1.3;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(padding.left + candleSpacing * 6, idmY);
+        ctx.lineTo(padding.left + candleAreaWidth + 15, idmY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = isSwept ? '#c026d3' : '#a21caf';
+        ctx.fillRect(padding.left + candleSpacing * 7, idmY - 14, 160, 13);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 8.5px monospace';
+        ctx.fillText(`BREAK INDUCEMENT (IDM ${isSwept ? 'SWEPT ✅' : 'WAITING ⏳'})`, padding.left + candleSpacing * 10, idmY - 4);
+      }
+
+      // 4. SnR FLIP ZONE (RBS / SBR) — Persis Metode CRV
+      const snrInfo = signal?.smcAnalysis?.snrFlip;
+      const flipLevel = snrInfo ? snrInfo.level : (isLong ? entryPrice * 1.003 : entryPrice * 0.997);
+      if (flipLevel && flipLevel >= minPrice && flipLevel <= maxPrice) {
+        const flipY = priceToY(flipLevel);
+        const flipType = snrInfo ? snrInfo.type : (isLong ? 'RBS' : 'SBR');
+        const isConf = snrInfo ? snrInfo.isConfluentWithOb : true;
+
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 1.4;
+        ctx.setLineDash([5, 3]);
+        ctx.beginPath();
+        ctx.moveTo(padding.left + candleSpacing * 4, flipY);
+        ctx.lineTo(width - padding.right - 10, flipY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = '#f59e0b';
+        ctx.fillRect(width - padding.right - 200, flipY - 13, 195, 13);
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 8.5px monospace';
+        ctx.fillText(`SnR FLIP [${flipType}] ${isConf ? '★ OB CONFLUENCE' : ''}`, width - padding.right - 195, flipY - 3);
+      }
     }
 
     // C. TRENDLINE CHANNEL & SWING PIVOT DOTS (Gambar 2 & 3)
@@ -837,6 +911,26 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
         ctx.stroke();
       });
 
+      // Trendline Breakdown Retest Target Line (Persis Analisis DASH)
+      const tbInfo = signal?.smcAnalysis?.trendlineBreak;
+      if (tbInfo && tbInfo.detected && tbInfo.retestTargetPrice >= minPrice && tbInfo.retestTargetPrice <= maxPrice) {
+        const retY = priceToY(tbInfo.retestTargetPrice);
+        ctx.strokeStyle = '#fb923c';
+        ctx.lineWidth = 1.4;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(padding.left, retY);
+        ctx.lineTo(width - padding.right, retY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = '#ea580c';
+        ctx.fillRect(padding.left + 5, retY - 14, 185, 13);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 8.5px monospace';
+        ctx.fillText(`RETEST ZONE ($${fmtP(tbInfo.retestTargetPrice)}) [${tbInfo.status}]`, padding.left + 8, retY - 4);
+      }
+
       // Struktur Pasar: Neckline & CHoCH (Change of Character)
       const necklinePrice = entryPrice * 1.014;
       const nY = priceToY(necklinePrice);
@@ -856,6 +950,8 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
 
     // D. JALUR PANAH PREDIKSI ZIGZAG HARGA (Gambar 2 & 3)
     if (showPathProjection && count >= 5) {
+      const isPendingLimit = Boolean(signal?.smcAnalysis?.isPendingLimitSetup && signal?.smcAnalysis?.pendingLimitPrice);
+      const effectiveEntry = isPendingLimit ? (signal?.smcAnalysis?.pendingLimitPrice || entryPrice) : entryPrice;
       const lastK = klines[count - 1];
       const lastX = getX(count - 1);
       const lastY = priceToY(lastK.close);
@@ -864,9 +960,9 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
 
       // Buat lintasan zigzag prediksi Elliott / SMC Wave
       const p0 = { x: lastX, y: lastY };
-      const p1 = { x: lastX + stepW * 0.9, y: priceToY(entryPrice * (isLong ? 0.995 : 1.005)) }; // Uji Area Beli
-      const p2 = { x: lastX + stepW * 1.9, y: priceToY(entryPrice * (isLong ? 1.018 : 0.982)) }; // Tembus Neckline
-      const p3 = { x: lastX + stepW * 2.7, y: priceToY(entryPrice * (isLong ? 1.009 : 0.991)) }; // Retest Neckline
+      const p1 = { x: lastX + stepW * 0.9, y: priceToY(effectiveEntry) }; // Uji Area Beli / Retest OB & Trendline
+      const p2 = { x: lastX + stepW * 1.9, y: priceToY(effectiveEntry * (isLong ? 1.018 : 0.982)) }; // Tembus Neckline
+      const p3 = { x: lastX + stepW * 2.7, y: priceToY(effectiveEntry * (isLong ? 1.009 : 0.991)) }; // Retest Neckline
       const p4 = { x: lastX + stepW * 3.8, y: priceToY(selectedTargetPrice * (isLong ? 0.99 : 1.01)) }; // Capai TP1/TP2
       const p5 = { x: lastX + stepW * 4.6, y: priceToY(selectedTargetPrice * (isLong ? 0.978 : 1.022)) }; // Retest Supply
       const p6 = {
@@ -942,6 +1038,20 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
     ctx.fillStyle = '#71717a';
     ctx.font = '9px monospace';
     ctx.fillText('Vol(USDT)', padding.left, volTop + 10);
+
+    // Volume Exhaustion Banner (Persis Analisis DASH)
+    const veInfo = signal?.smcAnalysis?.volumeExhaustion;
+    if (veInfo && veInfo.detected) {
+      ctx.fillStyle = veInfo.type === 'BULLISH_EXHAUSTION' ? '#f43f5e' : '#10b981';
+      ctx.fillRect(padding.left + 80, volTop + 1, 230, 13);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 8.5px monospace';
+      ctx.fillText(
+        `⚠️ VOL EXHAUSTION: ${veInfo.type === 'BULLISH_EXHAUSTION' ? 'BUYER MELEMAH' : 'SELLER MENGERING'} (-${veInfo.volumeDecayPct}%)`,
+        padding.left + 85,
+        volTop + 11
+      );
+    }
 
     klines.forEach((k, idx) => {
       const x = getX(idx);
@@ -1415,6 +1525,60 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
                           🎯 {signal.smcAnalysis.killZoneName || 'Kill Zone'}
                         </span>
                       )}
+
+                      {/* IDM Quick Badge */}
+                      {signal?.smcAnalysis?.inducement && (
+                        <span
+                          className={`px-1.5 py-0.5 rounded border font-mono font-bold ${
+                            signal.smcAnalysis.inducement.status === 'SWEPT'
+                              ? 'bg-fuchsia-950/70 border-fuchsia-500/50 text-fuchsia-300'
+                              : 'bg-purple-950/70 border-purple-500/50 text-purple-300'
+                          }`}
+                          title={signal.smcAnalysis.inducement.description}
+                        >
+                          {signal.smcAnalysis.inducement.status === 'SWEPT' ? '🎯 IDM Swept' : '⏳ IDM Waiting'}
+                        </span>
+                      )}
+
+                      {/* SnR Flip Quick Badge */}
+                      {signal?.smcAnalysis?.snrFlip && (
+                        <span
+                          className="px-1.5 py-0.5 rounded border bg-amber-950/70 border-amber-500/50 text-amber-300 font-mono font-bold"
+                          title={signal.smcAnalysis.snrFlip.description}
+                        >
+                          🔄 SnR Flip ({signal.smcAnalysis.snrFlip.type}) {signal.smcAnalysis.snrFlip.isConfluentWithOb ? '★' : ''}
+                        </span>
+                      )}
+
+                      {/* Trendline Break Quick Badge */}
+                      {signal?.smcAnalysis?.trendlineBreak?.detected && (
+                        <span
+                          className="px-1.5 py-0.5 rounded border bg-orange-950/70 border-orange-500/50 text-orange-300 font-mono font-bold"
+                          title={signal.smcAnalysis.trendlineBreak.description}
+                        >
+                          📐 Trendline {signal.smcAnalysis.trendlineBreak.breakDirection}
+                        </span>
+                      )}
+
+                      {/* Volume Exhaustion Quick Badge */}
+                      {signal?.smcAnalysis?.volumeExhaustion?.detected && (
+                        <span
+                          className="px-1.5 py-0.5 rounded border bg-rose-950/70 border-rose-500/50 text-rose-300 font-mono font-bold"
+                          title={signal.smcAnalysis.volumeExhaustion.description}
+                        >
+                          📉 Vol Exhaustion
+                        </span>
+                      )}
+
+                      {/* Pending Limit Advisory Badge */}
+                      {signal?.smcAnalysis?.isPendingLimitSetup && (
+                        <span
+                          className="px-1.5 py-0.5 rounded border bg-yellow-950/80 border-yellow-400 text-yellow-300 font-mono font-bold animate-pulse"
+                          title={signal.smcAnalysis.pendingLimitAdvice}
+                        >
+                          ⏳ PENDING LIMIT (${fmtP(signal.smcAnalysis.pendingLimitPrice || 0)})
+                        </span>
+                      )}
                     </div>
 
                     {signal?.indicatorExplanation && (
@@ -1620,7 +1784,35 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
                                 📊 Zona {signal.smcAnalysis.liquidityRange.pricePosition}
                               </span>
                             )}
+                            {signal.smcAnalysis.inducement && (
+                              <span className={`px-1.5 py-0.5 rounded border ${signal.smcAnalysis.inducement.status === 'SWEPT' ? 'bg-fuchsia-500/10 border-fuchsia-500/30 text-fuchsia-300' : 'bg-purple-500/10 border-purple-500/30 text-purple-300'}`}>
+                                🎯 IDM: {signal.smcAnalysis.inducement.status === 'SWEPT' ? 'Disapu (Liquidity Swept)' : 'Belum Disapu (Tunggu IDM)'}
+                              </span>
+                            )}
+                            {signal.smcAnalysis.snrFlip && (
+                              <span className="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300">
+                                🔄 SnR Flip {signal.smcAnalysis.snrFlip.type} (${fmtP(signal.smcAnalysis.snrFlip.level)})
+                              </span>
+                            )}
+                            {signal.smcAnalysis.trendlineBreak?.detected && (
+                              <span className="px-1.5 py-0.5 rounded bg-orange-500/10 border border-orange-500/30 text-orange-300">
+                                📐 Trendline {signal.smcAnalysis.trendlineBreak.breakDirection} (Retest ${fmtP(signal.smcAnalysis.trendlineBreak.retestTargetPrice)})
+                              </span>
+                            )}
+                            {signal.smcAnalysis.volumeExhaustion?.detected && (
+                              <span className="px-1.5 py-0.5 rounded bg-rose-500/10 border border-rose-500/30 text-rose-300">
+                                📉 Vol Exhaustion (-{signal.smcAnalysis.volumeExhaustion.volumeDecayPct}%)
+                              </span>
+                            )}
                           </div>
+
+                          {/* Pending Limit Advisory Notice */}
+                          {signal.smcAnalysis.isPendingLimitSetup && signal.smcAnalysis.pendingLimitAdvice && (
+                            <div className="p-2 rounded bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 text-[10px] flex items-center gap-1.5">
+                              <span>⏳</span>
+                              <span><strong>Instruksi Sniper:</strong> {signal.smcAnalysis.pendingLimitAdvice}</span>
+                            </div>
+                          )}
 
                           {/* Sniper Confluence Rationale */}
                           <p className="text-[10px] text-zinc-300/90 leading-relaxed font-sans pt-1 border-t border-zinc-800">
@@ -1640,6 +1832,11 @@ export const TradeSetupChart: React.FC<TradeSetupChartProps> = ({
                 <div className="flex items-center gap-1.5">
                   <span className="text-zinc-500">Entry:</span>
                   <span className="font-bold text-white">${fmtP(entryPrice)}</span>
+                  {signal?.smcAnalysis?.isPendingLimitSetup && signal?.smcAnalysis?.pendingLimitPrice && (
+                    <span className="text-[10px] text-yellow-400 font-bold px-1.5 py-0.5 rounded bg-yellow-500/10 border border-yellow-500/30">
+                      Limit: ${fmtP(signal.smcAnalysis.pendingLimitPrice)}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="text-zinc-500">Target ({targetLevel}):</span>

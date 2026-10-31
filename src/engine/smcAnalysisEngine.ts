@@ -20,6 +20,10 @@ import {
   SmtDivergenceResult,
   IctKeyLevelZone,
   IctPoiType,
+  SmcInducement,
+  SmcSnrFlip,
+  SmcTrendlineBreak,
+  SmcVolumeExhaustion,
 } from '../types/futures';
 import { Candle, getCandleMetrics } from './candlestickPatternEngine';
 
@@ -802,8 +806,296 @@ export function detectKeyLevelZone(
 }
 
 /**
- * 12. FUNGSI UTAMA: Run SMC & ICT Analysis Multi-Timeframe (v2.1 — POI Gate)
- * Menggabungkan ATR Filter, POI Gate, Sweep, IFVG, CISD, SMT Divergence, Kill Zone WIB.
+ * 12. Deteksi Break Inducement (IDM) — Jebakan Likuiditas Ritel (v2.2)
+ * Inducement adalah swing point minor pertama yang sengaja dibentuk oleh Smart Money
+ * untuk memancing stop loss ritel sebelum harga berbalik di Order Block (OB) yang sebenarnya.
+ */
+export function detectInducement(
+  candles: Candle[],
+  currentPrice: number,
+  demandZone?: SmcOrderBlock,
+  supplyZone?: SmcOrderBlock
+): SmcInducement | undefined {
+  if (!candles || candles.length < 15) return undefined;
+  const len = candles.length;
+
+  // 1. Bullish IDM: Swing low internal minor yang terbentuk sebelum harga masuk ke Bullish OB
+  if (demandZone) {
+    for (let i = len - 4; i >= Math.max(2, len - 16); i--) {
+      const cur = candles[i];
+      const prev = candles[i - 1];
+      const next = candles[i + 1];
+      const isInternalLow = cur.low <= prev.low && cur.low <= next.low;
+
+      if (isInternalLow && cur.low > demandZone.zoneLow) {
+        const idmLevel = cur.low;
+        let isSwept = false;
+        let sweepTime = cur.time || 0;
+        for (let j = i + 1; j < len; j++) {
+          if (candles[j].low < idmLevel) {
+            isSwept = true;
+            sweepTime = candles[j].time || 0;
+            break;
+          }
+        }
+
+        if (isSwept) {
+          return {
+            level: idmLevel,
+            status: 'SWEPT',
+            type: 'BULLISH_IDM',
+            sweepCandleTime: sweepTime,
+            description: `Break Inducement (IDM Swept di $${idmLevel.toFixed(4)}): Stop loss ritel tersapu, harga bersiap memantul di Bullish OB`,
+          };
+        } else {
+          return {
+            level: idmLevel,
+            status: 'UNSWEPT',
+            type: 'BULLISH_IDM',
+            description: `Inducement Terbentuk di $${idmLevel.toFixed(4)}: Tunggu IDM disapu sebelum ambil Bullish OB`,
+          };
+        }
+      }
+    }
+  }
+
+  // 2. Bearish IDM: Swing high internal minor yang terbentuk sebelum harga masuk ke Supply OB
+  if (supplyZone) {
+    for (let i = len - 4; i >= Math.max(2, len - 16); i--) {
+      const cur = candles[i];
+      const prev = candles[i - 1];
+      const next = candles[i + 1];
+      const isInternalHigh = cur.high >= prev.high && cur.high >= next.high;
+
+      if (isInternalHigh && cur.high < supplyZone.zoneHigh) {
+        const idmLevel = cur.high;
+        let isSwept = false;
+        let sweepTime = cur.time || 0;
+        for (let j = i + 1; j < len; j++) {
+          if (candles[j].high > idmLevel) {
+            isSwept = true;
+            sweepTime = candles[j].time || 0;
+            break;
+          }
+        }
+
+        if (isSwept) {
+          return {
+            level: idmLevel,
+            status: 'SWEPT',
+            type: 'BEARISH_IDM',
+            sweepCandleTime: sweepTime,
+            description: `Break Inducement (IDM Swept di $${idmLevel.toFixed(4)}): Likuiditas buyer ritel tersapu, siap drop dari Supply OB`,
+          };
+        } else {
+          return {
+            level: idmLevel,
+            status: 'UNSWEPT',
+            type: 'BEARISH_IDM',
+            description: `Inducement Terbentuk di $${idmLevel.toFixed(4)}: Tunggu IDM disapu sebelum short di Supply OB`,
+          };
+        }
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * 13. Deteksi SnR Flip (Resistance Becomes Support / Support Becomes Resistance) — v2.2
+ * Mendeteksi level batas swing historis yang telah di-breakout dan kini diuji ulang,
+ * terutama jika beririsan/konfluens dengan Order Block.
+ */
+export function detectSnrFlip(
+  candles: Candle[],
+  demandZone?: SmcOrderBlock,
+  supplyZone?: SmcOrderBlock
+): SmcSnrFlip | undefined {
+  if (!candles || candles.length < 20) return undefined;
+  const len = candles.length;
+  const currentPrice = candles[len - 1].close;
+
+  // 1. RBS (Resistance Becomes Support - Bullish)
+  const priorSlice = candles.slice(Math.max(0, len - 40), len - 6);
+  if (priorSlice.length >= 8) {
+    const swingHigh = Math.max(...priorSlice.map((c) => c.high));
+    const subsequentSlice = candles.slice(len - 6, len);
+    const hasBrokenAbove = Math.max(...subsequentSlice.map((c) => c.high)) > swingHigh * 1.008;
+
+    if (hasBrokenAbove) {
+      const distPct = Math.abs(currentPrice - swingHigh) / currentPrice;
+      if (distPct <= 0.02) {
+        const isConfluent = demandZone
+          ? swingHigh >= demandZone.zoneLow * 0.985 && swingHigh <= demandZone.zoneHigh * 1.015
+          : false;
+
+        return {
+          level: swingHigh,
+          type: 'RBS',
+          isConfluentWithOb: isConfluent,
+          confluencePrice: isConfluent && demandZone ? (demandZone.zoneHigh + demandZone.zoneLow) / 2 : swingHigh,
+          description: `SnR Flip (RBS) di $${swingHigh.toFixed(4)}: Resistensi lama menjadi Support baru${isConfluent ? ' (Konfluens Kuat dengan Bullish OB!)' : ''}`,
+        };
+      }
+    }
+  }
+
+  // 2. SBR (Support Becomes Resistance - Bearish)
+  if (priorSlice.length >= 8) {
+    const swingLow = Math.min(...priorSlice.map((c) => c.low));
+    const subsequentSlice = candles.slice(len - 6, len);
+    const hasBrokenBelow = Math.min(...subsequentSlice.map((c) => c.low)) < swingLow * 0.992;
+
+    if (hasBrokenBelow) {
+      const distPct = Math.abs(currentPrice - swingLow) / currentPrice;
+      if (distPct <= 0.02) {
+        const isConfluent = supplyZone
+          ? swingLow >= supplyZone.zoneLow * 0.985 && swingLow <= supplyZone.zoneHigh * 1.015
+          : false;
+
+        return {
+          level: swingLow,
+          type: 'SBR',
+          isConfluentWithOb: isConfluent,
+          confluencePrice: isConfluent && supplyZone ? (supplyZone.zoneHigh + supplyZone.zoneLow) / 2 : swingLow,
+          description: `SnR Flip (SBR) di $${swingLow.toFixed(4)}: Support lama menjadi Resistensi baru${isConfluent ? ' (Konfluens Kuat dengan Supply OB!)' : ''}`,
+        };
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * 14. Deteksi Trendline Breakout / Breakdown & Retest Zone (v2.2)
+ * Meniru analisis DASH: mendeteksi garis tren naik/turun yang tertembus
+ * dan menghitung harga retest yang ideal untuk entry sniper.
+ */
+export function detectTrendlineBreak(
+  candles: Candle[],
+  currentPrice: number
+): SmcTrendlineBreak | undefined {
+  if (!candles || candles.length < 18) return undefined;
+  const count = candles.length;
+
+  const swingLows: Array<{ idx: number; price: number }> = [];
+  const swingHighs: Array<{ idx: number; price: number }> = [];
+
+  for (let i = 2; i < count - 2; i++) {
+    const cur = candles[i];
+    if (cur.low <= candles[i - 1].low && cur.low <= candles[i + 1].low) {
+      swingLows.push({ idx: i, price: cur.low });
+    }
+    if (cur.high >= candles[i - 1].high && cur.high >= candles[i + 1].high) {
+      swingHighs.push({ idx: i, price: cur.high });
+    }
+  }
+
+  // 1. Cek Uptrend Line Breakdown (Kasus Short DASH)
+  if (swingLows.length >= 2) {
+    const p1 = swingLows[0];
+    const p2 = swingLows[swingLows.length - 1];
+    if (p2.idx > p1.idx && p2.price > p1.price) {
+      const slope = (p2.price - p1.price) / (p2.idx - p1.idx);
+      const projectedPrice = p1.price + slope * (count - 1 - p1.idx);
+
+      if (currentPrice < projectedPrice * 0.996) {
+        const retestTarget = projectedPrice * 0.998;
+        const isRetesting = Math.abs(currentPrice - retestTarget) / currentPrice <= 0.008;
+
+        return {
+          detected: true,
+          trendType: 'UPTREND',
+          breakDirection: 'BREAKDOWN',
+          startPrice: p1.price,
+          breakPrice: projectedPrice,
+          retestTargetPrice: retestTarget,
+          status: isRetesting ? 'RETESTING' : 'PENDING_RETEST',
+          description: `Trendline Breakdown: Garis tren naik tertembus ke bawah. Retest target di $${retestTarget.toFixed(4)} (${isRetesting ? 'Sedang Re-test' : 'Menunggu Re-test'})`,
+        };
+      }
+    }
+  }
+
+  // 2. Cek Downtrend Line Breakout (Kasus Long)
+  if (swingHighs.length >= 2) {
+    const p1 = swingHighs[0];
+    const p2 = swingHighs[swingHighs.length - 1];
+    if (p2.idx > p1.idx && p2.price < p1.price) {
+      const slope = (p2.price - p1.price) / (p2.idx - p1.idx);
+      const projectedPrice = p1.price + slope * (count - 1 - p1.idx);
+
+      if (currentPrice > projectedPrice * 1.004) {
+        const retestTarget = projectedPrice * 1.002;
+        const isRetesting = Math.abs(currentPrice - retestTarget) / currentPrice <= 0.008;
+
+        return {
+          detected: true,
+          trendType: 'DOWNTREND',
+          breakDirection: 'BREAKOUT',
+          startPrice: p1.price,
+          breakPrice: projectedPrice,
+          retestTargetPrice: retestTarget,
+          status: isRetesting ? 'RETESTING' : 'PENDING_RETEST',
+          description: `Trendline Breakout: Garis tren turun tertembus ke atas. Retest target di $${retestTarget.toFixed(4)} (${isRetesting ? 'Sedang Re-test' : 'Menunggu Re-test'})`,
+        };
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * 15. Deteksi Volume Exhaustion (Pelemahan Volume saat Mendekati Level Kritis) — v2.2
+ * Meniru catatan trader: "bullish volumenya makin lama makin rendah, resis ga bisa ditembus".
+ */
+export function detectVolumeExhaustion(candles: Candle[]): SmcVolumeExhaustion | undefined {
+  if (!candles || candles.length < 12) return undefined;
+  const recent = candles.slice(-12);
+  const mid = 6;
+  const firstHalf = recent.slice(0, mid);
+  const secondHalf = recent.slice(mid);
+
+  const avgVolFirst = firstHalf.reduce((sum, c) => sum + (c.volume || 0), 0) / mid;
+  const avgVolSecond = secondHalf.reduce((sum, c) => sum + (c.volume || 0), 0) / mid;
+
+  if (avgVolFirst <= 0 || avgVolSecond <= 0) return undefined;
+
+  const decayPct = ((avgVolFirst - avgVolSecond) / avgVolFirst) * 100;
+
+  const priceStart = firstHalf[0].close;
+  const priceEnd = secondHalf[secondHalf.length - 1].close;
+  const priceChangePct = ((priceEnd - priceStart) / priceStart) * 100;
+
+  // Bullish Volume Exhaustion: Harga naik tetapi volume menurun drastis >= 25%
+  if (priceChangePct > 0.8 && decayPct >= 25) {
+    return {
+      detected: true,
+      type: 'BULLISH_EXHAUSTION',
+      volumeDecayPct: Number(decayPct.toFixed(1)),
+      description: `Bullish Volume Exhaustion (-${decayPct.toFixed(1)}%): Buyer kehilangan daya dorong saat mendekati resistensi. Waspada reversal/short!`,
+    };
+  }
+
+  // Bearish Volume Exhaustion: Harga turun tetapi volume jual mengering >= 25%
+  if (priceChangePct < -0.8 && decayPct >= 25) {
+    return {
+      detected: true,
+      type: 'BEARISH_EXHAUSTION',
+      volumeDecayPct: Number(decayPct.toFixed(1)),
+      description: `Bearish Volume Exhaustion (-${decayPct.toFixed(1)}%): Tekanan jual mengering saat mendekati demand. Waspada pantulan bullish!`,
+    };
+  }
+
+  return undefined;
+}
+
+/**
+ * 16. FUNGSI UTAMA: Run SMC & ICT Analysis Multi-Timeframe (v2.2 — Sniper & Chart R:R Adaptation)
+ * Menggabungkan ATR Filter, POI Gate, Sweep, IFVG, CISD, SMT, Inducement, SnR Flip, Trendline Breakdown, Volume Exhaustion.
  */
 export function runSmcAnalysis(
   symbol: string,
@@ -818,7 +1110,6 @@ export function runSmcAnalysis(
       : candles4h[candles4h.length - 1]?.close || 1;
 
   // Step 0: POI / Key Level Gate — Filter Lokasi HTF (v2.1)
-  // Bot hanya aktif mencari setup JIKA harga berada di dalam/dekat zona institusional.
   const poiResult = detectKeyLevelZone(candles4h, currentPrice);
   const isAtKeyLevel = poiResult.isAtKeyLevel;
   const keyLevelGateOpen = poiResult.gateOpen;
@@ -847,13 +1138,19 @@ export function runSmcAnalysis(
   // Step 6: Evaluasi Kill Zone Sesi WIB
   const killZoneInfo = checkWibKillZone();
 
-  // Step 7: Evaluasi SMT Divergence (jika data korelasi tersedia)
+  // Step 7: Evaluasi SMT Divergence
   const smtDivergence =
     correlatedCandles15m && correlatedSymbol
       ? detectSmtDivergence(candles15m, correlatedCandles15m, symbol, correlatedSymbol)
       : undefined;
 
-  // Step 8: Tentukan Entry Model Trigger Utama
+  // Step 8: Deteksi Adaptasi Sniper (IDM, SnR Flip, Trendline Breakdown, Volume Exhaustion) — v2.2
+  const inducement = detectInducement(candles4h.length >= 15 ? candles4h : candles15m, currentPrice, demandZone, supplyZone);
+  const snrFlip = detectSnrFlip(candles4h.length >= 20 ? candles4h : candles15m, demandZone, supplyZone);
+  const trendlineBreak = detectTrendlineBreak(candles4h.length >= 18 ? candles4h : candles15m, currentPrice);
+  const volumeExhaustion = detectVolumeExhaustion(candles4h.length >= 12 ? candles4h : candles15m);
+
+  // Step 9: Tentukan Entry Model Trigger Utama
   let entryModelTrigger: 'IFVG' | 'CISD' | 'MSS' | undefined;
   if (mtfTrigger.mssConfirmed) {
     entryModelTrigger = 'MSS';
@@ -863,7 +1160,7 @@ export function runSmcAnalysis(
     entryModelTrigger = 'IFVG';
   }
 
-  // Step 9: Kalkulasi Skor & Bias SMC Berjenjang
+  // Step 10: Kalkulasi Skor & Bias SMC Berjenjang
   let smcScore = 50;
   let smcBias: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = 'NEUTRAL';
   const rationaleParts: string[] = [];
@@ -904,7 +1201,6 @@ export function runSmcAnalysis(
       rationaleParts.push(`Target magnet FVG 4H di $${recentFvg.gapHigh.toFixed(4)}`);
     }
   } else if (supplyZone && currentPrice >= supplyZone.zoneLow * 0.985 && currentPrice <= supplyZone.zoneHigh * 1.015) {
-    // Kondisi Bearish Supply Rejection
     smcBias = 'BEARISH';
     smcScore += 25;
     rationaleParts.push(
@@ -951,6 +1247,65 @@ export function runSmcAnalysis(
     rationaleParts.push(`Zona Premium (Di atas Midpoint Range)`);
   }
 
+  // --- BONUS ADAPTASI SNIPER v2.2 (IDM, SnR Flip, Trendline Breakdown, Volume Exhaustion) ---
+  if (inducement) {
+    if (inducement.status === 'SWEPT') {
+      smcScore += 15;
+      rationaleParts.push(`🎯 ${inducement.description}`);
+    } else {
+      rationaleParts.push(`⏳ ${inducement.description}`);
+    }
+  }
+
+  if (snrFlip) {
+    smcScore += snrFlip.isConfluentWithOb ? 20 : 10;
+    rationaleParts.push(`🔄 ${snrFlip.description}`);
+  }
+
+  if (trendlineBreak && trendlineBreak.detected) {
+    smcScore += 15;
+    if (trendlineBreak.breakDirection === 'BREAKDOWN') {
+      if (smcBias === 'NEUTRAL') smcBias = 'BEARISH';
+    } else if (trendlineBreak.breakDirection === 'BREAKOUT') {
+      if (smcBias === 'NEUTRAL') smcBias = 'BULLISH';
+    }
+    rationaleParts.push(`📐 ${trendlineBreak.description}`);
+  }
+
+  if (volumeExhaustion && volumeExhaustion.detected) {
+    smcScore += 10;
+    if (volumeExhaustion.type === 'BULLISH_EXHAUSTION' && smcBias !== 'BULLISH') {
+      smcBias = 'BEARISH';
+    } else if (volumeExhaustion.type === 'BEARISH_EXHAUSTION' && smcBias !== 'BEARISH') {
+      smcBias = 'BULLISH';
+    }
+    rationaleParts.push(`📉 ${volumeExhaustion.description}`);
+  }
+
+  // Evaluasi Smart Pending Limit Setup (Kondisi seperti CRV & DASH di mana harga masih di tengah)
+  let isPendingLimitSetup = false;
+  let pendingLimitPrice: number | undefined;
+  let pendingLimitAdvice: string | undefined;
+
+  if (smcBias === 'BULLISH' && demandZone && currentPrice > demandZone.zoneHigh * 1.006) {
+    isPendingLimitSetup = true;
+    pendingLimitPrice = (demandZone.zoneHigh + demandZone.zoneLow) / 2;
+    const distPct = ((currentPrice - pendingLimitPrice) / currentPrice) * 100;
+    pendingLimitAdvice = `Harga masih di tengah ($${currentPrice.toFixed(4)}). Pasang Buy Limit di Bullish OB + SnR Flip ($${pendingLimitPrice.toFixed(4)}, jarak -${distPct.toFixed(1)}%). Jangan FOMO hajar kanan!`;
+  } else if (smcBias === 'BEARISH') {
+    if (supplyZone && currentPrice < supplyZone.zoneLow * 0.994) {
+      isPendingLimitSetup = true;
+      pendingLimitPrice = (supplyZone.zoneHigh + supplyZone.zoneLow) / 2;
+      const distPct = ((pendingLimitPrice - currentPrice) / currentPrice) * 100;
+      pendingLimitAdvice = `Harga masih mengambang di bawah ($${currentPrice.toFixed(4)}). Pasang Sell Limit di Supply OB ($${pendingLimitPrice.toFixed(4)}, jarak +${distPct.toFixed(1)}%). Tunggu retest!`;
+    } else if (trendlineBreak && trendlineBreak.breakDirection === 'BREAKDOWN' && trendlineBreak.status === 'PENDING_RETEST') {
+      isPendingLimitSetup = true;
+      pendingLimitPrice = trendlineBreak.retestTargetPrice;
+      const distPct = ((pendingLimitPrice - currentPrice) / currentPrice) * 100;
+      pendingLimitAdvice = `Trendline breakdown! Harga masih di tengah. Pasang Sell Limit di area Retest Trendline ($${pendingLimitPrice.toFixed(4)}, jarak +${distPct.toFixed(1)}%).`;
+    }
+  }
+
   // Penalti ATR (Pasar Choppy / Sideways Mati)
   if (!atrResult.isAtrHealthy) {
     smcScore = Math.max(35, smcScore - 30);
@@ -988,6 +1343,14 @@ export function runSmcAnalysis(
     keyLevelZone: poiResult.zone,
     isAtKeyLevel,
     keyLevelGateOpen,
+    // Sniper Adaptations v2.2
+    inducement,
+    snrFlip,
+    trendlineBreak,
+    volumeExhaustion,
+    isPendingLimitSetup,
+    pendingLimitPrice,
+    pendingLimitAdvice,
   };
 }
 

@@ -560,4 +560,46 @@ export interface SmcAnalysisResult {
   keyLevelZone?: IctKeyLevelZone;   // Zona POI HTF yang paling relevan saat ini
   isAtKeyLevel: boolean;            // TRUE = Harga berada di POI → Aktifkan mode hunting
   keyLevelGateOpen: boolean;        // TRUE = Gate terbuka → Sweep & Entry boleh dieksekusi
+  // Sniper ICT / SMC Adaptations (v2.2)
+  inducement?: SmcInducement;
+  snrFlip?: SmcSnrFlip;
+  trendlineBreak?: SmcTrendlineBreak;
+  volumeExhaustion?: SmcVolumeExhaustion;
+  isPendingLimitSetup?: boolean;
+  pendingLimitPrice?: number;
+  pendingLimitAdvice?: string;
+}
+
+export interface SmcInducement {
+  level: number;
+  status: 'SWEPT' | 'UNSWEPT';
+  type: 'BULLISH_IDM' | 'BEARISH_IDM'; // BULLISH_IDM = swing low ritel disapu sebelum rally; BEARISH_IDM = swing high ritel disapu sebelum dump
+  sweepCandleTime?: number;
+  description: string;
+}
+
+export interface SmcSnrFlip {
+  level: number;
+  type: 'RBS' | 'SBR'; // RBS = Resistance Becomes Support (Bullish), SBR = Support Becomes Resistance (Bearish)
+  isConfluentWithOb: boolean;
+  confluencePrice: number;
+  description: string;
+}
+
+export interface SmcTrendlineBreak {
+  detected: boolean;
+  trendType: 'UPTREND' | 'DOWNTREND';
+  breakDirection: 'BREAKDOWN' | 'BREAKOUT';
+  startPrice: number;
+  breakPrice: number;
+  retestTargetPrice: number;
+  status: 'PENDING_RETEST' | 'RETESTING' | 'INVALIDATED';
+  description: string;
+}
+
+export interface SmcVolumeExhaustion {
+  detected: boolean;
+  type: 'BULLISH_EXHAUSTION' | 'BEARISH_EXHAUSTION';
+  volumeDecayPct: number;
+  description: string;
 }

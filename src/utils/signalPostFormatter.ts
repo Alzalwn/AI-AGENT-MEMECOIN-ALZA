@@ -209,8 +209,27 @@ export function generateCommunitySignalPost(params: SignalPostParams): string {
         ictBadges.push(`📊 Zona ${smc.liquidityRange.pricePosition} (Selaras)`);
       }
     }
+    if (smc.inducement) {
+      ictBadges.push(
+        smc.inducement.status === 'SWEPT'
+          ? `🎯 IDM Swept ($${smc.inducement.level < 1 ? smc.inducement.level.toFixed(5) : smc.inducement.level.toFixed(2)})`
+          : `⏳ IDM Waiting ($${smc.inducement.level < 1 ? smc.inducement.level.toFixed(5) : smc.inducement.level.toFixed(2)})`
+      );
+    }
+    if (smc.snrFlip) {
+      ictBadges.push(`🔄 SnR Flip ${smc.snrFlip.type}${smc.snrFlip.isConfluentWithOb ? ' (OB Confluence)' : ''}`);
+    }
+    if (smc.trendlineBreak?.detected) {
+      ictBadges.push(`📐 Trendline ${smc.trendlineBreak.breakDirection} (Retest $${smc.trendlineBreak.retestTargetPrice < 1 ? smc.trendlineBreak.retestTargetPrice.toFixed(5) : smc.trendlineBreak.retestTargetPrice.toFixed(2)})`);
+    }
+    if (smc.volumeExhaustion?.detected) {
+      ictBadges.push(`⚠️ Vol Exhaustion (-${smc.volumeExhaustion.volumeDecayPct}%)`);
+    }
     if (ictBadges.length > 0) {
       extraLines.push(`💎 Konfluensi ICT: ${ictBadges.join(' · ')}`);
+    }
+    if (smc.isPendingLimitSetup && smc.pendingLimitAdvice) {
+      extraLines.push(`⏳ Taktikal Limit: ${smc.pendingLimitAdvice}`);
     }
   }
   if (params.binanceUrl) {
